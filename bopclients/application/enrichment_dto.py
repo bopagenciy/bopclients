@@ -34,6 +34,7 @@ class EnrichmentSnapshot:
     has_analytics: bool = False
 
     raw_metadata: Dict[str, Any] = field(default_factory=dict)
+    updated_at: Optional[str] = None
 
 
 @dataclass

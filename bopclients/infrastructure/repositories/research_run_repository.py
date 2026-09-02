@@ -37,28 +37,58 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
                     f"ResearchRun rejected: Prospect '{run.prospect_id}' not found for organization '{org_id}'"
                 )
 
-        sql = f"""
-        INSERT INTO research_runs (
-            id, organization_id, campaign_id, prospect_id, run_type, status,
-            started_at, completed_at, error_message, created_at, updated_at
-        ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
-        """
-        self.db.execute(
-            sql,
-            (
-                run.id,
-                org_id,
-                run.campaign_id,
-                run.prospect_id,
-                run.run_type,
-                run.status,
-                run.started_at,
-                run.completed_at,
-                run.error_message,
-                run.created_at,
-                run.updated_at,
-            ),
-        )
+        # Check global existence of run.id for tenant isolation safety
+        global_check = f"SELECT organization_id FROM research_runs WHERE id = {p}"
+        existing_global = self.db.fetch_dicts(global_check, (run.id,))
+
+        if existing_global:
+            if existing_global[0]["organization_id"] != org_id:
+                raise TenantAccessError(f"Cross-tenant ResearchRun update rejected for run '{run.id}'")
+
+            sql = f"""
+            UPDATE research_runs SET
+                status = {p},
+                started_at = {p},
+                completed_at = {p},
+                error_message = {p},
+                updated_at = {p}
+            WHERE organization_id = {p} AND id = {p}
+            """
+            self.db.execute(
+                sql,
+                (
+                    run.status,
+                    run.started_at,
+                    run.completed_at,
+                    run.error_message,
+                    run.updated_at,
+                    org_id,
+                    run.id,
+                ),
+            )
+        else:
+            sql = f"""
+            INSERT INTO research_runs (
+                id, organization_id, campaign_id, prospect_id, run_type, status,
+                started_at, completed_at, error_message, created_at, updated_at
+            ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+            """
+            self.db.execute(
+                sql,
+                (
+                    run.id,
+                    org_id,
+                    run.campaign_id,
+                    run.prospect_id,
+                    run.run_type,
+                    run.status,
+                    run.started_at,
+                    run.completed_at,
+                    run.error_message,
+                    run.created_at,
+                    run.updated_at,
+                ),
+            )
         self.db.commit()
         return run
 

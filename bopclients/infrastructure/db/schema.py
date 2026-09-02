@@ -276,6 +276,28 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         UNIQUE (organization_id, prospect_id, provider)
     );
     """,
+    # 18. prospect_priorities (Tenant Owned directly via organization_id)
+    """
+    CREATE TABLE IF NOT EXISTS prospect_priorities (
+        id VARCHAR(36) PRIMARY KEY,
+        organization_id VARCHAR(36) NOT NULL,
+        campaign_id VARCHAR(36) NOT NULL,
+        prospect_id VARCHAR(36) NOT NULL,
+        priority_score INTEGER NOT NULL,
+        priority_label VARCHAR(20) NOT NULL,
+        lead_score_component REAL NOT NULL DEFAULT 0.0,
+        intent_signal_component REAL NOT NULL DEFAULT 0.0,
+        research_confidence_component REAL NOT NULL DEFAULT 0.0,
+        freshness_component REAL NOT NULL DEFAULT 0.0,
+        policy_version VARCHAR(20) NOT NULL DEFAULT 'v1.0',
+        data TEXT NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (organization_id, campaign_id) REFERENCES campaigns(organization_id, id) ON DELETE CASCADE,
+        FOREIGN KEY (organization_id, prospect_id) REFERENCES prospects(organization_id, id) ON DELETE CASCADE,
+        UNIQUE (organization_id, campaign_id, prospect_id)
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -300,4 +322,5 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org_prospect ON research_runs(organization_id, prospect_id);",
     "CREATE INDEX IF NOT EXISTS idx_enrichment_results_org_prospect ON enrichment_results(organization_id, prospect_id);",
     "CREATE INDEX IF NOT EXISTS idx_prospect_intel_org_prospect ON prospect_intelligence(organization_id, prospect_id);",
+    "CREATE INDEX IF NOT EXISTS idx_priorities_org_campaign_prospect ON prospect_priorities(organization_id, campaign_id, prospect_id);",
 ]
