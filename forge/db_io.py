@@ -49,7 +49,10 @@ class _ForgeDBIOMixin:
 
     def upsert_business(self, data: Dict[str, Any]) -> str:
         """Insert or update a business record. Returns business ID."""
-        safe_data = {k: v for k, v in data.items() if k in ENRICHABLE_FIELDS or k == "id"}
+        input_data = dict(data)
+        if "website" in input_data and "website_url" not in input_data:
+            input_data["website_url"] = input_data["website"]
+        safe_data = {k: v for k, v in input_data.items() if k in ENRICHABLE_FIELDS or k == "id"}
         business_id = safe_data.pop("id", None) or str(uuid.uuid4())
         if not safe_data:
             logger.warning("upsert_business called with no valid columns")

@@ -142,24 +142,11 @@ _CMS_PRIORITY = [
     "godaddy-builder",
 ]
 
-# Pages to check for email addresses (in priority order)
+# Pages to check for email addresses (top priority order)
 _CONTACT_PATHS = [
     "/contact",
     "/contact-us",
     "/about",
-    "/about-us",
-    "/team",
-    "/staff",
-    "/our-team",
-    "/reach-us",
-    "/privacy-policy",
-    "/privacy",
-    "/terms",
-    "/careers",
-    "/jobs",
-    "/directory",
-    "/people",
-    "/leadership",
 ]
 
 # Maximum response body size: 5MB
@@ -198,11 +185,13 @@ class AsyncWebScraper:
         connect_timeout: float = 3.0,
         total_timeout: float = 10.0,
         rate_limit: float = 100.0,
+        prospect_timeout: float = 15.0,
     ):
         self._max_concurrent = max_concurrent
         self._max_per_host = max_per_host
         self._connect_timeout = connect_timeout
         self._total_timeout = total_timeout
+        self._prospect_timeout = prospect_timeout
         self._semaphore: Optional[asyncio.Semaphore] = None
         self._session: Optional[aiohttp.ClientSession] = None
         self._rate_limiter = AsyncLimiter(rate_limit, 1)  # rate_limit req/sec
@@ -335,7 +324,7 @@ class AsyncWebScraper:
             result["status"] = f"response_error_{e.status}"
 
     async def scrape_one(self, url: str) -> Dict[str, Any]:
-        """Scrape a single business website for enrichment data."""
+        """Scrape a single business website with a hard deadline and partial result preservation."""
         if not url.startswith("http"):
             url = f"https://{url}"
 
@@ -357,22 +346,53 @@ class AsyncWebScraper:
                 await self._rate_limiter.acquire()
                 domain = urlparse(url).hostname or ""
                 await self._domain_rate_limit(domain)
-                await self._fetch_and_extract(session, url, domain, result)
+                await asyncio.wait_for(
+                    self._fetch_and_extract(session, url, domain, result),
+                    timeout=self._prospect_timeout,
+                )
+        except asyncio.TimeoutError:
+            logger.warning("Scrape timed out after %.1fs for %s", self._prospect_timeout, url)
+            if result["emails"] or result["tech_stack"] or result["status_code"] is not None:
+                result["status"] = "partial_timeout"
+            else:
+                result["status"] = "timeout"
+            result["error"] = f"Prospect scrape timed out after {self._prospect_timeout}s"
         except Exception as e:
-            result["status"] = "error"
+            logger.debug("Unexpected error scraping %s: %s", url, e)
+            if result["status"] == "unknown":
+                result["status"] = "error"
             result["error"] = str(e)[:200]
-            logger.debug("Scrape error for %s: %s", url, e)
 
         return result
 
     async def scrape_batch(self, urls: List[str]) -> List[Dict[str, Any]]:
         """
-        Scrape multiple URLs concurrently.
+        Scrape multiple URLs concurrently with exception isolation.
 
         Returns list of result dicts, same order as input URLs.
+        Guarantees that a failing or hanging URL will not block the batch.
         """
         tasks = [self.scrape_one(url) for url in urls]
-        return await asyncio.gather(*tasks, return_exceptions=False)
+        raw_results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        results: List[Dict[str, Any]] = []
+        for i, res in enumerate(raw_results):
+            if isinstance(res, Exception):
+                url = urls[i] if i < len(urls) else "unknown"
+                results.append({
+                    "url": url,
+                    "status": "error",
+                    "emails": [],
+                    "tech_stack": [],
+                    "cms_detected": None,
+                    "ssl_valid": None,
+                    "site_speed_ms": None,
+                    "status_code": None,
+                    "error": f"Task exception: {res}",
+                })
+            else:
+                results.append(res)
+        return results
 
     # ── Email extraction layers ──────────────────────────────────────────────
 
@@ -494,7 +514,22 @@ class AsyncWebScraper:
         base_url: str,
         domain: str,
     ) -> Set[str]:
-        """Layer 3: Crawl common contact page paths for emails."""
+        """Layer 3: Crawl common contact page paths for emails with strict aggregate timeout."""
+        try:
+            return await asyncio.wait_for(
+                self._crawl_contact_pages_internal(session, base_url, domain),
+                timeout=5.0,
+            )
+        except (asyncio.TimeoutError, Exception):
+            return set()
+
+    async def _crawl_contact_pages_internal(
+        self,
+        session: aiohttp.ClientSession,
+        base_url: str,
+        domain: str,
+    ) -> Set[str]:
+        """Internal contact page crawler."""
         emails: Set[str] = set()
 
         for path in _CONTACT_PATHS:

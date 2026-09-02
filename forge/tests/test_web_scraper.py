@@ -362,3 +362,70 @@ class TestExtractFooterEmails:
         html = "x" * 100 + "<footer>No emails here</footer>"
         emails = scraper._extract_footer_emails(html)
         assert len(emails) == 0
+
+
+# ---------------------------------------------------------------------------
+# Tests: Hard Timeout & Batch Resilience
+# ---------------------------------------------------------------------------
+
+
+class TestScraperTimeouts:
+    @pytest.mark.asyncio
+    async def test_scrape_one_enforces_prospect_timeout(self):
+        import asyncio
+
+        scraper = AsyncWebScraper(prospect_timeout=0.01)
+
+        # Mock internal scrape that sleeps longer than prospect_timeout
+        async def slow_internal(url):
+            await asyncio.sleep(0.5)
+            return {"status": "ok"}
+
+        scraper._scrape_one_internal = slow_internal
+        result = await scraper.scrape_one("https://slow-site.com")
+        assert result["status"] == "timeout"
+        assert "timed out" in result["error"]
+        await scraper.close()
+
+    @pytest.mark.asyncio
+    async def test_scrape_batch_continues_on_individual_failure(self):
+        scraper = AsyncWebScraper(prospect_timeout=1.0)
+
+        async def mock_scrape_one(url):
+            if "fail" in url:
+                raise RuntimeError("Hanging/failed site")
+            return {"url": url, "status": "ok", "emails": ["good@site.com"]}
+
+        scraper.scrape_one = mock_scrape_one
+        urls = ["https://site1.com", "https://fail-site.com", "https://site2.com"]
+        results = await scraper.scrape_batch(urls)
+
+        assert len(results) == 3
+        assert results[0]["status"] == "ok"
+        assert results[1]["status"] == "error"
+        assert results[2]["status"] == "ok"
+        await scraper.close()
+
+    @pytest.mark.asyncio
+    async def test_partial_data_preservation_on_timeout(self):
+        import asyncio
+
+        scraper = AsyncWebScraper(prospect_timeout=0.1)
+
+        # Mock _fetch_and_extract to simulate homepage success then a hanging step
+        async def mock_fetch_and_extract(session, url, domain, result):
+            # Homepage extracted emails and tech stack
+            result["status_code"] = 200
+            result["emails"] = ["homepage@clinic.com"]
+            result["tech_stack"] = ["wordpress"]
+            # Subsequent contact page crawl hangs beyond prospect_timeout
+            await asyncio.sleep(0.5)
+
+        scraper._fetch_and_extract = mock_fetch_and_extract
+        res = await scraper.scrape_one("https://partially-slow.com")
+
+        assert res["status"] == "partial_timeout"
+        assert res["emails"] == ["homepage@clinic.com"]
+        assert res["tech_stack"] == ["wordpress"]
+        assert "timed out" in res["error"]
+        await scraper.close()

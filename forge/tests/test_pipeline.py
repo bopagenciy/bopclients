@@ -346,3 +346,41 @@ class TestIndustryWhitelist:
     def test_key_categories_present(self):
         for cat in ["dentist", "lawyer", "plumber", "restaurant", "salon"]:
             assert cat in INDUSTRY_WHITELIST
+
+
+# ---------------------------------------------------------------------------
+# Tests: partial_timeout handling in pipeline
+# ---------------------------------------------------------------------------
+
+
+class TestPartialTimeoutPipeline:
+    @patch("forge.enrichment.pipeline.AsyncWebScraper")
+    def test_pipeline_persists_partial_timeout_data(self, mock_scraper_cls):
+        mock_scraper_cls.return_value = MockScraper()
+        db = MockDB()
+        pipeline = EnrichmentPipeline(db_pool=db)
+
+        url_biz_map = {
+            "https://partial.com": {"id": "biz-partial-123", "website_url": "https://partial.com"}
+        }
+        partial_result = {
+            "url": "https://partial.com",
+            "status": "partial_timeout",
+            "emails": ["found_before_timeout@partial.com"],
+            "tech_stack": ["wordpress"],
+            "cms_detected": "wordpress",
+            "ssl_valid": True,
+            "site_speed_ms": 250,
+            "error": "Prospect scrape timed out after 15.0s",
+        }
+
+        biz_id, updates, is_failure = pipeline._process_scrape_result(partial_result, url_biz_map)
+
+        assert biz_id == "biz-partial-123"
+        assert is_failure is False
+        assert updates is not None
+        assert updates["email"] == "found_before_timeout@partial.com"
+        assert "wordpress" in updates["tech_stack"]
+        assert updates["cms_detected"] == "wordpress"
+        assert updates["ssl_valid"] is True
+        assert updates["site_speed_ms"] == 250

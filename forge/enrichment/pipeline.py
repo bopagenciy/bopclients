@@ -223,7 +223,7 @@ class EnrichmentPipeline:
             return None, None, False
 
         status = result.get("status", "unknown")
-        if status not in ("ok", "ok_no_ssl"):
+        if status not in ("ok", "ok_no_ssl", "partial_timeout"):
             logger.info("Scrape failed for %s: %s", url[:80], status)
             return matched_biz["id"], None, True
 

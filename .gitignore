@@ -13,3 +13,11 @@ data/
 *.checkpoint
 *.checkpoint.txt
 *.db
+/.venv/
+/venv/
+/enriched.csv
+/leads.csv
+/miami_dentists.csv
+/miami_dentists_sample.csv
+/validation_miami_dentists.csv
+/validation_miami_dentists_enriched.csv

@@ -153,3 +153,77 @@ class TestConstants:
     def test_overture_error_is_exception(self):
         with pytest.raises(OvertureDiscoveryError):
             raise OvertureDiscoveryError("test error")
+
+
+# ---------------------------------------------------------------------------
+# Tests: Overture release & SQL query generation
+# ---------------------------------------------------------------------------
+
+
+class TestOvertureHardening:
+    def test_get_overture_places_path_default(self, monkeypatch):
+        monkeypatch.delenv("FORGE_OVERTURE_RELEASE", raising=False)
+        monkeypatch.delenv("OVERTURE_RELEASE", raising=False)
+        from forge.discovery.overture import get_overture_places_path
+        path = get_overture_places_path()
+        assert "2026-08-19.0" in path
+
+    def test_get_overture_places_path_env_override(self, monkeypatch):
+        monkeypatch.setenv("FORGE_OVERTURE_RELEASE", "2025-12-01.0")
+        from forge.discovery.overture import get_overture_places_path
+        path = get_overture_places_path()
+        assert "2025-12-01.0" in path
+
+    def test_format_results_populates_website_and_website_url(self):
+        from forge.discovery.overture import OvertureDiscovery
+        rows = [
+            ("id1", "Dental Clinic", "123 Main", "Miami", "FL", "33101", 25.7, -80.2, "555-1234", "https://dental.com", "dentist")
+        ]
+        cols = ["overture_id", "name", "address", "city", "state", "zip", "lat", "lon", "phone", "website_url", "category"]
+        res = OvertureDiscovery._format_results(rows, cols)
+        assert len(res) == 1
+        assert res[0]["website_url"] == "https://dental.com"
+        assert res[0]["website"] == "https://dental.com"
+        assert res[0]["forge_industry"] == "healthcare"
+
+    def test_build_overture_sql_uses_bbox(self):
+        from forge.discovery.overture import OvertureDiscovery
+        sql = OvertureDiscovery._build_overture_sql(
+            self=None,
+            min_lat=25.0,
+            max_lat=26.0,
+            min_lon=-80.5,
+            max_lon=-79.5,
+            industry="dentist",
+            limit=100,
+        )
+        assert "bbox.xmin <=" in sql
+        assert "bbox.ymax >=" in sql
+        assert "website_url" in sql
+
+    def test_detect_category_sql_legacy_schema(self):
+        from forge.discovery.overture import OvertureDiscovery
+        cols = {"categories", "bbox", "geometry"}
+        select_expr, filter_clause = OvertureDiscovery._detect_category_sql(cols, "restaurant")
+        assert "categories.primary" in select_expr
+        assert "categories.primary IN" in filter_clause
+        assert "taxonomy" not in select_expr
+
+    def test_detect_category_sql_new_schema_without_categories(self):
+        from forge.discovery.overture import OvertureDiscovery
+        # NEW SCHEMA: taxonomy and basic_category present, but categories physically MISSING
+        cols = {"taxonomy", "basic_category", "bbox", "geometry"}
+        select_expr, filter_clause = OvertureDiscovery._detect_category_sql(cols, "restaurant")
+        assert "taxonomy.primary" in select_expr
+        assert "taxonomy.primary IN" in filter_clause
+        assert "categories" not in select_expr
+        assert "categories" not in filter_clause
+
+    def test_detect_category_sql_fallback_basic_category(self):
+        from forge.discovery.overture import OvertureDiscovery
+        cols = {"basic_category", "bbox", "geometry"}
+        select_expr, filter_clause = OvertureDiscovery._detect_category_sql(cols, "restaurant")
+        assert select_expr == "basic_category AS category"
+        assert "basic_category IN" in filter_clause
+        assert "categories" not in filter_clause
+        assert "taxonomy" not in filter_clause
