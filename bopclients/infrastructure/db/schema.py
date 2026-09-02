@@ -323,6 +323,35 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         UNIQUE (organization_id, prospect_id, provider, fingerprint)
     );
     """,
+    # 20. monitoring_schedules (Tenant Owned directly via organization_id)
+    """
+    CREATE TABLE IF NOT EXISTS monitoring_schedules (
+        id VARCHAR(36) PRIMARY KEY,
+        organization_id VARCHAR(36) NOT NULL,
+        prospect_id VARCHAR(36) NOT NULL,
+        campaign_id VARCHAR(36),
+        scope_key VARCHAR(150) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'active',
+        next_check_at VARCHAR(50) NOT NULL,
+        last_check_at VARCHAR(50),
+        last_success_at VARCHAR(50),
+        last_failure_at VARCHAR(50),
+        recommended_interval_days INTEGER NOT NULL DEFAULT 14,
+        provider_names TEXT NOT NULL,
+        operations TEXT NOT NULL,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        last_error TEXT,
+        lease_token VARCHAR(64),
+        lease_expires_at VARCHAR(50),
+        policy_version VARCHAR(20) NOT NULL DEFAULT 'v1.0',
+        source_fingerprint VARCHAR(64) NOT NULL,
+        data TEXT,
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (organization_id, prospect_id) REFERENCES prospects(organization_id, id) ON DELETE CASCADE,
+        UNIQUE (organization_id, scope_key)
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -350,4 +379,7 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_priorities_org_campaign_prospect ON prospect_priorities(organization_id, campaign_id, prospect_id);",
     "CREATE INDEX IF NOT EXISTS idx_observations_org_prospect ON signal_observations(organization_id, prospect_id);",
     "CREATE INDEX IF NOT EXISTS idx_observations_fingerprint ON signal_observations(organization_id, prospect_id, fingerprint);",
+    "CREATE INDEX IF NOT EXISTS idx_schedules_org_due ON monitoring_schedules(organization_id, status, next_check_at);",
+    "CREATE INDEX IF NOT EXISTS idx_schedules_org_prospect ON monitoring_schedules(organization_id, prospect_id);",
+    "CREATE INDEX IF NOT EXISTS idx_schedules_lease ON monitoring_schedules(organization_id, lease_expires_at);",
 ]
