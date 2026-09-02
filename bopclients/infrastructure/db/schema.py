@@ -298,6 +298,31 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         UNIQUE (organization_id, campaign_id, prospect_id)
     );
     """,
+    # 19. signal_observations (Tenant Owned directly via organization_id)
+    """
+    CREATE TABLE IF NOT EXISTS signal_observations (
+        id VARCHAR(36) PRIMARY KEY,
+        organization_id VARCHAR(36) NOT NULL,
+        prospect_id VARCHAR(36) NOT NULL,
+        provider VARCHAR(50) NOT NULL,
+        signal_type VARCHAR(50) NOT NULL,
+        category VARCHAR(50) NOT NULL,
+        intent_strength VARCHAR(20) NOT NULL,
+        source_type VARCHAR(50) NOT NULL,
+        source_url TEXT NOT NULL,
+        external_id VARCHAR(255),
+        confidence REAL NOT NULL DEFAULT 1.0,
+        evidence TEXT,
+        raw_metadata TEXT,
+        fingerprint VARCHAR(64) NOT NULL,
+        published_at VARCHAR(50),
+        first_seen_at VARCHAR(50) NOT NULL,
+        last_seen_at VARCHAR(50) NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (organization_id, prospect_id) REFERENCES prospects(organization_id, id) ON DELETE CASCADE,
+        UNIQUE (organization_id, prospect_id, provider, fingerprint)
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -320,7 +345,9 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org ON research_runs(organization_id);",
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org_campaign ON research_runs(organization_id, campaign_id);",
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org_prospect ON research_runs(organization_id, prospect_id);",
+    "CREATE INDEX IF NOT EXISTS idx_intelligence_org_prospect ON prospect_intelligence(organization_id, prospect_id);",
     "CREATE INDEX IF NOT EXISTS idx_enrichment_results_org_prospect ON enrichment_results(organization_id, prospect_id);",
-    "CREATE INDEX IF NOT EXISTS idx_prospect_intel_org_prospect ON prospect_intelligence(organization_id, prospect_id);",
     "CREATE INDEX IF NOT EXISTS idx_priorities_org_campaign_prospect ON prospect_priorities(organization_id, campaign_id, prospect_id);",
+    "CREATE INDEX IF NOT EXISTS idx_observations_org_prospect ON signal_observations(organization_id, prospect_id);",
+    "CREATE INDEX IF NOT EXISTS idx_observations_fingerprint ON signal_observations(organization_id, prospect_id, fingerprint);",
 ]

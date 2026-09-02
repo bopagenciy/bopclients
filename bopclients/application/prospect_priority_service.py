@@ -86,14 +86,23 @@ class ProspectPriorityService:
         contacts = self.prospect_repo.list_contacts(organization_id, prospect_id)
 
         # 7. Discover new public signals
-        new_signals = self.signal_provider.discover_signals(
+        disc_res = self.signal_provider.discover_signals(
             prospect, existing_signals, enrichment_snap, contacts
         )
+        new_obs = disc_res.observations if hasattr(disc_res, "observations") else (disc_res if isinstance(disc_res, list) else [])
 
         all_signals = list(existing_signals)
-        for sig in new_signals:
-            if not any(s.type == sig.type for s in all_signals):
-                all_signals.append(sig)
+        for obs in new_obs:
+            sig_type = getattr(obs, "signal_type", getattr(obs, "type", ""))
+            if sig_type and not any(s.type == sig_type for s in all_signals):
+                # If observation, convert via activation policy if applicable
+                if hasattr(obs, "fingerprint"):
+                    from bopclients.application.signal_activation_policy import SignalActivationPolicy
+                    ok, sig_obj, _ = SignalActivationPolicy().evaluate_activation(obs)
+                    if ok and sig_obj:
+                        all_signals.append(sig_obj)
+                else:
+                    all_signals.append(obs)
 
         # 8. Fetch latest intelligence (tenant-isolated)
         intelligence = self.intel_repo.get_latest(organization_id, prospect_id)
