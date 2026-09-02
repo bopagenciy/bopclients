@@ -1,4 +1,4 @@
-"""Data Transfer Objects (DTOs) for P9 Continuous Monitoring Orchestration."""
+"""Data Transfer Objects (DTOs) for P9/P10 Continuous Monitoring Orchestration and Worker."""
 
 from dataclasses import dataclass, field
 from typing import Optional, List, Dict, Any
@@ -58,3 +58,4 @@ class MonitoringExecutionResult:
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     next_check_at: Optional[str] = None
+    skip_reason: Optional[str] = None  # NOT_DUE, LEASE_BUSY, SCHEDULE_PAUSED, SCHEDULE_DISABLED, NO_EXECUTABLE_PROVIDER

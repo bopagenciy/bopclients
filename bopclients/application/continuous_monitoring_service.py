@@ -10,6 +10,7 @@ from bopclients.application.monitoring_dto import (
     DueMonitoringWork,
     MonitoringExecutionResult,
 )
+from bopclients.application.lease_heartbeat import LeaseHeartbeat
 from bopclients.application.monitoring_policy import MonitoringPolicy, MonitoringBackoffPolicy
 from bopclients.application.public_signal_monitor_service import PublicSignalMonitorService
 from bopclients.application.prospect_priority_service import ProspectPriorityService
@@ -101,7 +102,7 @@ class ContinuousMonitoringService:
         now_iso = (now_dt or datetime.now(timezone.utc)).isoformat()
 
         if existing:
-            # NO-SLIDING PROTECTION: If fingerprint is unchanged and schedule active, preserve existing next_check_at
+            # NO-SLIDING PROTECTION: If fingerprint is unchanged and schedule active/paused, preserve existing next_check_at
             fingerprint_unchanged = existing.source_fingerprint == decision.source_fingerprint
             if fingerprint_unchanged and existing.status in ("active", "paused"):
                 target_next_check = existing.next_check_at
@@ -251,6 +252,7 @@ class ContinuousMonitoringService:
         # Validation of due status and active schedule status
         if not force:
             if schedule.status != "active":
+                skip_tag = "SCHEDULE_PAUSED" if schedule.status == "paused" else "SCHEDULE_DISABLED"
                 return MonitoringExecutionResult(
                     schedule_id=schedule_id,
                     organization_id=organization_id,
@@ -265,6 +267,7 @@ class ContinuousMonitoringService:
                     operations_failed=[],
                     provider_results={},
                     warnings=[f"Schedule status is '{schedule.status}', not active."],
+                    skip_reason=skip_tag,
                 )
             if schedule.next_check_at > now_iso:
                 return MonitoringExecutionResult(
@@ -281,6 +284,7 @@ class ContinuousMonitoringService:
                     operations_failed=[],
                     provider_results={},
                     warnings=["Schedule is not yet due for execution."],
+                    skip_reason="NOT_DUE",
                 )
         else:
             if schedule.status == "disabled":
@@ -298,6 +302,7 @@ class ContinuousMonitoringService:
                     operations_failed=[],
                     provider_results={},
                     warnings=["Disabled schedule cannot be force run."],
+                    skip_reason="SCHEDULE_DISABLED",
                 )
 
         lease_token = f"lease-{uuid.uuid4().hex}"
@@ -334,7 +339,18 @@ class ContinuousMonitoringService:
                 operations_failed=[],
                 provider_results={},
                 warnings=["Schedule claim failed; already leased by another process or not eligible."],
+                skip_reason="LEASE_BUSY",
             )
+
+        lease_hb = LeaseHeartbeat(
+            schedule_repo=self.schedule_repo,
+            organization_id=organization_id,
+            schedule_id=schedule_id,
+            lease_token=lease_token,
+            lease_duration_seconds=300,
+            renew_before_seconds=90,
+            start_now_dt=now,
+        )
 
         # Create ResearchRun tracking
         rr_id = None
@@ -369,13 +385,14 @@ class ContinuousMonitoringService:
                 prio_before = p_obj.priority_score
 
         try:
-            # 1. Execute executable operation: monitor_public_signals
+            # 1. Execute executable operation: monitor_public_signals with Lease Heartbeat integration
             if "monitor_public_signals" in ex_ops and self.signal_monitor_service:
                 mon_res = self.signal_monitor_service.monitor_prospect(
                     organization_id=organization_id,
                     prospect_id=schedule.prospect_id,
                     provider_names=schedule.provider_names,
                     recompute_priority=False,
+                    heartbeat_callback=lease_hb.heartbeat_if_needed,
                 )
                 prov_results = mon_res.provider_results
                 warnings.extend(mon_res.warnings)
@@ -389,8 +406,8 @@ class ContinuousMonitoringService:
                 elif failed_providers or mon_res.errors:
                     ops_failed.append("monitor_public_signals")
 
-            # 2. Recompute priority after signal monitoring
-            if self.priority_service and schedule.campaign_id:
+            # 2. Recompute priority after signal monitoring if lease ownership still valid
+            if self.priority_service and schedule.campaign_id and not lease_hb.ownership_lost:
                 prio_res = self.priority_service.prioritize_prospect(
                     organization_id=organization_id,
                     campaign_id=schedule.campaign_id,
@@ -421,61 +438,78 @@ class ContinuousMonitoringService:
 
             completed_iso = datetime.now(timezone.utc).isoformat()
 
-            # 5. Update schedule state based on execution status policy
-            if exec_status in ("SUCCESS", "PARTIAL_SUCCESS"):
-                schedule.last_check_at = completed_iso
-                schedule.last_success_at = completed_iso
-                schedule.failure_count = 0
-                schedule.last_error = None
-                schedule.next_check_at = new_decision.next_check_at
-                schedule.source_fingerprint = new_decision.source_fingerprint
-                schedule.data = {
-                    "reasons": new_decision.reasons,
-                    "executable_operations": new_decision.executable_operations,
-                    "recommended_operations": new_decision.recommended_operations,
-                }
-
-            elif exec_status == "FAILED":
-                schedule.last_check_at = completed_iso
-                schedule.last_failure_at = completed_iso
-                schedule.failure_count += 1
-                schedule.last_error = (errors[0] if errors else "Execution failed")[:255]
-                schedule.next_check_at = MonitoringBackoffPolicy.compute_backoff_next_check(schedule.failure_count, now_dt=now)
-
-            else:  # SKIPPED
-                schedule.last_check_at = completed_iso
-                schedule.next_check_at = new_decision.next_check_at
-                schedule.source_fingerprint = new_decision.source_fingerprint
-                schedule.data = {
-                    "reasons": new_decision.reasons,
-                    "executable_operations": new_decision.executable_operations,
-                    "recommended_operations": new_decision.recommended_operations,
-                }
-
-            schedule.updated_at = completed_iso
-
-            # Guarded update ensures stale worker whose lease was reclaimed cannot overwrite state
-            updated = self.schedule_repo.update_schedule_after_execution(
-                organization_id=organization_id,
-                schedule_id=schedule_id,
-                expected_lease_token=lease_token,
-                schedule=schedule,
-            )
-
+            # 5. Update schedule state based on execution status policy IF AND ONLY IF lease ownership was not lost
+            lease_hb.verify_ownership(now)
             persisted_next_check = None
-            if updated:
-                persisted_next_check = schedule.next_check_at
-            else:
+            final_skip_reason = None
+
+            if lease_hb.ownership_lost:
+                exec_status = "SKIPPED"
+                final_skip_reason = "LEASE_OWNERSHIP_LOST"
                 warnings.append("LEASE_OWNERSHIP_LOST: Lease token expired or reclaimed during execution; state update skipped.")
+            else:
+                if exec_status in ("SUCCESS", "PARTIAL_SUCCESS"):
+                    schedule.last_check_at = completed_iso
+                    schedule.last_success_at = completed_iso
+                    schedule.failure_count = 0
+                    schedule.last_error = None
+                    schedule.next_check_at = new_decision.next_check_at
+                    schedule.source_fingerprint = new_decision.source_fingerprint
+                    schedule.data = {
+                        "reasons": new_decision.reasons,
+                        "executable_operations": new_decision.executable_operations,
+                        "recommended_operations": new_decision.recommended_operations,
+                    }
+
+                elif exec_status == "FAILED":
+                    schedule.last_check_at = completed_iso
+                    schedule.last_failure_at = completed_iso
+                    schedule.failure_count += 1
+                    schedule.last_error = (errors[0] if errors else "Execution failed")[:255]
+                    schedule.next_check_at = MonitoringBackoffPolicy.compute_backoff_next_check(schedule.failure_count, now_dt=now)
+
+                else:  # SKIPPED
+                    schedule.last_check_at = completed_iso
+                    schedule.next_check_at = new_decision.next_check_at
+                    schedule.source_fingerprint = new_decision.source_fingerprint
+                    schedule.data = {
+                        "reasons": new_decision.reasons,
+                        "executable_operations": new_decision.executable_operations,
+                        "recommended_operations": new_decision.recommended_operations,
+                    }
+                    final_skip_reason = "NO_EXECUTABLE_PROVIDER"
+
+                schedule.updated_at = completed_iso
+
+                # Guarded update ensures stale worker whose lease was reclaimed cannot overwrite state
+                updated = self.schedule_repo.update_schedule_after_execution(
+                    organization_id=organization_id,
+                    schedule_id=schedule_id,
+                    expected_lease_token=lease_token,
+                    schedule=schedule,
+                )
+
+                if updated:
+                    persisted_next_check = schedule.next_check_at
+                else:
+                    exec_status = "SKIPPED"
+                    final_skip_reason = "LEASE_OWNERSHIP_LOST"
+                    warnings.append("LEASE_OWNERSHIP_LOST: Lease token expired or reclaimed during execution; state update skipped.")
 
             # Update ResearchRun tracking if present
             if self.research_run_repo and rr_id:
-                rr_status = "completed" if exec_status in ("SUCCESS", "PARTIAL_SUCCESS", "SKIPPED") else "failed"
+                if lease_hb.ownership_lost or final_skip_reason == "LEASE_OWNERSHIP_LOST":
+                    rr_status = "failed"
+                    rr_err = "LEASE_OWNERSHIP_LOST: Lease token expired or reclaimed during execution"
+                else:
+                    rr_status = "completed" if exec_status in ("SUCCESS", "PARTIAL_SUCCESS", "SKIPPED") else "failed"
+                    rr_err = schedule.last_error
+
                 self.research_run_repo.update_status(
                     organization_id,
                     rr_id,
                     status=rr_status,
-                    error_message=schedule.last_error,
+                    error_message=rr_err,
                 )
 
             return MonitoringExecutionResult(
@@ -495,7 +529,8 @@ class ContinuousMonitoringService:
                 priority_after=prio_after,
                 warnings=warnings,
                 errors=errors,
-                next_check_at=persisted_next_check,  # SINGLE SOURCE OF TRUTH: exact persisted value
+                next_check_at=persisted_next_check,
+                skip_reason=final_skip_reason,
             )
 
         finally:

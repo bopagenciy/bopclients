@@ -1,7 +1,7 @@
 """Service orchestrating public signal monitoring across multiple providers with registry routing, semantic event corroboration & failure isolation."""
 
 from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Callable
 from bopclients.domain.prospect import Prospect
 from bopclients.domain.signal_observation import PublicSignalObservation
 from bopclients.domain.research_run import ResearchRun
@@ -60,6 +60,7 @@ class PublicSignalMonitorService:
         provider_names: Optional[List[str]] = None,
         context: Optional[Dict[str, Any]] = None,
         recompute_priority: bool = False,
+        heartbeat_callback: Optional[Callable[[], bool]] = None,
     ) -> ProspectSignalMonitorResult:
         """Monitor public signals for a single prospect with multi-provider routing, semantic event deduplication & failure isolation."""
         prospect = self.prospect_repo.get_prospect_by_id(organization_id, prospect_id)
@@ -83,8 +84,12 @@ class PublicSignalMonitorService:
 
         all_observations: List[PublicSignalObservation] = []
 
-        # 1. Execute Signal Discovery per Provider with Standardized Statuses
+        # 1. Execute Signal Discovery per Provider with Standardized Statuses & Lease Heartbeat Check
         for prov in active_providers:
+            if heartbeat_callback and not heartbeat_callback():
+                result.warnings.append("LEASE_OWNERSHIP_LOST: Lease token ownership lost during monitoring execution; stopping provider scan.")
+                break
+
             prov_name = prov.provider_name
             caps = prov.capabilities
 

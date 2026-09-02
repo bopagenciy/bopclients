@@ -9,7 +9,7 @@ from bopclients.infrastructure.repositories.base_repository import BaseTenantRep
 
 
 class MonitoringScheduleRepository(BaseTenantRepository):
-    """Repository managing tenant-safe monitoring_schedules table operations."""
+    """Repository managing monitoring_schedules table persistence for tenant operations and internal system workers."""
 
     def save(self, organization_id: str, schedule: MonitoringSchedule) -> MonitoringSchedule:
         """Save or update a monitoring schedule entity with strict tenant ownership validation."""
@@ -172,6 +172,28 @@ class MonitoringScheduleRepository(BaseTenantRepository):
             rows = rows[:limit]
         return [self._map_row_to_entity(r) for r in rows]
 
+    def list_due_system(
+        self, now_iso: Optional[str] = None, limit: Optional[int] = None
+    ) -> List[MonitoringSchedule]:
+        """System-scoped infrastructure query fetching due active schedules across ALL organizations.
+
+        INTERNAL WORKER PRIVILEGED API ONLY. Do NOT expose to client-facing endpoints or tenant controllers.
+        """
+        p = self._placeholder()
+        ref_iso = now_iso or datetime.now(timezone.utc).isoformat()
+
+        query = f"""
+            SELECT * FROM monitoring_schedules
+            WHERE status = 'active'
+              AND next_check_at <= {p}
+              AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
+            ORDER BY next_check_at ASC, organization_id ASC, prospect_id ASC, id ASC
+        """
+        rows = self.db.fetch_dicts(query, (ref_iso, ref_iso))
+        if limit:
+            rows = rows[:limit]
+        return [self._map_row_to_entity(r) for r in rows]
+
     def claim_due_work(
         self,
         organization_id: str,
@@ -188,7 +210,6 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         now_iso_str = ref_dt.isoformat()
         lease_expires_iso = (ref_dt + timedelta(seconds=lease_duration_seconds)).isoformat()
 
-        # Atomic guard enforces organization_id, status='active', next_check_at <= now, and lease availability
         check_sql = f"""
             SELECT id FROM monitoring_schedules
             WHERE organization_id = {p} AND id = {p} AND status = 'active'
@@ -226,7 +247,6 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         now_iso_str = ref_dt.isoformat()
         lease_expires_iso = (ref_dt + timedelta(seconds=lease_duration_seconds)).isoformat()
 
-        # Atomic guard enforces status IN ('active', 'paused') and lease availability
         check_sql = f"""
             SELECT id FROM monitoring_schedules
             WHERE organization_id = {p} AND id = {p} AND status IN ('active', 'paused')
@@ -246,6 +266,38 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         self.db.execute(update_sql, (lease_token, lease_expires_iso, now_iso_str, organization_id, schedule_id))
         self.db.commit()
         return True
+
+    def renew_lease(
+        self,
+        organization_id: str,
+        schedule_id: str,
+        lease_token: str,
+        lease_duration_seconds: int = 300,
+        now_iso: Optional[str] = None,
+    ) -> bool:
+        """Extend lease duration for an active execution IF AND ONLY IF lease_token ownership matches."""
+        organization_id = self._validate_tenant(organization_id)
+        p = self._placeholder()
+
+        if not lease_token:
+            return False
+
+        ref_dt = datetime.fromisoformat(now_iso.replace("Z", "+00:00")) if now_iso else datetime.now(timezone.utc)
+        now_iso_str = ref_dt.isoformat()
+        new_expires_iso = (ref_dt + timedelta(seconds=lease_duration_seconds)).isoformat()
+
+        query = f"""
+            UPDATE monitoring_schedules
+            SET lease_expires_at = {p}, updated_at = {p}
+            WHERE organization_id = {p} AND id = {p} AND lease_token = {p}
+        """
+        self.db.execute(query, (new_expires_iso, now_iso_str, organization_id, schedule_id, lease_token))
+        self.db.commit()
+
+        # Verify update matched
+        verify_sql = f"SELECT id FROM monitoring_schedules WHERE organization_id = {p} AND id = {p} AND lease_token = {p}"
+        rows = self.db.fetch_dicts(verify_sql, (organization_id, schedule_id, lease_token))
+        return len(rows) > 0
 
     def release_lease(self, organization_id: str, schedule_id: str, lease_token: str) -> bool:
         """Release lease token enforcing lease_token ownership matching."""
