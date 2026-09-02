@@ -377,6 +377,27 @@ class ProspectRepository(BaseTenantRepository, IProspectRepository):
         org_id = self._validate_tenant(org_id)
         source.organization_id = org_id
         p = self._placeholder()
+
+        # Check existing provenance source to avoid duplicate identical rows
+        if source.external_id:
+            check_sql = f"""
+            SELECT * FROM prospect_sources
+            WHERE organization_id = {p} AND prospect_id = {p} AND source_type = {p} AND external_id = {p}
+            LIMIT 1
+            """
+            rows = self.db.fetch_dicts(check_sql, (org_id, source.prospect_id, source.source_type, source.external_id))
+            if rows:
+                r = rows[0]
+                return ProspectSource(
+                    id=r["id"],
+                    organization_id=r["organization_id"],
+                    prospect_id=r["prospect_id"],
+                    source_type=r["source_type"],
+                    source_url=r.get("source_url"),
+                    external_id=r.get("external_id"),
+                    collected_at=r["collected_at"],
+                )
+
         sql = f"""
         INSERT INTO prospect_sources (id, organization_id, prospect_id, source_type, source_url, external_id, collected_at)
         VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p})
