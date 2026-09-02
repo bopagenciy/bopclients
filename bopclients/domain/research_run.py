@@ -14,7 +14,9 @@ class ResearchRun:
     organization_id: str = ""
     campaign_id: Optional[str] = None
     prospect_id: Optional[str] = None
-    run_type: str = "discovery"  # e.g., "discovery", "enrichment", "website_audit", "social_research", "intent_research"
+    monitoring_schedule_id: Optional[str] = None
+    execution_attempt_id: Optional[str] = None
+    run_type: str = "discovery"  # e.g., "discovery", "enrichment", "website_audit", "social_research", "intent_research", "signal_monitoring"
     status: str = "pending"  # e.g., "pending", "running", "completed", "failed", "cancelled"
     started_at: Optional[str] = None
     completed_at: Optional[str] = None

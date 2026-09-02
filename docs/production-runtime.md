@@ -123,3 +123,15 @@ Log fields include `timestamp`, `log_level`, `worker_run_id`, `schedule_id`, `or
 
 - **Auto-Executable Operations**: `monitor_public_signals` ONLY.
 - **Prohibited Operations**: Cero autonomous outreach, cero email/WhatsApp/SMS messaging, cero automatic Gemini research.
+
+---
+
+## 11. Worker Crash Recovery
+
+When a worker process experiences an abrupt termination (such as an OS crash, container SIGKILL, or OOM kill) mid-execution:
+
+- **Automatic Reconciliation**: On worker startup, `ResearchRunRecoveryService` scans for orphan `ResearchRun` entities in `status = 'running'` started prior to the stale threshold (`RESEARCH_RUN_STALE_AFTER_SECONDS`, default 900s / 15m).
+- **Lease-Aware Attempt Correlation**: The recovery service inspects the matching `monitoring_schedules` row. If an active non-expired lease exists **for a newer attempt** (`current_execution_attempt_id != candidate.execution_attempt_id`), candidate Attempt A is safely reconciled to `failed` (`WORKER_EXECUTION_LOST`) while newer Attempt B continues executing untouched.
+- **No Schedule Penalty**: Reconciling an orphan run **does NOT increment `schedule.failure_count`**, apply backoff, or alter schedule priority/`next_check_at`. The schedule remains due for normal re-attempt.
+- **Idempotent Provider Deduplication**: Re-execution of provider scans during worker retry may re-invoke external API calls, but persisted `SignalObservation` entities are deduplicated by `semantic_event_key`.
+- **Side-Effect Boundary**: There is no distributed exactly-once guarantee for external HTTP provider calls; in-flight external API calls prior to a crash cannot be cancelled externally.

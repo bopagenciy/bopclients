@@ -42,6 +42,11 @@ class RuntimeSettings:
     lease_duration_seconds: int = 300
     lease_renew_before_seconds: int = 90
 
+    # Operational Recovery configuration
+    research_run_recovery_enabled: bool = True
+    research_run_stale_after_seconds: int = 900
+    research_run_recovery_limit: int = 100
+
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
         """Factory instantiating RuntimeSettings from environment variables."""
@@ -61,6 +66,10 @@ class RuntimeSettings:
         lease_dur = int(os.environ.get("MONITORING_LEASE_DURATION_SECONDS", "300"))
         renew_bef = int(os.environ.get("MONITORING_LEASE_RENEW_BEFORE_SECONDS", "90"))
 
+        rec_enabled = os.environ.get("RESEARCH_RUN_RECOVERY_ENABLED", "true").strip().lower() in ("true", "1", "yes")
+        stale_sec = int(os.environ.get("RESEARCH_RUN_STALE_AFTER_SECONDS", "900"))
+        rec_lim = int(os.environ.get("RESEARCH_RUN_RECOVERY_LIMIT", "100"))
+
         return cls(
             environment=env,
             database_url=db_url,
@@ -73,6 +82,9 @@ class RuntimeSettings:
             worker_max_seconds=max_sec,
             lease_duration_seconds=lease_dur,
             lease_renew_before_seconds=renew_bef,
+            research_run_recovery_enabled=rec_enabled,
+            research_run_stale_after_seconds=stale_sec,
+            research_run_recovery_limit=rec_lim,
         )
 
     def validate(self):
@@ -83,6 +95,8 @@ class RuntimeSettings:
             raise ValueError("Lease duration and renew before seconds must be > 0.")
         if self.lease_renew_before_seconds >= self.lease_duration_seconds:
             raise ValueError("lease_renew_before_seconds must be strictly less than lease_duration_seconds.")
+        if self.research_run_stale_after_seconds <= self.lease_duration_seconds:
+            raise ValueError("research_run_stale_after_seconds must be strictly greater than lease_duration_seconds.")
 
         # Database scheme validation
         db_lower = (self.database_url or "").strip().lower()

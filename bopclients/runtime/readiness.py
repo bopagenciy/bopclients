@@ -64,6 +64,7 @@ class RuntimeReadinessCheck:
         "idx_schedules_org_due",
         "idx_schedules_org_prospect",
         "idx_schedules_lease",
+        "idx_research_runs_stale",
     ]
 
     @classmethod

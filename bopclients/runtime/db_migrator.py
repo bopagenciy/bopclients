@@ -14,7 +14,7 @@ logger = logging.getLogger("bopclients.runtime.migrator")
 class DatabaseMigrator:
     """Manager handling database schema versioning and migration execution."""
 
-    EXPECTED_VERSION = "20260902_002"
+    EXPECTED_VERSION = "20260902_004"
 
     @classmethod
     def ensure_version_table(cls, db: Union[ForgeDB, BopDBConnection]):
@@ -73,6 +73,39 @@ class DatabaseMigrator:
         }
 
     @classmethod
+    def _apply_003_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool):
+        """Apply migration 20260902_003 column additions to existing research_runs table."""
+        if is_pg:
+            db.execute("ALTER TABLE research_runs ADD COLUMN IF NOT EXISTS monitoring_schedule_id VARCHAR(36);")
+            db.execute("ALTER TABLE research_runs ADD COLUMN IF NOT EXISTS execution_attempt_id VARCHAR(36);")
+        else:
+            try:
+                cols = db.fetch_dicts("PRAGMA table_info(research_runs)")
+                col_names = [c["name"] for c in cols]
+                if "monitoring_schedule_id" not in col_names:
+                    db.execute("ALTER TABLE research_runs ADD COLUMN monitoring_schedule_id VARCHAR(36);")
+                if "execution_attempt_id" not in col_names:
+                    db.execute("ALTER TABLE research_runs ADD COLUMN execution_attempt_id VARCHAR(36);")
+            except Exception as ex:
+                logger.warning(f"Error applying 003 columns to SQLite research_runs: {ex}")
+        db.commit()
+
+    @classmethod
+    def _apply_004_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool):
+        """Apply migration 20260902_004 column addition current_execution_attempt_id to monitoring_schedules table."""
+        if is_pg:
+            db.execute("ALTER TABLE monitoring_schedules ADD COLUMN IF NOT EXISTS current_execution_attempt_id VARCHAR(36);")
+        else:
+            try:
+                cols = db.fetch_dicts("PRAGMA table_info(monitoring_schedules)")
+                col_names = [c["name"] for c in cols]
+                if "current_execution_attempt_id" not in col_names:
+                    db.execute("ALTER TABLE monitoring_schedules ADD COLUMN current_execution_attempt_id VARCHAR(36);")
+            except Exception as ex:
+                logger.warning(f"Error applying 004 column to SQLite monitoring_schedules: {ex}")
+        db.commit()
+
+    @classmethod
     def migrate(cls, db: Union[ForgeDB, BopDBConnection]) -> str:
         """Run idempotent schema migration and record schema version.
         
@@ -95,7 +128,13 @@ class DatabaseMigrator:
             else:
                 run_p1_migrations(db.forge_db)
 
-        # 2. Ensure version table and insert expected version idempotently
+        # 2. Apply 003 upgrades (monitoring_schedule_id, execution_attempt_id)
+        cls._apply_003_upgrades(db, is_pg)
+
+        # 3. Apply 004 upgrades (current_execution_attempt_id on monitoring_schedules)
+        cls._apply_004_upgrades(db, is_pg)
+
+        # 4. Ensure version table and insert expected version idempotently
         cls.ensure_version_table(db)
         now_iso = datetime.now(timezone.utc).isoformat()
         p = "%s" if is_pg else "?"

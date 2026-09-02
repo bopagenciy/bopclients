@@ -1,6 +1,6 @@
 """Database repository for ResearchRun execution tracking (Tenant Isolated)."""
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from bopclients.domain.research_run import ResearchRun
 from bopclients.domain.exceptions import TenantAccessError
 from bopclients.application.interfaces.repositories import IResearchRunRepository
@@ -9,6 +9,23 @@ from bopclients.infrastructure.repositories.base_repository import BaseTenantRep
 
 class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
     """Repository for managing ResearchRun execution tracking with complete tenant isolation."""
+
+    def _row_to_entity(self, r: Dict[str, Any]) -> ResearchRun:
+        return ResearchRun(
+            id=r["id"],
+            organization_id=r["organization_id"],
+            campaign_id=r.get("campaign_id"),
+            prospect_id=r.get("prospect_id"),
+            monitoring_schedule_id=r.get("monitoring_schedule_id"),
+            execution_attempt_id=r.get("execution_attempt_id"),
+            run_type=r["run_type"],
+            status=r.get("status", "pending"),
+            started_at=r.get("started_at"),
+            completed_at=r.get("completed_at"),
+            error_message=r.get("error_message"),
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+        )
 
     def save(self, org_id: str, run: ResearchRun) -> ResearchRun:
         org_id = self._validate_tenant(org_id)
@@ -47,6 +64,8 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
 
             sql = f"""
             UPDATE research_runs SET
+                monitoring_schedule_id = {p},
+                execution_attempt_id = {p},
                 status = {p},
                 started_at = {p},
                 completed_at = {p},
@@ -57,6 +76,8 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
             self.db.execute(
                 sql,
                 (
+                    run.monitoring_schedule_id,
+                    run.execution_attempt_id,
                     run.status,
                     run.started_at,
                     run.completed_at,
@@ -69,9 +90,9 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
         else:
             sql = f"""
             INSERT INTO research_runs (
-                id, organization_id, campaign_id, prospect_id, run_type, status,
-                started_at, completed_at, error_message, created_at, updated_at
-            ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                id, organization_id, campaign_id, prospect_id, monitoring_schedule_id, execution_attempt_id,
+                run_type, status, started_at, completed_at, error_message, created_at, updated_at
+            ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
             """
             self.db.execute(
                 sql,
@@ -80,6 +101,8 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
                     org_id,
                     run.campaign_id,
                     run.prospect_id,
+                    run.monitoring_schedule_id,
+                    run.execution_attempt_id,
                     run.run_type,
                     run.status,
                     run.started_at,
@@ -99,20 +122,7 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
         rows = self.db.fetch_dicts(sql, (org_id, run_id))
         if not rows:
             return None
-        r = rows[0]
-        return ResearchRun(
-            id=r["id"],
-            organization_id=r["organization_id"],
-            campaign_id=r.get("campaign_id"),
-            prospect_id=r.get("prospect_id"),
-            run_type=r["run_type"],
-            status=r.get("status", "pending"),
-            started_at=r.get("started_at"),
-            completed_at=r.get("completed_at"),
-            error_message=r.get("error_message"),
-            created_at=r["created_at"],
-            updated_at=r["updated_at"],
-        )
+        return self._row_to_entity(rows[0])
 
     def update_status(
         self,
@@ -166,19 +176,42 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
         sql = f"SELECT * FROM research_runs WHERE {where_clause} ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}"
 
         rows = self.db.fetch_dicts(sql, tuple(params))
-        return [
-            ResearchRun(
-                id=r["id"],
-                organization_id=r["organization_id"],
-                campaign_id=r.get("campaign_id"),
-                prospect_id=r.get("prospect_id"),
-                run_type=r["run_type"],
-                status=r.get("status", "pending"),
-                started_at=r.get("started_at"),
-                completed_at=r.get("completed_at"),
-                error_message=r.get("error_message"),
-                created_at=r["created_at"],
-                updated_at=r["updated_at"],
-            )
-            for r in rows
-        ]
+        return [self._row_to_entity(r) for r in rows]
+
+    def list_stale_running_runs(
+        self,
+        stale_before_iso: str,
+        limit: int = 100,
+    ) -> List[ResearchRun]:
+        """Fetch running ResearchRuns started on or before stale_before_iso across all organizations (System Scoped)."""
+        p = self._placeholder()
+        sql = f"""
+            SELECT * FROM research_runs
+            WHERE status = 'running' AND started_at IS NOT NULL AND started_at <= {p}
+            ORDER BY started_at ASC, organization_id ASC, id ASC
+            LIMIT {limit}
+        """
+        rows = self.db.fetch_dicts(sql, (stale_before_iso,))
+        return [self._row_to_entity(r) for r in rows]
+
+    def mark_stale_run_failed(
+        self,
+        org_id: str,
+        run_id: str,
+        error_message: str,
+        completed_at_iso: str,
+    ) -> bool:
+        """Atomically mark a running ResearchRun as failed if status is still 'running'."""
+        org_id = self._validate_tenant(org_id)
+        p = self._placeholder()
+        sql = f"""
+            UPDATE research_runs SET
+                status = 'failed',
+                error_message = {p},
+                completed_at = {p},
+                updated_at = {p}
+            WHERE organization_id = {p} AND id = {p} AND status = 'running'
+        """
+        count = self._execute_rowcount(sql, (error_message, completed_at_iso, completed_at_iso, org_id, run_id))
+        self.db.commit()
+        return count > 0

@@ -25,6 +25,7 @@ from bopclients.application.providers.gemini_research_provider import GeminiPros
 
 from bopclients.application.public_signal_monitor_service import PublicSignalMonitorService
 from bopclients.application.continuous_monitoring_service import ContinuousMonitoringService
+from bopclients.application.research_run_recovery_service import ResearchRunRecoveryService
 
 from bopclients.worker.monitoring_worker import MonitoringWorker, MonitoringWorkerConfig
 
@@ -54,6 +55,7 @@ class RuntimeContainer:
     provider_registry: PublicSignalProviderRegistry
     signal_monitor_service: PublicSignalMonitorService
     continuous_monitoring_service: ContinuousMonitoringService
+    recovery_service: ResearchRunRecoveryService
     worker: MonitoringWorker
 
 
@@ -118,6 +120,11 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         signal_monitor_service=signal_monitor_service,
     )
 
+    recovery_service = ResearchRunRecoveryService(
+        research_run_repo=research_run_repo,
+        schedule_repo=schedule_repo,
+    )
+
     # Worker Config & Instance
     worker_config = MonitoringWorkerConfig(
         batch_size=settings.worker_batch_size,
@@ -125,11 +132,15 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         max_run_seconds=settings.worker_max_seconds,
         lease_duration_seconds=settings.lease_duration_seconds,
         lease_renew_before_seconds=settings.lease_renew_before_seconds,
+        research_run_recovery_enabled=settings.research_run_recovery_enabled,
+        research_run_stale_after_seconds=settings.research_run_stale_after_seconds,
+        research_run_recovery_limit=settings.research_run_recovery_limit,
     )
 
     worker = MonitoringWorker(
         schedule_repo=schedule_repo,
         monitoring_service=continuous_monitoring_service,
+        recovery_service=recovery_service,
         config=worker_config,
     )
 
@@ -148,6 +159,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         provider_registry=registry,
         signal_monitor_service=signal_monitor_service,
         continuous_monitoring_service=continuous_monitoring_service,
+        recovery_service=recovery_service,
         worker=worker,
     )
 

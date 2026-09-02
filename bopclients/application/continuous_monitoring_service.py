@@ -236,7 +236,12 @@ class ContinuousMonitoringService:
             return "SUCCESS"
 
     def execute_due(
-        self, organization_id: str, schedule_id: str, now_dt: Optional[datetime] = None, force: bool = False
+        self,
+        organization_id: str,
+        schedule_id: str,
+        now_dt: Optional[datetime] = None,
+        force: bool = False,
+        execution_attempt_id: Optional[str] = None,
     ) -> MonitoringExecutionResult:
         """Atomically claim and execute due monitoring work for a single schedule."""
         if not organization_id:
@@ -306,6 +311,7 @@ class ContinuousMonitoringService:
                 )
 
         lease_token = f"lease-{uuid.uuid4().hex}"
+        exec_attempt_id = execution_attempt_id or f"attempt-{uuid.uuid4().hex}"
 
         if not force:
             claimed = self.schedule_repo.claim_due_work(
@@ -314,6 +320,7 @@ class ContinuousMonitoringService:
                 lease_token=lease_token,
                 lease_duration_seconds=300,
                 now_iso=now_iso,
+                execution_attempt_id=exec_attempt_id,
             )
         else:
             claimed = self.schedule_repo.claim_force_work(
@@ -322,6 +329,7 @@ class ContinuousMonitoringService:
                 lease_token=lease_token,
                 lease_duration_seconds=300,
                 now_iso=now_iso,
+                execution_attempt_id=exec_attempt_id,
             )
 
         if not claimed:
@@ -359,6 +367,8 @@ class ContinuousMonitoringService:
                 organization_id=organization_id,
                 campaign_id=schedule.campaign_id,
                 prospect_id=schedule.prospect_id,
+                monitoring_schedule_id=schedule.id,
+                execution_attempt_id=exec_attempt_id,
                 run_type="signal_monitoring",
                 status="running",
                 started_at=now_iso,

@@ -45,6 +45,7 @@ class MonitoringScheduleRepository(BaseTenantRepository):
                     last_error = {p},
                     lease_token = {p},
                     lease_expires_at = {p},
+                    current_execution_attempt_id = {p},
                     policy_version = {p},
                     source_fingerprint = {p},
                     data = {p},
@@ -66,6 +67,7 @@ class MonitoringScheduleRepository(BaseTenantRepository):
                     schedule.last_error,
                     schedule.lease_token,
                     schedule.lease_expires_at,
+                    schedule.current_execution_attempt_id,
                     schedule.policy_version,
                     schedule.source_fingerprint,
                     json.dumps(schedule.data or {}),
@@ -82,9 +84,9 @@ class MonitoringScheduleRepository(BaseTenantRepository):
                     id, organization_id, prospect_id, campaign_id, scope_key, status,
                     next_check_at, last_check_at, last_success_at, last_failure_at,
                     recommended_interval_days, provider_names, operations, failure_count,
-                    last_error, lease_token, lease_expires_at, policy_version,
+                    last_error, lease_token, lease_expires_at, current_execution_attempt_id, policy_version,
                     source_fingerprint, data, created_at, updated_at
-                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+                ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
             """
             self.db.execute(
                 insert_sql,
@@ -106,6 +108,7 @@ class MonitoringScheduleRepository(BaseTenantRepository):
                     schedule.last_error,
                     schedule.lease_token,
                     schedule.lease_expires_at,
+                    schedule.current_execution_attempt_id,
                     schedule.policy_version,
                     schedule.source_fingerprint,
                     json.dumps(schedule.data or {}),
@@ -201,8 +204,9 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         lease_token: str,
         lease_duration_seconds: int = 300,
         now_iso: Optional[str] = None,
+        execution_attempt_id: Optional[str] = None,
     ) -> bool:
-        """Atomic claim/lease of a due active schedule enforcing next_check_at <= now_iso at update time."""
+        """Atomic claim/lease of a due active schedule setting lease_token, lease_expires_at, and current_execution_attempt_id in a single UPDATE."""
         organization_id = self._validate_tenant(organization_id)
         p = self._placeholder()
 
@@ -214,12 +218,16 @@ class MonitoringScheduleRepository(BaseTenantRepository):
             UPDATE monitoring_schedules
             SET lease_token = {p},
                 lease_expires_at = {p},
+                current_execution_attempt_id = {p},
                 updated_at = {p}
             WHERE organization_id = {p} AND id = {p} AND status = 'active'
               AND next_check_at <= {p}
               AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
         """
-        count = self._execute_rowcount(update_sql, (lease_token, lease_expires_iso, now_iso_str, organization_id, schedule_id, now_iso_str, now_iso_str))
+        count = self._execute_rowcount(
+            update_sql,
+            (lease_token, lease_expires_iso, execution_attempt_id, now_iso_str, organization_id, schedule_id, now_iso_str, now_iso_str),
+        )
         self.db.commit()
         return count > 0
 
@@ -230,8 +238,9 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         lease_token: str,
         lease_duration_seconds: int = 300,
         now_iso: Optional[str] = None,
+        execution_attempt_id: Optional[str] = None,
     ) -> bool:
-        """Atomic claim/lease for explicit force_monitor allowing active or paused status, but strictly rejecting disabled."""
+        """Atomic claim/lease for explicit force_monitor setting lease_token, lease_expires_at, and current_execution_attempt_id in a single UPDATE."""
         organization_id = self._validate_tenant(organization_id)
         p = self._placeholder()
 
@@ -243,11 +252,15 @@ class MonitoringScheduleRepository(BaseTenantRepository):
             UPDATE monitoring_schedules
             SET lease_token = {p},
                 lease_expires_at = {p},
+                current_execution_attempt_id = {p},
                 updated_at = {p}
             WHERE organization_id = {p} AND id = {p} AND status IN ('active', 'paused')
               AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
         """
-        count = self._execute_rowcount(update_sql, (lease_token, lease_expires_iso, now_iso_str, organization_id, schedule_id, now_iso_str))
+        count = self._execute_rowcount(
+            update_sql,
+            (lease_token, lease_expires_iso, execution_attempt_id, now_iso_str, organization_id, schedule_id, now_iso_str),
+        )
         self.db.commit()
         return count > 0
 
@@ -279,8 +292,14 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         self.db.commit()
         return count > 0
 
-    def release_lease(self, organization_id: str, schedule_id: str, lease_token: str) -> bool:
-        """Release lease token enforcing lease_token ownership matching."""
+    def release_lease(
+        self,
+        organization_id: str,
+        schedule_id: str,
+        lease_token: str,
+        execution_attempt_id: Optional[str] = None,
+    ) -> bool:
+        """Release lease token enforcing lease_token ownership matching and ensuring stale owner attempt ID does not clear newer owner."""
         organization_id = self._validate_tenant(organization_id)
         p = self._placeholder()
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -288,12 +307,22 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         if not lease_token:
             return False
 
-        query = f"""
-            UPDATE monitoring_schedules
-            SET lease_token = NULL, lease_expires_at = NULL, updated_at = {p}
-            WHERE organization_id = {p} AND id = {p} AND lease_token = {p}
-        """
-        count = self._execute_rowcount(query, (now_iso, organization_id, schedule_id, lease_token))
+        if execution_attempt_id:
+            query = f"""
+                UPDATE monitoring_schedules
+                SET lease_token = NULL, lease_expires_at = NULL, current_execution_attempt_id = NULL, updated_at = {p}
+                WHERE organization_id = {p} AND id = {p} AND lease_token = {p}
+                  AND (current_execution_attempt_id IS NULL OR current_execution_attempt_id = {p})
+            """
+            count = self._execute_rowcount(query, (now_iso, organization_id, schedule_id, lease_token, execution_attempt_id))
+        else:
+            query = f"""
+                UPDATE monitoring_schedules
+                SET lease_token = NULL, lease_expires_at = NULL, current_execution_attempt_id = NULL, updated_at = {p}
+                WHERE organization_id = {p} AND id = {p} AND lease_token = {p}
+            """
+            count = self._execute_rowcount(query, (now_iso, organization_id, schedule_id, lease_token))
+
         self.db.commit()
         return count > 0
 
@@ -323,6 +352,7 @@ class MonitoringScheduleRepository(BaseTenantRepository):
                 last_error = {p},
                 lease_token = NULL,
                 lease_expires_at = NULL,
+                current_execution_attempt_id = NULL,
                 policy_version = {p},
                 source_fingerprint = {p},
                 data = {p},
@@ -399,6 +429,7 @@ class MonitoringScheduleRepository(BaseTenantRepository):
             last_error=d.get("last_error"),
             lease_token=d.get("lease_token"),
             lease_expires_at=d.get("lease_expires_at"),
+            current_execution_attempt_id=d.get("current_execution_attempt_id"),
             policy_version=d.get("policy_version", "v1.0"),
             source_fingerprint=d.get("source_fingerprint", ""),
             data=json.loads(d.get("data") or "{}"),

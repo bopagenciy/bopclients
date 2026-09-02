@@ -23,6 +23,9 @@ class MonitoringWorkerConfig:
     max_run_seconds: int = 600
     lease_duration_seconds: int = 300
     lease_renew_before_seconds: int = 90
+    research_run_recovery_enabled: bool = True
+    research_run_stale_after_seconds: int = 900
+    research_run_recovery_limit: int = 100
     dry_run: bool = False
 
     def validate(self):
@@ -38,6 +41,10 @@ class MonitoringWorkerConfig:
             raise ValueError("lease_renew_before_seconds must be greater than 0.")
         if self.lease_renew_before_seconds >= self.lease_duration_seconds:
             raise ValueError("lease_renew_before_seconds must be strictly less than lease_duration_seconds.")
+        if self.research_run_stale_after_seconds <= 0:
+            raise ValueError("research_run_stale_after_seconds must be greater than 0.")
+        if self.research_run_recovery_limit <= 0:
+            raise ValueError("research_run_recovery_limit must be greater than 0.")
 
 
 @dataclass
@@ -78,6 +85,7 @@ class MonitoringWorkerRunResult:
     organization_count: int
     stopped_reason: str  # NO_DUE_WORK, MAX_ITEMS_REACHED, MAX_DURATION_REACHED, DRY_RUN, STOP_REQUESTED, FATAL_ERROR
     item_results: List[MonitoringWorkerItemResult] = field(default_factory=list)
+    recovery_result: Optional[Any] = None
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -90,10 +98,12 @@ class MonitoringWorker:
         schedule_repo: MonitoringScheduleRepository,
         monitoring_service: ContinuousMonitoringService,
         config: Optional[MonitoringWorkerConfig] = None,
+        recovery_service: Optional[Any] = None,
     ):
         self.schedule_repo = schedule_repo
         self.monitoring_service = monitoring_service
         self.config = config or MonitoringWorkerConfig()
+        self.recovery_service = recovery_service
         self.config.validate()
         self.stop_requested = False
 
@@ -129,6 +139,18 @@ class MonitoringWorker:
         lease_busy_count = 0
 
         stopped_reason = "NO_DUE_WORK"
+
+        # RECOVERY PASS (If enabled and not dry-run)
+        recovery_result = None
+        if self.recovery_service and self.config.research_run_recovery_enabled and not self.config.dry_run:
+            try:
+                recovery_result = self.recovery_service.reconcile_stale_runs(
+                    now_dt=start_time,
+                    stale_after_seconds=self.config.research_run_stale_after_seconds,
+                    limit=self.config.research_run_recovery_limit,
+                )
+            except Exception as ex:
+                logger.warning(f"Error during worker startup recovery pass: {ex}")
 
         # DRY RUN MODE
         if self.config.dry_run:
@@ -224,11 +246,20 @@ class MonitoringWorker:
                     item_start_iso = item_start.isoformat()
 
                     try:
-                        exec_res = self.monitoring_service.execute_due(
-                            organization_id=s.organization_id,
-                            schedule_id=s.id,
-                            now_dt=item_start,
-                        )
+                        exec_attempt_id = str(uuid.uuid4())
+                        try:
+                            exec_res = self.monitoring_service.execute_due(
+                                organization_id=s.organization_id,
+                                schedule_id=s.id,
+                                now_dt=item_start,
+                                execution_attempt_id=exec_attempt_id,
+                            )
+                        except TypeError:
+                            exec_res = self.monitoring_service.execute_due(
+                                organization_id=s.organization_id,
+                                schedule_id=s.id,
+                                now_dt=item_start,
+                            )
 
                         item_end = datetime.now(timezone.utc)
                         item_dur_ms = (item_end - item_start).total_seconds() * 1000.0
@@ -330,4 +361,5 @@ class MonitoringWorker:
             organization_count=org_count,
             stopped_reason=stopped_reason,
             item_results=item_results,
+            recovery_result=recovery_result,
         )

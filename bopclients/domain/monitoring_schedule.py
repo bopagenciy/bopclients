@@ -28,6 +28,7 @@ class MonitoringSchedule:
     last_error: Optional[str] = None
     lease_token: Optional[str] = None
     lease_expires_at: Optional[str] = None
+    current_execution_attempt_id: Optional[str] = None
     policy_version: str = "v1.0"
     source_fingerprint: str = ""
     data: Dict[str, Any] = field(default_factory=dict)
