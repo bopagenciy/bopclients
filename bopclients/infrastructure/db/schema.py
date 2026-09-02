@@ -260,6 +260,22 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         UNIQUE (organization_id, prospect_id, provider)
     );
     """,
+    # 17. prospect_intelligence (Tenant Owned directly via organization_id)
+    """
+    CREATE TABLE IF NOT EXISTS prospect_intelligence (
+        id VARCHAR(36) PRIMARY KEY,
+        organization_id VARCHAR(36) NOT NULL,
+        prospect_id VARCHAR(36) NOT NULL,
+        provider VARCHAR(50) NOT NULL DEFAULT 'deterministic',
+        research_version VARCHAR(20) NOT NULL DEFAULT 'v1.0',
+        confidence REAL DEFAULT 1.0,
+        data TEXT NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (organization_id, prospect_id) REFERENCES prospects(organization_id, id) ON DELETE CASCADE,
+        UNIQUE (organization_id, prospect_id, provider)
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -283,4 +299,5 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org_campaign ON research_runs(organization_id, campaign_id);",
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org_prospect ON research_runs(organization_id, prospect_id);",
     "CREATE INDEX IF NOT EXISTS idx_enrichment_results_org_prospect ON enrichment_results(organization_id, prospect_id);",
+    "CREATE INDEX IF NOT EXISTS idx_prospect_intel_org_prospect ON prospect_intelligence(organization_id, prospect_id);",
 ]

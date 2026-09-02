@@ -474,3 +474,21 @@ class ProspectRepository(BaseTenantRepository, IProspectRepository):
         )
         self.db.commit()
         return source
+
+    def list_prospect_sources(self, org_id: str, prospect_id: str) -> List[ProspectSource]:
+        org_id = self._validate_tenant(org_id)
+        p = self._placeholder()
+        sql = f"SELECT * FROM prospect_sources WHERE organization_id = {p} AND prospect_id = {p} ORDER BY collected_at DESC"
+        rows = self.db.fetch_dicts(sql, (org_id, prospect_id))
+        return [
+            ProspectSource(
+                id=r["id"],
+                organization_id=r["organization_id"],
+                prospect_id=r["prospect_id"],
+                source_type=r["source_type"],
+                source_url=r.get("source_url"),
+                external_id=r.get("external_id"),
+                collected_at=r["collected_at"],
+            )
+            for r in rows
+        ]

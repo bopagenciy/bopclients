@@ -1,7 +1,7 @@
 """Abstract repository interfaces with tenant isolation contracts."""
 
 from abc import ABC, abstractmethod
-from typing import List, Optional
+from typing import List, Optional, Any
 from bopclients.domain.organization import Organization, OrganizationMember, OrganizationSettings
 from bopclients.domain.user import User
 from bopclients.domain.service import Service
@@ -143,6 +143,9 @@ class IProspectRepository(ABC):
     @abstractmethod
     def add_prospect_source(self, org_id: str, source: ProspectSource) -> ProspectSource: ...
 
+    @abstractmethod
+    def list_prospect_sources(self, org_id: str, prospect_id: str) -> List[ProspectSource]: ...
+
 
 class IResearchRunRepository(ABC):
     """Abstract repository for ResearchRun execution tracking (Tenant Isolated)."""
@@ -185,3 +188,17 @@ class IEnrichmentResultRepository(ABC):
     def get_latest(
         self, org_id: str, prospect_id: str, provider: str = "forge"
     ) -> Optional[EnrichmentResult]: ...
+
+
+class IProspectIntelligenceRepository(ABC):
+    """Abstract repository for latest sales prospect intelligence snapshots (Tenant Isolated)."""
+
+    @abstractmethod
+    def save(
+        self, org_id: str, intelligence: Any
+    ) -> Any: ...
+
+    @abstractmethod
+    def get_latest(
+        self, org_id: str, prospect_id: str, provider: str = "deterministic"
+    ) -> Optional[Any]: ...
