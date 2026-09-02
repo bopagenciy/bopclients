@@ -84,10 +84,13 @@ class RuntimeSettings:
         if self.lease_renew_before_seconds >= self.lease_duration_seconds:
             raise ValueError("lease_renew_before_seconds must be strictly less than lease_duration_seconds.")
 
-        # Database scheme fail-closed validation
+        # Database scheme validation
         db_lower = (self.database_url or "").strip().lower()
         if db_lower.startswith(("postgresql://", "postgres://")):
-            raise ValueError("PostgreSQL runtime backend is not yet validated/supported by this build.")
+            try:
+                import psycopg
+            except ImportError:
+                raise ValueError("PostgreSQL driver 'psycopg' is not installed.")
         if self.environment == AppEnvironment.PRODUCTION and db_lower in (":memory:", "sqlite:///:memory:"):
             raise ValueError("In-memory SQLite database is not persistent and cannot be used in production environment.")
 

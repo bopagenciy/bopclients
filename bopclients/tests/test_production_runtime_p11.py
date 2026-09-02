@@ -52,10 +52,10 @@ class TestRuntimeSettingsP11:
         with pytest.raises(ValueError, match="lease_renew_before_seconds must be strictly less"):
             s2.validate()
 
-    def test_settings_postgresql_backend_fail_closed(self):
-        settings = RuntimeSettings(database_url="postgresql://user:pass@localhost:5432/bopdb")
-        with pytest.raises(ValueError, match="PostgreSQL runtime backend is not yet validated"):
-            settings.validate()
+    def test_settings_unsupported_scheme_fail_closed(self):
+        from bopclients.infrastructure.db.connection import create_database_connection
+        with pytest.raises(ValueError, match="Unsupported database URL scheme"):
+            create_database_connection("mysql://user:pass@localhost:3306/bopdb")
 
     def test_settings_in_memory_sqlite_in_production_fail_closed(self):
         settings = RuntimeSettings(environment=AppEnvironment.PRODUCTION, database_url=":memory:")

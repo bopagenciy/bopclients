@@ -171,7 +171,7 @@ class TestLeaseAndClaimP9:
         sched_repo.claim_due_work(org.id, s.id, lease_token="token_b", now_iso="2026-09-02T12:10:00+00:00")
 
         released = sched_repo.release_lease(org.id, s.id, lease_token="token_a")
-        assert released is True
+        assert released is False
 
         updated_s = sched_repo.get_by_id(org.id, s.id)
         assert updated_s.lease_token == "token_b"

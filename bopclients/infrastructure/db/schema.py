@@ -64,7 +64,7 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         name VARCHAR(255) NOT NULL,
         description TEXT,
         category VARCHAR(100) NOT NULL,
-        active BOOLEAN NOT NULL DEFAULT 1,
+        active BOOLEAN NOT NULL DEFAULT true,
         created_at VARCHAR(50) NOT NULL,
         FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
     );

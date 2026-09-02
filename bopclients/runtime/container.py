@@ -2,7 +2,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Any
 
 from bopclients.runtime.settings import RuntimeSettings
 from bopclients.runtime.readiness import RuntimeReadinessCheck, ReadinessStatus
@@ -31,6 +31,8 @@ from bopclients.worker.monitoring_worker import MonitoringWorker, MonitoringWork
 from forge.db import ForgeDB
 from forge.db_schema import _SQLiteBackend
 
+from bopclients.infrastructure.db.connection import create_database_connection, BopDBConnection
+
 logger = logging.getLogger("bopclients.runtime.container")
 
 
@@ -39,7 +41,7 @@ class RuntimeContainer:
     """Dependency container encapsulating configured services and repositories."""
 
     settings: RuntimeSettings
-    db: ForgeDB
+    db: Any
     org_repo: OrganizationRepository
     campaign_repo: CampaignRepository
     prospect_repo: ProspectRepository
@@ -55,12 +57,12 @@ class RuntimeContainer:
     worker: MonitoringWorker
 
 
-def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Optional[ForgeDB] = None) -> RuntimeContainer:
+def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> RuntimeContainer:
     """Build and wire application container for production execution.
     
     Args:
         settings: Optional RuntimeSettings instance (defaults to RuntimeSettings.from_env()).
-        db: Optional pre-configured ForgeDB connection.
+        db: Optional pre-configured DB connection (ForgeDB or BopDBConnection).
     
     Returns:
         Fully wired RuntimeContainer instance.
@@ -69,7 +71,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         settings = RuntimeSettings.from_env()
 
     if not db:
-        db = ForgeDB(_SQLiteBackend(db_path=settings.database_url))
+        db = create_database_connection(settings.database_url)
 
     # Repositories
     org_repo = OrganizationRepository(db)

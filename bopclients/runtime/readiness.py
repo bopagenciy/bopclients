@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Dict, Any, List, Optional
 from bopclients.runtime.settings import RuntimeSettings
 from bopclients.runtime.db_migrator import DatabaseMigrator
+from bopclients.infrastructure.db.connection import create_database_connection, BopDBConnection, PostgresConnectionAdapter
 from forge.db import ForgeDB
 from forge.db_schema import _SQLiteBackend
 
@@ -66,12 +67,12 @@ class RuntimeReadinessCheck:
     ]
 
     @classmethod
-    def check(cls, settings: RuntimeSettings, db: Optional[ForgeDB] = None) -> ReadinessCheckResult:
+    def check(cls, settings: RuntimeSettings, db: Optional[Any] = None) -> ReadinessCheckResult:
         """Perform non-destructive environment readiness check.
         
         Args:
             settings: RuntimeSettings instance.
-            db: Optional existing ForgeDB connection.
+            db: Optional existing DB connection (ForgeDB or BopDBConnection).
         """
         warnings: List[str] = []
         errors: List[str] = []
@@ -90,7 +91,7 @@ class RuntimeReadinessCheck:
         close_needed = False
         if not conn_db and not errors:
             try:
-                conn_db = ForgeDB(_SQLiteBackend(db_path=settings.database_url))
+                conn_db = create_database_connection(settings.database_url)
                 close_needed = True
                 db_connected = True
             except Exception as ex:
@@ -104,9 +105,15 @@ class RuntimeReadinessCheck:
                 if schema_version != DatabaseMigrator.EXPECTED_VERSION:
                     errors.append(f"Database schema version mismatch (found '{schema_version}', expected '{DatabaseMigrator.EXPECTED_VERSION}'). Migration required.")
 
+                is_pg = getattr(conn_db, "backend_name", "") == "postgresql" or isinstance(conn_db, PostgresConnectionAdapter)
+
                 # Verify Table Existence
-                p = conn_db._placeholder() if hasattr(conn_db, "_placeholder") else "?"
-                check_tbl_sql = f"SELECT name FROM sqlite_master WHERE type='table' AND name = {p}"
+                if is_pg:
+                    check_tbl_sql = "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_name = %s"
+                else:
+                    p = conn_db._placeholder() if hasattr(conn_db, "_placeholder") else "?"
+                    check_tbl_sql = f"SELECT name FROM sqlite_master WHERE type='table' AND name = {p}"
+
                 found_tables = set()
                 for tbl in cls.REQUIRED_TABLES:
                     rows = conn_db.fetch_dicts(check_tbl_sql, (tbl,))
@@ -120,7 +127,12 @@ class RuntimeReadinessCheck:
                     tables_present = True
 
                 # Verify Index Existence
-                check_idx_sql = f"SELECT name FROM sqlite_master WHERE type='index' AND name = {p}"
+                if is_pg:
+                    check_idx_sql = "SELECT indexname FROM pg_indexes WHERE schemaname = 'public' AND indexname = %s"
+                else:
+                    p = conn_db._placeholder() if hasattr(conn_db, "_placeholder") else "?"
+                    check_idx_sql = f"SELECT name FROM sqlite_master WHERE type='index' AND name = {p}"
+
                 found_indexes = set()
                 for idx in cls.REQUIRED_INDEXES:
                     rows = conn_db.fetch_dicts(check_idx_sql, (idx,))
@@ -133,6 +145,12 @@ class RuntimeReadinessCheck:
 
             except Exception as ex:
                 errors.append(f"Database inspection failed: {ex}")
+            finally:
+                if close_needed and conn_db:
+                    try:
+                        conn_db.close()
+                    except Exception:
+                        pass
 
         # 3. Provider Readiness Matrix Evaluation
         provider_matrix: Dict[str, str] = {}

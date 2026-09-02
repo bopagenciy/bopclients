@@ -210,26 +210,18 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         now_iso_str = ref_dt.isoformat()
         lease_expires_iso = (ref_dt + timedelta(seconds=lease_duration_seconds)).isoformat()
 
-        check_sql = f"""
-            SELECT id FROM monitoring_schedules
-            WHERE organization_id = {p} AND id = {p} AND status = 'active'
-              AND next_check_at <= {p}
-              AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
-        """
-        rows = self.db.fetch_dicts(check_sql, (organization_id, schedule_id, now_iso_str, now_iso_str))
-        if not rows:
-            return False
-
         update_sql = f"""
             UPDATE monitoring_schedules
             SET lease_token = {p},
                 lease_expires_at = {p},
                 updated_at = {p}
-            WHERE organization_id = {p} AND id = {p} AND status = 'active' AND next_check_at <= {p}
+            WHERE organization_id = {p} AND id = {p} AND status = 'active'
+              AND next_check_at <= {p}
+              AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
         """
-        self.db.execute(update_sql, (lease_token, lease_expires_iso, now_iso_str, organization_id, schedule_id, now_iso_str))
+        count = self._execute_rowcount(update_sql, (lease_token, lease_expires_iso, now_iso_str, organization_id, schedule_id, now_iso_str, now_iso_str))
         self.db.commit()
-        return True
+        return count > 0
 
     def claim_force_work(
         self,
@@ -247,25 +239,17 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         now_iso_str = ref_dt.isoformat()
         lease_expires_iso = (ref_dt + timedelta(seconds=lease_duration_seconds)).isoformat()
 
-        check_sql = f"""
-            SELECT id FROM monitoring_schedules
-            WHERE organization_id = {p} AND id = {p} AND status IN ('active', 'paused')
-              AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
-        """
-        rows = self.db.fetch_dicts(check_sql, (organization_id, schedule_id, now_iso_str))
-        if not rows:
-            return False
-
         update_sql = f"""
             UPDATE monitoring_schedules
             SET lease_token = {p},
                 lease_expires_at = {p},
                 updated_at = {p}
             WHERE organization_id = {p} AND id = {p} AND status IN ('active', 'paused')
+              AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
         """
-        self.db.execute(update_sql, (lease_token, lease_expires_iso, now_iso_str, organization_id, schedule_id))
+        count = self._execute_rowcount(update_sql, (lease_token, lease_expires_iso, now_iso_str, organization_id, schedule_id, now_iso_str))
         self.db.commit()
-        return True
+        return count > 0
 
     def renew_lease(
         self,
@@ -291,13 +275,9 @@ class MonitoringScheduleRepository(BaseTenantRepository):
             SET lease_expires_at = {p}, updated_at = {p}
             WHERE organization_id = {p} AND id = {p} AND lease_token = {p}
         """
-        self.db.execute(query, (new_expires_iso, now_iso_str, organization_id, schedule_id, lease_token))
+        count = self._execute_rowcount(query, (new_expires_iso, now_iso_str, organization_id, schedule_id, lease_token))
         self.db.commit()
-
-        # Verify update matched
-        verify_sql = f"SELECT id FROM monitoring_schedules WHERE organization_id = {p} AND id = {p} AND lease_token = {p}"
-        rows = self.db.fetch_dicts(verify_sql, (organization_id, schedule_id, lease_token))
-        return len(rows) > 0
+        return count > 0
 
     def release_lease(self, organization_id: str, schedule_id: str, lease_token: str) -> bool:
         """Release lease token enforcing lease_token ownership matching."""
@@ -313,9 +293,9 @@ class MonitoringScheduleRepository(BaseTenantRepository):
             SET lease_token = NULL, lease_expires_at = NULL, updated_at = {p}
             WHERE organization_id = {p} AND id = {p} AND lease_token = {p}
         """
-        self.db.execute(query, (now_iso, organization_id, schedule_id, lease_token))
+        count = self._execute_rowcount(query, (now_iso, organization_id, schedule_id, lease_token))
         self.db.commit()
-        return True
+        return count > 0
 
     def update_schedule_after_execution(
         self,
@@ -329,14 +309,6 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         p = self._placeholder()
         now = datetime.now(timezone.utc).isoformat()
 
-        check_sql = f"""
-            SELECT id FROM monitoring_schedules
-            WHERE organization_id = {p} AND id = {p} AND lease_token = {p}
-        """
-        rows = self.db.fetch_dicts(check_sql, (organization_id, schedule_id, expected_lease_token))
-        if not rows:
-            return False
-
         update_sql = f"""
             UPDATE monitoring_schedules SET
                 status = {p},
@@ -349,13 +321,15 @@ class MonitoringScheduleRepository(BaseTenantRepository):
                 operations = {p},
                 failure_count = {p},
                 last_error = {p},
+                lease_token = NULL,
+                lease_expires_at = NULL,
                 policy_version = {p},
                 source_fingerprint = {p},
                 data = {p},
                 updated_at = {p}
             WHERE organization_id = {p} AND id = {p} AND lease_token = {p}
         """
-        self.db.execute(
+        count = self._execute_rowcount(
             update_sql,
             (
                 schedule.status,
@@ -370,7 +344,7 @@ class MonitoringScheduleRepository(BaseTenantRepository):
                 schedule.last_error,
                 schedule.policy_version,
                 schedule.source_fingerprint,
-                json.dumps(schedule.data or {}),
+                json.dumps(schedule.data) if schedule.data else None,
                 now,
                 organization_id,
                 schedule_id,
@@ -378,7 +352,7 @@ class MonitoringScheduleRepository(BaseTenantRepository):
             ),
         )
         self.db.commit()
-        return True
+        return count > 0
 
     def update_schedule_status(self, organization_id: str, schedule_id: str, status: str) -> bool:
         """Update status (active, paused, disabled) tenant-safely."""
