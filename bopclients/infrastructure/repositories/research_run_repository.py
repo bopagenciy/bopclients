@@ -1,0 +1,154 @@
+"""Database repository for ResearchRun execution tracking (Tenant Isolated)."""
+
+from typing import List, Optional
+from bopclients.domain.research_run import ResearchRun
+from bopclients.domain.exceptions import TenantAccessError
+from bopclients.application.interfaces.repositories import IResearchRunRepository
+from bopclients.infrastructure.repositories.base_repository import BaseTenantRepository
+
+
+class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
+    """Repository for managing ResearchRun execution tracking with complete tenant isolation."""
+
+    def save(self, org_id: str, run: ResearchRun) -> ResearchRun:
+        org_id = self._validate_tenant(org_id)
+        run.organization_id = org_id
+        p = self._placeholder()
+
+        # Validate campaign_id belongs to tenant if provided
+        if run.campaign_id:
+            c_rows = self.db.fetch_dicts(
+                f"SELECT id FROM campaigns WHERE organization_id = {p} AND id = {p}",
+                (org_id, run.campaign_id),
+            )
+            if not c_rows:
+                raise TenantAccessError(
+                    f"ResearchRun rejected: Campaign '{run.campaign_id}' not found for organization '{org_id}'"
+                )
+
+        # Validate prospect_id belongs to tenant if provided
+        if run.prospect_id:
+            p_rows = self.db.fetch_dicts(
+                f"SELECT id FROM prospects WHERE organization_id = {p} AND id = {p}",
+                (org_id, run.prospect_id),
+            )
+            if not p_rows:
+                raise TenantAccessError(
+                    f"ResearchRun rejected: Prospect '{run.prospect_id}' not found for organization '{org_id}'"
+                )
+
+        sql = f"""
+        INSERT INTO research_runs (
+            id, organization_id, campaign_id, prospect_id, run_type, status,
+            started_at, completed_at, error_message, created_at, updated_at
+        ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+        """
+        self.db.execute(
+            sql,
+            (
+                run.id,
+                org_id,
+                run.campaign_id,
+                run.prospect_id,
+                run.run_type,
+                run.status,
+                run.started_at,
+                run.completed_at,
+                run.error_message,
+                run.created_at,
+                run.updated_at,
+            ),
+        )
+        self.db.commit()
+        return run
+
+    def get_by_id(self, org_id: str, run_id: str) -> Optional[ResearchRun]:
+        org_id = self._validate_tenant(org_id)
+        p = self._placeholder()
+        sql = f"SELECT * FROM research_runs WHERE organization_id = {p} AND id = {p}"
+        rows = self.db.fetch_dicts(sql, (org_id, run_id))
+        if not rows:
+            return None
+        r = rows[0]
+        return ResearchRun(
+            id=r["id"],
+            organization_id=r["organization_id"],
+            campaign_id=r.get("campaign_id"),
+            prospect_id=r.get("prospect_id"),
+            run_type=r["run_type"],
+            status=r.get("status", "pending"),
+            started_at=r.get("started_at"),
+            completed_at=r.get("completed_at"),
+            error_message=r.get("error_message"),
+            created_at=r["created_at"],
+            updated_at=r["updated_at"],
+        )
+
+    def update_status(
+        self,
+        org_id: str,
+        run_id: str,
+        status: str,
+        started_at: Optional[str] = None,
+        completed_at: Optional[str] = None,
+        error_message: Optional[str] = None,
+    ) -> Optional[ResearchRun]:
+        org_id = self._validate_tenant(org_id)
+        run = self.get_by_id(org_id, run_id)
+        if not run:
+            raise TenantAccessError(f"ResearchRun '{run_id}' not found for organization '{org_id}'")
+
+        p = self._placeholder()
+        sql = f"""
+        UPDATE research_runs SET
+            status = {p},
+            started_at = COALESCE({p}, started_at),
+            completed_at = COALESCE({p}, completed_at),
+            error_message = COALESCE({p}, error_message)
+        WHERE organization_id = {p} AND id = {p}
+        """
+        self.db.execute(sql, (status, started_at, completed_at, error_message, org_id, run_id))
+        self.db.commit()
+        return self.get_by_id(org_id, run_id)
+
+    def list_by_organization(
+        self,
+        org_id: str,
+        campaign_id: Optional[str] = None,
+        prospect_id: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> List[ResearchRun]:
+        org_id = self._validate_tenant(org_id)
+        p = self._placeholder()
+        query_parts = [f"organization_id = {p}"]
+        params = [org_id]
+
+        if campaign_id:
+            query_parts.append(f"campaign_id = {p}")
+            params.append(campaign_id)
+
+        if prospect_id:
+            query_parts.append(f"prospect_id = {p}")
+            params.append(prospect_id)
+
+        where_clause = " AND ".join(query_parts)
+        sql = f"SELECT * FROM research_runs WHERE {where_clause} ORDER BY created_at DESC LIMIT {limit} OFFSET {offset}"
+
+        rows = self.db.fetch_dicts(sql, tuple(params))
+        return [
+            ResearchRun(
+                id=r["id"],
+                organization_id=r["organization_id"],
+                campaign_id=r.get("campaign_id"),
+                prospect_id=r.get("prospect_id"),
+                run_type=r["run_type"],
+                status=r.get("status", "pending"),
+                started_at=r.get("started_at"),
+                completed_at=r.get("completed_at"),
+                error_message=r.get("error_message"),
+                created_at=r["created_at"],
+                updated_at=r["updated_at"],
+            )
+            for r in rows
+        ]
