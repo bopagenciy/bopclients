@@ -1,4 +1,4 @@
-"""SignalActivationPolicy governing activation, provenance, currentness, boundary, and TTL expiration of Signals."""
+"""SignalActivationPolicy governing activation, provenance, cross-provider corroboration, and TTL expiration of Signals."""
 
 import urllib.parse
 from datetime import datetime, timezone, timedelta
@@ -14,7 +14,9 @@ class SourceReliability:
     OFFICIAL_COMPANY_SITE = 1.0
     GOVERNMENT_PROCUREMENT = 1.0
     OFFICIAL_PRESS_RELEASE = 0.95
+    PRESS_RELEASE_DISTRIBUTION = 0.95
     REPUTABLE_NEWS = 0.85
+    UNKNOWN_NEWS = 0.60
     SEARCH_SNIPPET_ONLY = 0.50
 
     @classmethod
@@ -24,19 +26,23 @@ class SourceReliability:
             return cls.OFFICIAL_COMPANY_SITE
         elif "government" in st or "procurement" in st:
             return cls.GOVERNMENT_PROCUREMENT
+        elif "distribution" in st:
+            return cls.PRESS_RELEASE_DISTRIBUTION
         elif "press" in st:
             return cls.OFFICIAL_PRESS_RELEASE
-        elif "news" in st:
+        elif "reputable" in st or "news" in st:
             return cls.REPUTABLE_NEWS
+        elif "unknown" in st:
+            return cls.UNKNOWN_NEWS
         return cls.SEARCH_SNIPPET_ONLY
 
 
 class SignalActivationPolicy:
-    """Policy governing activation threshold rules, evidence currentness, boundary safety, and signal expiration."""
+    """Policy governing activation threshold rules, evidence currentness, cross-provider corroboration, and signal expiration."""
 
     INTENT_MIN_CONFIDENCE = 0.70
     ACTIVITY_MIN_CONFIDENCE = 0.50
-    DEFAULT_INTENT_TTL_DAYS = 30.0  # Conservative 30d TTL for active buying intent without due date
+    DEFAULT_INTENT_TTL_DAYS = 30.0
     DEFAULT_ACTIVITY_TTL_DAYS = 60.0
 
     @classmethod
@@ -56,13 +62,35 @@ class SignalActivationPolicy:
         observation: PublicSignalObservation,
         now_dt: Optional[datetime] = None,
         prospect_website_url: Optional[str] = None,
+        supporting_observations: Optional[List[PublicSignalObservation]] = None,
     ) -> Tuple[bool, Optional[Signal], str]:
-        """Evaluate if an observation should activate or update a domain Signal."""
+        """Evaluate if an observation should activate or update a domain Signal with strict cross-provider corroboration."""
         now_dt = now_dt or datetime.now(timezone.utc)
         rel_weight = SourceReliability.get_weight(observation.source_type)
-        effective_conf = min(1.0, observation.confidence * rel_weight)
+        base_conf = min(1.0, observation.confidence * rel_weight)
 
-        # 1. Buying Intent Activation Gate (Strict Evidence, Boundary, Provenance & Active Currentness required)
+        primary_event_key = observation.compute_semantic_event_key()
+
+        # Cross-Provider Corroboration & Syndication Policy:
+        # Corroboration applies ONLY to distinct observations matching the SAME semantic_event_key with unique URLs
+        obs_refs = [observation.id]
+        seen_urls = {(observation.source_url or "").strip().lower()}
+
+        if supporting_observations:
+            for supp in supporting_observations:
+                supp_key = supp.compute_semantic_event_key()
+                supp_url = (supp.source_url or "").strip().lower()
+
+                # Deduplicate exact same canonical URL (syndication / duplicate crawl)
+                if supp_key == primary_event_key and supp_url not in seen_urls:
+                    seen_urls.add(supp_url)
+                    obs_refs.append(supp.id)
+
+        corroboration_count = len(obs_refs)
+        corroboration_bonus = min(0.10, 0.05 * (corroboration_count - 1)) if corroboration_count > 1 else 0.0
+        effective_conf = min(1.0, base_conf + corroboration_bonus)
+
+        # 1. Buying Intent Activation Gate
         if observation.category == SignalCategory.BUYING_INTENT.value:
             if effective_conf < self.INTENT_MIN_CONFIDENCE:
                 return False, None, f"Confidence {effective_conf:.2f} is below minimum threshold ({self.INTENT_MIN_CONFIDENCE})"
@@ -85,7 +113,7 @@ class SignalActivationPolicy:
             due_str = observation.evidence.get("due_date")
             if due_str:
                 try:
-                    due_dt = datetime.fromisoformat(due_str.replace("Z", "+00:00"))
+                    due_dt = datetime.fromisoformat(str(due_str).replace("Z", "+00:00"))
                     if now_dt > due_dt:
                         return False, None, f"Buying intent activation rejected: due_date '{due_str}' is in the past"
                 except Exception:
@@ -100,7 +128,10 @@ class SignalActivationPolicy:
                 confidence=round(effective_conf, 2),
                 source=observation.provider,
                 evidence={
+                    "semantic_event_key": primary_event_key,
                     "observation_id": observation.id,
+                    "observation_refs": obs_refs,
+                    "corroboration_count": corroboration_count,
                     "source_url": observation.source_url,
                     "source_type": observation.source_type,
                     "snippet": observation.evidence.get("snippet", ""),
@@ -111,7 +142,7 @@ class SignalActivationPolicy:
                 },
                 detected_at=observation.last_seen_at or now_dt.isoformat(),
             )
-            return True, sig, "Buying intent signal activated with valid evidence & active currentness"
+            return True, sig, f"Buying intent signal activated (conf {effective_conf:.2f}, corroboration_count={corroboration_count})"
 
         # 2. Company Activity Activation Gate
         elif observation.category == SignalCategory.COMPANY_ACTIVITY.value:
@@ -127,13 +158,17 @@ class SignalActivationPolicy:
                 confidence=round(effective_conf, 2),
                 source=observation.provider,
                 evidence={
+                    "semantic_event_key": primary_event_key,
                     "observation_id": observation.id,
+                    "observation_refs": obs_refs,
+                    "corroboration_count": corroboration_count,
                     "source_url": observation.source_url,
+                    "source_type": observation.source_type,
                     "snippet": observation.evidence.get("snippet", "") if isinstance(observation.evidence, dict) else "",
                 },
                 detected_at=observation.last_seen_at or now_dt.isoformat(),
             )
-            return True, sig, "Company activity signal activated"
+            return True, sig, f"Company activity signal activated (conf {effective_conf:.2f}, corroboration_count={corroboration_count})"
 
         return False, None, f"Category '{observation.category}' does not trigger signal activation"
 
@@ -145,7 +180,7 @@ class SignalActivationPolicy:
         observations: List[PublicSignalObservation],
         now_dt: Optional[datetime] = None,
     ) -> Tuple[List[Signal], List[Signal], List[str]]:
-        """Reconcile active signals against observations currentness state, TTLs and due dates. Return (retained, expired, reasons)."""
+        """Reconcile active signals against observations currentness state, TTLs and due dates."""
         now_dt = now_dt or datetime.now(timezone.utc)
         retained = []
         expired = []
@@ -169,7 +204,7 @@ class SignalActivationPolicy:
                 due_str = sig.evidence.get("due_date")
                 if due_str:
                     try:
-                        due_dt = datetime.fromisoformat(due_str.replace("Z", "+00:00"))
+                        due_dt = datetime.fromisoformat(str(due_str).replace("Z", "+00:00"))
                         if now_dt > due_dt:
                             is_expired = True
                             reason = f"RFP due date '{due_str}' has passed"
