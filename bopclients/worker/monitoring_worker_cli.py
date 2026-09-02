@@ -7,20 +7,9 @@ from bopclients.worker.monitoring_worker import (
     MonitoringWorker,
     MonitoringWorkerConfig,
 )
-from bopclients.infrastructure.repositories.monitoring_schedule_repository import MonitoringScheduleRepository
-from bopclients.infrastructure.repositories.prospect_repository import ProspectRepository
-from bopclients.infrastructure.repositories.campaign_repository import CampaignRepository
-from bopclients.infrastructure.repositories.prospect_priority_repository import ProspectPriorityRepository
-from bopclients.infrastructure.repositories.signal_observation_repository import SignalObservationRepository
-from bopclients.infrastructure.repositories.research_run_repository import ResearchRunRepository
-from bopclients.application.public_signal_monitor_service import PublicSignalMonitorService
-from bopclients.application.prospect_priority_service import ProspectPriorityService
-from bopclients.application.continuous_monitoring_service import ContinuousMonitoringService
-from bopclients.application.provider_registry import PublicSignalProviderRegistry
-from bopclients.application.signal_provider import OfficialWebsiteSignalProvider
-from bopclients.application.providers.procurement_provider import GovernmentProcurementProvider
-from bopclients.application.providers.news_provider import PublicNewsSignalProvider
-from bopclients.infrastructure.db.migrations import run_p1_migrations
+from bopclients.runtime.settings import RuntimeSettings
+from bopclients.runtime.readiness import RuntimeReadinessCheck, ReadinessStatus
+from bopclients.runtime.container import build_runtime_container
 from forge.db import ForgeDB
 from forge.db_schema import _SQLiteBackend
 
@@ -92,73 +81,33 @@ def main():
         logger.error("Error: --batch-size, --max-items, and --max-seconds must be positive integers.")
         sys.exit(1)
 
-    # Initialize DB backend
+    # Build container from settings
+    settings = RuntimeSettings.from_env()
+    settings.worker_batch_size = args.batch_size
+    settings.worker_max_items = args.max_items
+    settings.worker_max_seconds = args.max_seconds
+
+    # Production Startup Guard: Perform Readiness Check
+    readiness = RuntimeReadinessCheck.check(settings)
+    if readiness.status == ReadinessStatus.NOT_READY:
+        logger.critical(f"Worker startup aborted: Runtime readiness is NOT_READY. Errors: {readiness.errors}")
+        sys.exit(1)
+    elif readiness.status == ReadinessStatus.DEGRADED:
+        logger.warning(f"Worker starting in DEGRADED mode. Warnings: {readiness.warnings}")
+
     try:
-        db = ForgeDB(_SQLiteBackend())
-        run_p1_migrations(db)
+        container = build_runtime_container(settings)
+        db = container.db
     except Exception as ex:
-        logger.critical(f"Failed to connect to database: {ex}")
+        logger.critical(f"Failed to initialize runtime container: {ex}")
         sys.exit(1)
 
     if args.check:
         ok = health_check(db)
         sys.exit(0 if ok else 1)
 
-    # Initialize Repositories and Services
-    sched_repo = MonitoringScheduleRepository(db)
-    prospect_repo = ProspectRepository(db)
-    camp_repo = CampaignRepository(db)
-    prio_repo = ProspectPriorityRepository(db)
-    obs_repo = SignalObservationRepository(db)
-    intel_repo = ProspectIntelligenceRepository(db)
-    enrich_repo = EnrichmentResultRepository(db)
-    rr_repo = ResearchRunRepository(db)
-
-    registry = PublicSignalProviderRegistry()
-    registry.register(OfficialWebsiteSignalProvider())
-    registry.register(GovernmentProcurementProvider())
-    registry.register(PublicNewsSignalProvider())
-
-    sig_service = PublicSignalMonitorService(
-        observation_repo=obs_repo,
-        prospect_repo=prospect_repo,
-        campaign_repo=camp_repo,
-        research_run_repo=rr_repo,
-        registry=registry,
-    )
-
-    prio_service = ProspectPriorityService(
-        priority_repo=prio_repo,
-        prospect_repo=prospect_repo,
-        campaign_repo=camp_repo,
-        intel_repo=intel_repo,
-        enrichment_repo=enrich_repo,
-        research_run_repo=rr_repo,
-    )
-
-    monitoring_service = ContinuousMonitoringService(
-        schedule_repo=sched_repo,
-        prospect_repo=prospect_repo,
-        campaign_repo=camp_repo,
-        priority_repo=prio_repo,
-        observation_repo=obs_repo,
-        research_run_repo=rr_repo,
-        signal_monitor_service=sig_service,
-        priority_service=prio_service,
-    )
-
-    config = MonitoringWorkerConfig(
-        batch_size=args.batch_size,
-        max_items=args.max_items,
-        max_run_seconds=args.max_seconds,
-        dry_run=args.dry_run,
-    )
-
-    worker = MonitoringWorker(
-        schedule_repo=sched_repo,
-        monitoring_service=monitoring_service,
-        config=config,
-    )
+    worker = container.worker
+    worker.config.dry_run = args.dry_run
 
     try:
         result = worker.run()
