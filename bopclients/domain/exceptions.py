@@ -39,3 +39,31 @@ class DiscoveryProviderError(BopClientsDomainError):
 
 class DiscoveryExecutionError(BopClientsDomainError):
     """Raised when discovery execution fails."""
+
+
+class AIResearchError(BopClientsDomainError):
+    """Base exception for AI Research provider errors."""
+
+
+class AIConfigurationError(AIResearchError):
+    """Raised when AI provider configuration or API key is missing."""
+
+
+class AIAuthenticationError(AIResearchError):
+    """Raised when AI provider authentication fails (e.g. 401)."""
+
+
+class AIRateLimitError(AIResearchError):
+    """Raised when AI provider rate limit is exceeded (e.g. 429)."""
+
+
+class AITimeoutError(AIResearchError):
+    """Raised when AI provider request times out."""
+
+
+class AIProviderError(AIResearchError):
+    """Raised when AI provider returns a server error (e.g. 5xx)."""
+
+
+class AIResponseValidationError(AIResearchError):
+    """Raised when AI provider response fails JSON or schema validation."""

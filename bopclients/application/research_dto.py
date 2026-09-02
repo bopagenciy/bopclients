@@ -88,25 +88,31 @@ class ProspectResearchResult:
     research_version: str
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    usage_metadata: Optional[Dict[str, int]] = None
     created_at: str = ""
 
 
 @dataclass
 class AIResearchRequest:
-    """Contract for future external LLM API request (excludes secrets and cross-tenant data)."""
+    """Sanitized, tenant-safe payload for external LLM research requests."""
 
     organization_id: str
     prospect_name: str
     industry: Optional[str]
     country: Optional[str]
+    website_url: Optional[str]
     observed_signals: List[Dict[str, Any]]
-    available_service_names: List[str]
+    available_services: List[Dict[str, Any]]
     icp_description: Optional[str]
+    evidence_catalog: Dict[str, Any] = field(default_factory=dict)
+    allowed_evidence_refs: List[str] = field(default_factory=list)
+    allowed_source_refs: List[str] = field(default_factory=list)
+    allowed_service_ids: List[str] = field(default_factory=list)
 
 
 @dataclass
 class AIResearchResponse:
-    """Contract for future external LLM API response (structured JSON payload)."""
+    """Structured response contract from external LLM provider."""
 
     executive_summary: str
     business_profile_notes: str
@@ -114,3 +120,4 @@ class AIResearchResponse:
     proposed_opportunities: List[Dict[str, Any]]
     perceived_risks: List[str]
     perceived_unknowns: List[str]
+    usage_metadata: Optional[Dict[str, int]] = None

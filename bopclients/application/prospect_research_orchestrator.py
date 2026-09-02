@@ -9,7 +9,7 @@ from bopclients.domain.prospect_intelligence import ProspectIntelligence
 from bopclients.domain.service import Service
 from bopclients.domain.signal import Signal
 from bopclients.domain.lead_score import LeadScore
-from bopclients.domain.exceptions import TenantAccessError, DiscoveryExecutionError
+from bopclients.domain.exceptions import TenantAccessError, DiscoveryExecutionError, AIResearchError
 from bopclients.application.enrichment_dto import EnrichmentSnapshot
 from bopclients.application.research_dto import (
     ProspectResearchContext,
@@ -138,14 +138,31 @@ class ProspectResearchOrchestrator:
                 sources=sources,
             )
 
+            # Build allowed references for validation
+            allowed_ev = [f"signal:{s.type}" for s in signals]
+            allowed_src = [f"provider:{s.source}" for s in signals]
+            if snapshot:
+                allowed_src.append(f"enrichment:{prospect_id}")
+            allowed_svc = [s.category or s.name for s in services if getattr(s, 'active', True)] + [s.name for s in services if getattr(s, 'active', True)]
+            sig_conf_map = {f"signal:{s.type}": s.confidence for s in signals}
+
             # 3. Execute Research Provider
             draft = self.research_provider.research(ctx)
 
             # 4. Validate Draft via ResearchValidationPolicy
-            sanitized_draft, warnings, rejected_claims = self.validation_policy.validate(draft, verified_contacts=contacts)
+            sanitized_draft, warnings, rejected_claims = self.validation_policy.validate(
+                draft,
+                verified_contacts=contacts,
+                allowed_evidence_refs=allowed_ev,
+                allowed_source_refs=allowed_src,
+                allowed_service_ids=allowed_svc,
+                signal_confidence_map=sig_conf_map,
+            )
 
             # 5. Persist ProspectIntelligence snapshot with deterministic fingerprints
             latest_sig_time = max((s.detected_at for s in signals), default=None)
+            usage_meta = getattr(draft, "usage_metadata", None)
+
             intel_data = {
                 "executive_summary": sanitized_draft.executive_summary,
                 "business_profile": sanitized_draft.business_profile,
@@ -176,6 +193,12 @@ class ProspectResearchOrchestrator:
                 ],
                 "risks": sanitized_draft.risks,
                 "unknowns": sanitized_draft.unknowns,
+                "usage_metadata": usage_meta,
+                "ai_provider": "gemini" if "gemini" in self.research_provider.name else self.research_provider.name,
+                "ai_model": getattr(self.research_provider, "config", None).model if hasattr(self.research_provider, "config") else "deterministic",
+                "api_mode": getattr(self.research_provider, "API_MODE", "deterministic"),
+                "prompt_version": "v1",
+                "research_version": "v1.0",
                 "generated_from": {
                     "enrichment_updated_at": latest_enrich.completed_at if latest_enrich else None,
                     "signals_latest_at": latest_sig_time,
@@ -223,6 +246,8 @@ class ProspectResearchOrchestrator:
             self.research_run_repo.update_status(
                 org_id, run.id, status="failed", completed_at=end_time, error_message=str(exc)
             )
+            if isinstance(exc, (TenantAccessError, AIResearchError)):
+                raise
             raise DiscoveryExecutionError(f"Prospect research failed: {exc}") from exc
 
 
