@@ -14,6 +14,7 @@ from bopclients.domain.signal import Signal
 from bopclients.domain.lead_score import LeadScore
 from bopclients.domain.prospect_source import ProspectSource
 from bopclients.domain.research_run import ResearchRun
+from bopclients.domain.enrichment_result import EnrichmentResult
 
 
 class IUserRepository(ABC):
@@ -172,3 +173,15 @@ class IResearchRunRepository(ABC):
         limit: int = 100,
         offset: int = 0,
     ) -> List[ResearchRun]: ...
+
+
+class IEnrichmentResultRepository(ABC):
+    """Abstract repository for latest enrichment result snapshots (Tenant Isolated)."""
+
+    @abstractmethod
+    def save(self, org_id: str, result: EnrichmentResult) -> EnrichmentResult: ...
+
+    @abstractmethod
+    def get_latest(
+        self, org_id: str, prospect_id: str, provider: str = "forge"
+    ) -> Optional[EnrichmentResult]: ...

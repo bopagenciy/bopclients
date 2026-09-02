@@ -191,6 +191,7 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         value TEXT,
         confidence REAL DEFAULT 1.0,
         source VARCHAR(100) DEFAULT 'web_scrape',
+        evidence TEXT,
         detected_at VARCHAR(50) NOT NULL,
         FOREIGN KEY (organization_id, prospect_id) REFERENCES prospects(organization_id, id) ON DELETE CASCADE
     );
@@ -241,6 +242,24 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         FOREIGN KEY (organization_id, prospect_id) REFERENCES prospects(organization_id, id) ON DELETE CASCADE
     );
     """,
+    # 16. enrichment_results (Tenant Owned directly via organization_id)
+    """
+    CREATE TABLE IF NOT EXISTS enrichment_results (
+        id VARCHAR(36) PRIMARY KEY,
+        organization_id VARCHAR(36) NOT NULL,
+        prospect_id VARCHAR(36) NOT NULL,
+        provider VARCHAR(50) NOT NULL DEFAULT 'forge',
+        status VARCHAR(50) NOT NULL DEFAULT 'success',
+        website_url TEXT,
+        data TEXT NOT NULL,
+        started_at VARCHAR(50) NOT NULL,
+        completed_at VARCHAR(50) NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (organization_id, prospect_id) REFERENCES prospects(organization_id, id) ON DELETE CASCADE,
+        UNIQUE (organization_id, prospect_id, provider)
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -263,4 +282,5 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org ON research_runs(organization_id);",
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org_campaign ON research_runs(organization_id, campaign_id);",
     "CREATE INDEX IF NOT EXISTS idx_research_runs_org_prospect ON research_runs(organization_id, prospect_id);",
+    "CREATE INDEX IF NOT EXISTS idx_enrichment_results_org_prospect ON enrichment_results(organization_id, prospect_id);",
 ]

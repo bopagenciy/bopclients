@@ -17,6 +17,7 @@ class Signal:
     value: Optional[str] = None
     confidence: float = 1.0  # 0.0 to 1.0
     source: str = "web_scrape"
+    evidence: Optional[dict] = None
     detected_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

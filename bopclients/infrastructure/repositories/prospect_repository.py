@@ -1,5 +1,6 @@
 """Database repository for Prospects, CampaignProspects, Contacts, Signals, LeadScores, and ProspectSources (Tenant Isolated)."""
 
+import json
 from typing import List, Optional
 from bopclients.domain.prospect import Prospect
 from bopclients.domain.campaign_prospect import CampaignProspect
@@ -288,70 +289,127 @@ class ProspectRepository(BaseTenantRepository, IProspectRepository):
         org_id = self._validate_tenant(org_id)
         signal.organization_id = org_id
         p = self._placeholder()
-        sql = f"""
-        INSERT INTO signals (id, organization_id, prospect_id, type, value, confidence, source, detected_at)
-        VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
-        """
-        self.db.execute(
-            sql,
-            (
-                signal.id,
-                org_id,
-                signal.prospect_id,
-                signal.type,
-                signal.value,
-                signal.confidence,
-                signal.source,
-                signal.detected_at,
-            ),
-        )
+
+        evidence_json = json.dumps(signal.evidence) if signal.evidence is not None else None
+
+        check_sql = f"SELECT id FROM signals WHERE organization_id = {p} AND prospect_id = {p} AND type = {p}"
+        existing = self.db.fetch_dicts(check_sql, (org_id, signal.prospect_id, signal.type))
+
+        if existing:
+            sql = f"""
+            UPDATE signals
+            SET value = {p}, confidence = {p}, source = {p}, evidence = {p}, detected_at = {p}
+            WHERE organization_id = {p} AND prospect_id = {p} AND type = {p}
+            """
+            self.db.execute(
+                sql,
+                (
+                    signal.value,
+                    signal.confidence,
+                    signal.source,
+                    evidence_json,
+                    signal.detected_at,
+                    org_id,
+                    signal.prospect_id,
+                    signal.type,
+                ),
+            )
+        else:
+            sql = f"""
+            INSERT INTO signals (id, organization_id, prospect_id, type, value, confidence, source, evidence, detected_at)
+            VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+            """
+            self.db.execute(
+                sql,
+                (
+                    signal.id,
+                    org_id,
+                    signal.prospect_id,
+                    signal.type,
+                    signal.value,
+                    signal.confidence,
+                    signal.source,
+                    evidence_json,
+                    signal.detected_at,
+                ),
+            )
         self.db.commit()
         return signal
+
+    def delete_signal_by_type(self, org_id: str, prospect_id: str, signal_type: str) -> None:
+        """Remove a stale signal when conclusive evidence indicates the condition no longer exists."""
+        org_id = self._validate_tenant(org_id)
+        p = self._placeholder()
+        sql = f"DELETE FROM signals WHERE organization_id = {p} AND prospect_id = {p} AND type = {p}"
+        self.db.execute(sql, (org_id, prospect_id, signal_type))
+        self.db.commit()
 
     def list_signals(self, org_id: str, prospect_id: str) -> List[Signal]:
         org_id = self._validate_tenant(org_id)
         p = self._placeholder()
         sql = f"SELECT * FROM signals WHERE organization_id = {p} AND prospect_id = {p} ORDER BY detected_at DESC"
         rows = self.db.fetch_dicts(sql, (org_id, prospect_id))
-        return [
-            Signal(
-                id=r["id"],
-                organization_id=r["organization_id"],
-                prospect_id=r["prospect_id"],
-                type=r["type"],
-                value=r.get("value"),
-                confidence=float(r.get("confidence", 1.0)),
-                source=r.get("source", "web_scrape"),
-                detected_at=r["detected_at"],
+        res = []
+        for r in rows:
+            ev_raw = r.get("evidence")
+            ev_dict = json.loads(ev_raw) if ev_raw and isinstance(ev_raw, str) else ev_raw
+            res.append(
+                Signal(
+                    id=r["id"],
+                    organization_id=r["organization_id"],
+                    prospect_id=r["prospect_id"],
+                    type=r["type"],
+                    value=r.get("value"),
+                    confidence=float(r.get("confidence", 1.0)),
+                    source=r.get("source", "bopclients_detector"),
+                    evidence=ev_dict,
+                    detected_at=r["detected_at"],
+                )
             )
-            for r in rows
-        ]
+        return res
 
     def save_lead_score(self, org_id: str, score: LeadScore) -> LeadScore:
         org_id = self._validate_tenant(org_id)
         score.organization_id = org_id
         p = self._placeholder()
-        sql = f"""
-        INSERT INTO lead_scores (id, organization_id, prospect_id, score, scoring_version, explanation, created_at)
-        VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p})
-        ON CONFLICT(organization_id, prospect_id) DO UPDATE SET
-            score = EXCLUDED.score,
-            scoring_version = EXCLUDED.scoring_version,
-            explanation = EXCLUDED.explanation,
-            created_at = EXCLUDED.created_at
-        """
-        self.db.execute(
-            sql,
-            (
-                score.id,
-                org_id,
-                score.prospect_id,
-                score.score,
-                score.scoring_version,
-                score.explanation,
-                score.created_at,
-            ),
-        )
+
+        check_sql = f"SELECT id FROM lead_scores WHERE organization_id = {p} AND prospect_id = {p}"
+        existing = self.db.fetch_dicts(check_sql, (org_id, score.prospect_id))
+
+        if existing:
+            sql = f"""
+            UPDATE lead_scores
+            SET score = {p}, scoring_version = {p}, explanation = {p}, created_at = {p}
+            WHERE organization_id = {p} AND prospect_id = {p}
+            """
+            self.db.execute(
+                sql,
+                (
+                    score.score,
+                    score.scoring_version,
+                    score.explanation,
+                    score.created_at,
+                    org_id,
+                    score.prospect_id,
+                ),
+            )
+        else:
+            sql = f"""
+            INSERT INTO lead_scores (id, organization_id, prospect_id, score, scoring_version, explanation, created_at)
+            VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p})
+            """
+            self.db.execute(
+                sql,
+                (
+                    score.id,
+                    org_id,
+                    score.prospect_id,
+                    score.score,
+                    score.scoring_version,
+                    score.explanation,
+                    score.created_at,
+                ),
+            )
         self.db.commit()
         return score
 
