@@ -193,3 +193,49 @@ These are **APPLICATION-SIDE EXECUTION SAFETY DEFAULTS** designed to protect ups
 - Workers support `max_provider_calls_per_run` budget limits with hard pre-call guards (`ProviderCallBudget`).
 - Call budgets are verified **before** invoking provider network calls. In multi-provider schedules, if the budget is reached mid-schedule, remaining providers are skipped cleanly with `SKIPPED_BUDGET_EXHAUSTED` and never make network calls.
 - When the worker-level budget is reached, workers exit cleanly with `PROVIDER_BUDGET_EXHAUSTED` and report structured observability metrics (`provider_calls_attempted`, `provider_calls_executed`, `provider_rate_limited`, `provider_concurrency_limited`, `provider_cooldown_skips`, `provider_budget_skips`).
+
+---
+
+## 13. Tenant Fairness, Provider Capacity Allocation & Worker Scheduling Policy (P15 / P15.1)
+
+### Bounded Best-Effort Tenant Interleaving
+- **Interleaved Scheduler Ordering**: Worker schedule selection (`list_due_system`) partitions due active schedules by `organization_id` using SQL window functions (`ROW_NUMBER() OVER (PARTITION BY organization_id ORDER BY next_check_at ASC, prospect_id ASC, id ASC) AS tenant_round`).
+- Global schedule ordering is prioritized by `tenant_round ASC, next_check_at ASC, organization_id ASC, prospect_id ASC, id ASC`.
+- **Query Limit Pushdown**: The SQL query applies `LIMIT` directly at the database engine level (`LIMIT ?`), preventing wasteful materialization of entire backlog tables into application memory.
+- **Index Support & Engine Work**: Existing indexes (`idx_schedules_org_due`, `idx_schedules_lease`) assist due-row filtering; the database engine may still perform WindowAgg/sort for tenant ranking.
+- **Elimination of Monopolistic Starvation**: If Organization A has 10,000 due schedules and Organization B has 2 due schedules, Organization B is selected in Round 1 and Round 2 alongside Organization A, eliminating deep-backlog starvation.
+- **Scheduler Work-Conservation**: For schedule selection, the scheduler is strictly **work-conserving**. If only Organization A has due runnable work, the batch is fully utilized by Organization A up to `batch_size` / `max_items`.
+
+### Static Tenant Provider Capacity Truth (NOT Work-Conserving)
+- **Static Per-Org Cap**: For shared global providers (e.g. `government_procurement`), policy defines `per_organization_max_executions` alongside `max_executions`.
+- **Not Work-Conserving**: Provider capacity allocation is **NOT work-conserving**. If only Organization A is active and exhausts its 4 executions within a window, the remaining 6 global executions remain idle until window reset. This is an explicit, intentional product safety tradeoff to prevent a single tenant from exhausting external provider allowances.
+- **No Shared Overflow Allocator**: Unused capacity does not dynamically spill over to active tenants in P15.
+- **Deterministic Lock Ordering**: When locking both `global:<provider>` and `org:<uuid>:<provider>`, scope keys are sorted lexicographically (`scopes_to_lock.sort()`) prior to acquiring PostgreSQL row locks (`SELECT ... FOR UPDATE`), preventing AB-BA deadlocks for this dual-bucket lock path under the tested locking protocol.
+- **Zero Partial Counter Consumption**: Slot acquisition evaluates both global and tenant capacity atomically. If tenant capacity is exhausted, global counters are NOT incremented and `TENANT_CAPACITY_LIMITED` is returned. If global capacity is exhausted, tenant counters are NOT incremented and `RATE_LIMITED` is returned.
+- **Deterministic Retry-Not-Before**: Tenant capacity rejection deterministically returns `retry_not_before = tenant_window_start + window_seconds`.
+
+### Commercial Priority Interaction
+- **P15 is Organization-Level Fairness**: Commercial priority is NOT replaced or directly re-ranked inside the fair scheduler SQL query.
+- **Upstream Cadence Governance**: Commercial priority (P6 / P9) influences monitoring cadence (`recommended_interval_days`) and sets `next_check_at`. Higher-priority prospects run more frequently and become due earlier.
+- **Same-Tenant Selection**: Within the same organization, due schedules are ordered by `next_check_at ASC, prospect_id ASC, id ASC`. Whichever schedule has an earlier `next_check_at` is evaluated first.
+- **Cross-Tenant Priority Isolation**: An urgent schedule in Organization A does not push Organization A's secondary items ahead of Organization B's or C's first-round candidates. Round 1 always selects one due schedule from each tenant who has runnable work.
+
+### Operational Backpressure & Failure Count Isolation
+- When an organization hits its allocated provider capacity, the provider call returns `TENANT_CAPACITY_LIMITED` (`SKIPPED_TENANT_CAPACITY_LIMITED`).
+- **No Commercial Failure**: Schedule `failure_count` is **not incremented**.
+- **Non-blocking Rescheduling**: `schedule.next_check_at` is deferred to `retry_not_before`, allowing other organizations with available capacity to execute without worker sleep or busy-wait loops.
+- **Run-Budget Precedence**: Worker run-level budgets (`ProviderCallBudget`) are evaluated prior to database acquisition attempts.
+- **Observability**: Metrics track `provider_tenant_capacity_limited` independently from `provider_rate_limited`.
+
+### Fairness Guarantees & Constraints
+- P15 provides **BOUNDED BEST-EFFORT TENANT FAIRNESS**, NOT strict mathematical fair queueing, pricing-tier weighted shares, or latency SLAs.
+- There is no distributed queue, broker, or external Redis quota service. Coordination relies strictly on atomic transactional PostgreSQL tables (`provider_rate_limit_state` and `provider_rate_limit_leases`).
+- **Remaining Operational Risks**:
+  1. Bounded best-effort fairness, not strict mathematical fairness SLA.
+  2. Scheduler fairness is work-conserving; provider per-org capacity is a static cap that may leave global capacity unused.
+  3. No shared overflow allocator or dynamic tier weighting.
+  4. Concurrent worker timing races can produce temporary round imbalances.
+  5. Sequential item processing per worker process (no internal parallel execution threads per worker).
+  6. Coordination applies only across worker instances sharing the same PostgreSQL database.
+  7. Rate limit enforcement operates at provider-execution granularity, not raw HTTP request granularity.
+  8. External HTTP requests in-flight cannot be cancelled mid-request.

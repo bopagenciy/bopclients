@@ -36,6 +36,7 @@ class ProviderRateLimitService:
             max_executions=10,
             window_seconds=60,
             max_concurrent=1,
+            per_organization_max_executions=4,
             cooldown_on_429_seconds=60,
             cooldown_on_503_seconds=30,
             honor_retry_after=True,
@@ -177,10 +178,13 @@ class ProviderRateLimitService:
         provider_key: str,
         scope_key: str,
         now_dt: Optional[datetime] = None,
+        organization_id: Optional[str] = None,
     ) -> ProviderAcquireResult:
         """Attempt to acquire a rate limit and concurrency slot."""
         policy = self.get_policy(provider_key)
-        return self.repository.try_acquire(provider_key, scope_key, policy, now_dt=now_dt)
+        return self.repository.try_acquire(
+            provider_key, scope_key, policy, now_dt=now_dt, organization_id=organization_id
+        )
 
     def release_slot(self, provider_key: str, scope_key: str, lease_token: str) -> bool:
         """Release an active concurrency lease."""

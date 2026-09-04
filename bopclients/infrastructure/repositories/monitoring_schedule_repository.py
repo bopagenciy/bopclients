@@ -170,9 +170,11 @@ class MonitoringScheduleRepository(BaseTenantRepository):
               AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
             ORDER BY next_check_at ASC, prospect_id ASC, id ASC
         """
-        rows = self.db.fetch_dicts(query, (organization_id, ref_iso, ref_iso))
+        params = [organization_id, ref_iso, ref_iso]
         if limit:
-            rows = rows[:limit]
+            query += f" LIMIT {p}"
+            params.append(limit)
+        rows = self.db.fetch_dicts(query, tuple(params))
         return [self._map_row_to_entity(r) for r in rows]
 
     def list_due_system(
@@ -186,15 +188,24 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         ref_iso = now_iso or datetime.now(timezone.utc).isoformat()
 
         query = f"""
-            SELECT * FROM monitoring_schedules
-            WHERE status = 'active'
-              AND next_check_at <= {p}
-              AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
-            ORDER BY next_check_at ASC, organization_id ASC, prospect_id ASC, id ASC
+            SELECT * FROM (
+                SELECT *,
+                       ROW_NUMBER() OVER (
+                           PARTITION BY organization_id
+                           ORDER BY next_check_at ASC, prospect_id ASC, id ASC
+                       ) AS tenant_round
+                FROM monitoring_schedules
+                WHERE status = 'active'
+                  AND next_check_at <= {p}
+                  AND (lease_expires_at IS NULL OR lease_expires_at <= {p})
+            ) sub
+            ORDER BY tenant_round ASC, next_check_at ASC, organization_id ASC, prospect_id ASC, id ASC
         """
-        rows = self.db.fetch_dicts(query, (ref_iso, ref_iso))
+        params = [ref_iso, ref_iso]
         if limit:
-            rows = rows[:limit]
+            query += f" LIMIT {p}"
+            params.append(limit)
+        rows = self.db.fetch_dicts(query, tuple(params))
         return [self._map_row_to_entity(r) for r in rows]
 
     def claim_due_work(

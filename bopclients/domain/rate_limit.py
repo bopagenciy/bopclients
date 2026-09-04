@@ -10,6 +10,7 @@ class ProviderAcquireStatus(str, Enum):
 
     ACQUIRED = "ACQUIRED"
     RATE_LIMITED = "RATE_LIMITED"
+    TENANT_CAPACITY_LIMITED = "TENANT_CAPACITY_LIMITED"
     CONCURRENCY_LIMITED = "CONCURRENCY_LIMITED"
     COOLDOWN_ACTIVE = "COOLDOWN_ACTIVE"
     PROVIDER_DISABLED = "PROVIDER_DISABLED"
@@ -49,12 +50,14 @@ class ProviderRateLimitPolicy:
     
     Attributes:
         max_executions: Maximum provider executions per fixed window and scope.
+        per_organization_max_executions: Optional max executions allocated per organization within window.
     """
 
     provider_key: str
     max_executions: int = 60
     window_seconds: int = 60
     max_concurrent: int = 2
+    per_organization_max_executions: Optional[int] = None
     cooldown_on_429_seconds: int = 60
     cooldown_on_503_seconds: int = 30
     honor_retry_after: bool = True
@@ -73,6 +76,13 @@ class ProviderRateLimitPolicy:
                 raise ValueError(f"window_seconds must be > 0 (got {self.window_seconds}).")
             if self.max_concurrent <= 0:
                 raise ValueError(f"max_concurrent must be > 0 (got {self.max_concurrent}).")
+            if self.per_organization_max_executions is not None:
+                if self.per_organization_max_executions <= 0:
+                    raise ValueError(f"per_organization_max_executions must be > 0 (got {self.per_organization_max_executions}).")
+                if self.per_organization_max_executions > self.max_executions:
+                    raise ValueError(
+                        f"per_organization_max_executions ({self.per_organization_max_executions}) cannot exceed max_executions ({self.max_executions})."
+                    )
             if self.cooldown_on_429_seconds < 0:
                 raise ValueError("cooldown_on_429_seconds cannot be negative.")
             if self.cooldown_on_503_seconds < 0:

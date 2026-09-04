@@ -93,6 +93,7 @@ class MonitoringWorkerRunResult:
     provider_calls_attempted: int = 0
     provider_calls_executed: int = 0
     provider_rate_limited: int = 0
+    provider_tenant_capacity_limited: int = 0
     provider_concurrency_limited: int = 0
     provider_cooldown_skips: int = 0
     provider_budget_skips: int = 0
@@ -152,6 +153,7 @@ class MonitoringWorker:
         provider_calls_attempted = 0
         provider_calls_executed = 0
         provider_rate_limited = 0
+        provider_tenant_capacity_limited = 0
         provider_concurrency_limited = 0
         provider_cooldown_skips = 0
         provider_budget_skips = 0
@@ -327,6 +329,8 @@ class MonitoringWorker:
                                     provider_calls_executed += 1
                                 elif p_st == "SKIPPED_RATE_LIMITED":
                                     provider_rate_limited += 1
+                                elif p_st == "SKIPPED_TENANT_CAPACITY_LIMITED":
+                                    provider_tenant_capacity_limited += 1
                                 elif p_st == "SKIPPED_CONCURRENCY_LIMITED":
                                     provider_concurrency_limited += 1
                                 elif p_st == "SKIPPED_COOLDOWN":
@@ -424,6 +428,7 @@ class MonitoringWorker:
             provider_calls_attempted=provider_calls_attempted,
             provider_calls_executed=provider_calls_executed,
             provider_rate_limited=provider_rate_limited,
+            provider_tenant_capacity_limited=provider_tenant_capacity_limited,
             provider_concurrency_limited=provider_concurrency_limited,
             provider_cooldown_skips=provider_cooldown_skips,
             provider_budget_skips=provider_budget_skips,

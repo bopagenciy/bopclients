@@ -151,10 +151,13 @@ class PublicSignalMonitorService:
 
             try:
                 if self.execution_guard:
-                    disc_res, permit = self.execution_guard.execute_provider(prov, prospect, context=context)
+                    disc_res, permit = self.execution_guard.execute_provider(
+                        prov, prospect, context=context, organization_id=organization_id
+                    )
                     if not permit.acquired:
                         st_map = {
                             ProviderAcquireStatus.RATE_LIMITED: "SKIPPED_RATE_LIMITED",
+                            ProviderAcquireStatus.TENANT_CAPACITY_LIMITED: "SKIPPED_TENANT_CAPACITY_LIMITED",
                             ProviderAcquireStatus.CONCURRENCY_LIMITED: "SKIPPED_CONCURRENCY_LIMITED",
                             ProviderAcquireStatus.COOLDOWN_ACTIVE: "SKIPPED_COOLDOWN",
                             ProviderAcquireStatus.PROVIDER_BUDGET_EXHAUSTED: "SKIPPED_BUDGET_EXHAUSTED",

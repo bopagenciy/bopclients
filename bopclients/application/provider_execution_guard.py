@@ -29,6 +29,7 @@ class ProviderExecutionGuard:
         context: Optional[Dict[str, Any]] = None,
         now_dt: Optional[datetime] = None,
         target_url: Optional[str] = None,
+        organization_id: Optional[str] = None,
     ) -> Tuple[Optional[PublicSignalDiscoveryResult], ProviderAcquireResult]:
         """Execute a provider invocation safely under distributed rate limits & concurrency guards.
         
@@ -38,11 +39,13 @@ class ProviderExecutionGuard:
         """
         provider_key = provider.provider_name.lower().strip()
         scope_key = self.rate_limit_service.resolve_scope_key(
-            provider_key, prospect=prospect, target_url=target_url
+            provider_key, prospect=prospect, target_url=target_url, organization_id=organization_id
         )
 
         # 1. Acquire distributed slot (immediate, non-blocking)
-        permit = self.rate_limit_service.acquire_slot(provider_key, scope_key, now_dt=now_dt)
+        permit = self.rate_limit_service.acquire_slot(
+            provider_key, scope_key, now_dt=now_dt, organization_id=organization_id
+        )
 
         if not permit.acquired:
             logger.info(
