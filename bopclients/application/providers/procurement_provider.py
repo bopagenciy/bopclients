@@ -14,6 +14,7 @@ from bopclients.application.signal_monitor_dto import (
     PublicSignalProviderCapabilities,
     PublicSignalDiscoveryResult,
     ProviderValidationLevel,
+    ProviderThrottleFeedback,
 )
 from bopclients.infrastructure.security.network_validator import NetworkSafetyValidator
 
@@ -157,6 +158,33 @@ class GovernmentProcurementProvider(IPublicSignalProvider):
         try:
             raw_opportunities = self._fetch_solicitations(prospect)
         except Exception as err:
+            status_code = None
+            retry_after = None
+            error_type = "api_error"
+
+            if hasattr(err, "code") and isinstance(err.code, int):
+                status_code = err.code
+                if hasattr(err, "headers") and err.headers:
+                    retry_after = err.headers.get("Retry-After")
+            elif hasattr(err, "response") and hasattr(err.response, "status_code"):
+                status_code = err.response.status_code
+                if hasattr(err.response, "headers") and err.response.headers:
+                    retry_after = err.response.headers.get("Retry-After")
+            elif hasattr(err, "status_code") and isinstance(getattr(err, "status_code"), int):
+                status_code = getattr(err, "status_code")
+
+            if status_code == 429:
+                error_type = "rate_limit"
+            elif status_code == 503:
+                error_type = "service_unavailable"
+            elif status_code == 403:
+                error_type = "forbidden"
+
+            result.throttle_feedback = ProviderThrottleFeedback(
+                http_status=status_code,
+                retry_after=retry_after,
+                error_type=error_type,
+            )
             result.errors.append(self._sanitize_secret(f"SAM API query failed: {err}"))
             return result
 

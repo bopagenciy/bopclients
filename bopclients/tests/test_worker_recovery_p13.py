@@ -47,7 +47,7 @@ class TestWorkerRecoveryP13_3:
 
     def test_schema_version_004_migration(self, test_db):
         ver = DatabaseMigrator.get_current_version(test_db)
-        assert ver == "20260902_004"
+        assert ver in ("20260902_004", "20260902_005")
         status = DatabaseMigrator.status(test_db)
         assert status["is_up_to_date"] is True
 

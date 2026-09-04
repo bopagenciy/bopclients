@@ -16,6 +16,7 @@ from bopclients.infrastructure.repositories.prospect_intelligence_repository imp
 from bopclients.infrastructure.repositories.enrichment_result_repository import EnrichmentResultRepository
 from bopclients.infrastructure.repositories.research_run_repository import ResearchRunRepository
 from bopclients.infrastructure.repositories.monitoring_schedule_repository import MonitoringScheduleRepository
+from bopclients.infrastructure.repositories.provider_rate_limit_repository import ProviderRateLimitRepository
 
 from bopclients.application.provider_registry import PublicSignalProviderRegistry
 from bopclients.application.signal_provider import OfficialWebsiteSignalProvider
@@ -23,6 +24,8 @@ from bopclients.application.providers.procurement_provider import GovernmentProc
 from bopclients.application.providers.news_provider import PublicNewsSignalProvider
 from bopclients.application.providers.gemini_research_provider import GeminiProspectResearchProvider
 
+from bopclients.application.provider_rate_limit_service import ProviderRateLimitService
+from bopclients.application.provider_execution_guard import ProviderExecutionGuard
 from bopclients.application.public_signal_monitor_service import PublicSignalMonitorService
 from bopclients.application.continuous_monitoring_service import ContinuousMonitoringService
 from bopclients.application.research_run_recovery_service import ResearchRunRecoveryService
@@ -52,6 +55,9 @@ class RuntimeContainer:
     enrich_repo: EnrichmentResultRepository
     research_run_repo: ResearchRunRepository
     schedule_repo: MonitoringScheduleRepository
+    rate_limit_repo: ProviderRateLimitRepository
+    rate_limit_service: ProviderRateLimitService
+    execution_guard: ProviderExecutionGuard
     provider_registry: PublicSignalProviderRegistry
     signal_monitor_service: PublicSignalMonitorService
     continuous_monitoring_service: ContinuousMonitoringService
@@ -85,6 +91,11 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
     enrich_repo = EnrichmentResultRepository(db)
     research_run_repo = ResearchRunRepository(db)
     schedule_repo = MonitoringScheduleRepository(db)
+    rate_limit_repo = ProviderRateLimitRepository(db)
+
+    # Distributed Rate Limiting & Execution Guard
+    rate_limit_service = ProviderRateLimitService(rate_limit_repo)
+    execution_guard = ProviderExecutionGuard(rate_limit_service)
 
     # Provider Registry Wiring (Filtered by settings.enabled_providers)
     registry = PublicSignalProviderRegistry()
@@ -109,6 +120,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         campaign_repo=campaign_repo,
         research_run_repo=research_run_repo,
         registry=registry,
+        execution_guard=execution_guard,
     )
 
     continuous_monitoring_service = ContinuousMonitoringService(
@@ -156,6 +168,9 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         enrich_repo=enrich_repo,
         research_run_repo=research_run_repo,
         schedule_repo=schedule_repo,
+        rate_limit_repo=rate_limit_repo,
+        rate_limit_service=rate_limit_service,
+        execution_guard=execution_guard,
         provider_registry=registry,
         signal_monitor_service=signal_monitor_service,
         continuous_monitoring_service=continuous_monitoring_service,

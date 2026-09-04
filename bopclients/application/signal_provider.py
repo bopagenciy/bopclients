@@ -10,7 +10,11 @@ from datetime import datetime, timezone
 from bopclients.domain.prospect import Prospect
 from bopclients.domain.signal_observation import PublicSignalObservation
 from bopclients.domain.enums import SignalType, SignalCategory, IntentStrength
-from bopclients.application.signal_monitor_dto import PublicSignalProviderCapabilities, PublicSignalDiscoveryResult
+from bopclients.application.signal_monitor_dto import (
+    PublicSignalProviderCapabilities,
+    PublicSignalDiscoveryResult,
+    ProviderThrottleFeedback,
+)
 from bopclients.infrastructure.security.network_validator import NetworkSafetyValidator
 
 
@@ -154,6 +158,13 @@ class OfficialWebsiteSignalProvider(IPublicSignalProvider):
         home_res = self._safe_fetch(prospect.website_url)
         if not home_res["success"]:
             result.warnings.append(f"Could not reach homepage '{prospect.website_url}': {home_res.get('error')}")
+            http_st = home_res.get("http_status")
+            if http_st or home_res.get("error_type"):
+                result.throttle_feedback = ProviderThrottleFeedback(
+                    http_status=http_st,
+                    retry_after=home_res.get("retry_after"),
+                    error_type=home_res.get("error_type"),
+                )
             return result
 
         result.pages_scanned += 1
@@ -177,6 +188,14 @@ class OfficialWebsiteSignalProvider(IPublicSignalProvider):
             if sub_res["success"]:
                 result.pages_scanned += 1
                 scanned_pages.append((link_url, sub_res["text"], sub_res.get("title", "")))
+            else:
+                sub_st = sub_res.get("http_status")
+                if sub_st in (429, 503):
+                    result.throttle_feedback = ProviderThrottleFeedback(
+                        http_status=sub_st,
+                        retry_after=sub_res.get("retry_after"),
+                        error_type=sub_res.get("error_type"),
+                    )
 
         # 4. Analyze scanned pages for conservative public signals
         now_iso = datetime.now(timezone.utc).isoformat()
@@ -194,14 +213,26 @@ class OfficialWebsiteSignalProvider(IPublicSignalProvider):
             try:
                 res = self.scraper.fetch_page(url)
                 if not res or res.get("status", 0) >= 400:
-                    return {"success": False, "error": f"HTTP {res.get('status') if res else 'No response'}"}
+                    status = res.get("status", 0) if res else 0
+                    hdrs = res.get("headers", {}) if (res and isinstance(res.get("headers"), dict)) else {}
+                    ra = hdrs.get("Retry-After")
+                    err_type = "rate_limit" if status == 429 else ("service_unavailable" if status == 503 else ("forbidden" if status == 403 else "http_error"))
+                    return {
+                        "success": False,
+                        "error": f"HTTP {status if status else 'No response'}",
+                        "http_status": status if status else None,
+                        "retry_after": ra,
+                        "error_type": err_type,
+                    }
                 html_content = res.get("content", "")
                 title_m = re.search(r"<title[^>]*>(.*?)</title>", html_content, re.IGNORECASE | re.DOTALL)
                 title = title_m.group(1).strip() if title_m else ""
                 clean_text = self._clean_html_text(html_content)
                 return {"success": True, "text": clean_text, "raw_html": html_content, "title": title}
             except Exception as err:
-                return {"success": False, "error": str(err)}
+                err_str = str(err)
+                err_type = "timeout" if "timed out" in err_str.lower() else "network_error"
+                return {"success": False, "error": err_str, "error_type": err_type}
 
         current_url = url
         redirect_count = 0
@@ -244,7 +275,15 @@ class OfficialWebsiteSignalProvider(IPublicSignalProvider):
                         continue
 
                     if status >= 400:
-                        return {"success": False, "error": f"HTTP {status}"}
+                        ra = response.headers.get("Retry-After")
+                        err_type = "rate_limit" if status == 429 else ("service_unavailable" if status == 503 else ("forbidden" if status == 403 else "http_error"))
+                        return {
+                            "success": False,
+                            "error": f"HTTP {status}",
+                            "http_status": status,
+                            "retry_after": ra,
+                            "error_type": err_type,
+                        }
 
                     c_type = response.headers.get("Content-Type", "").lower()
                     if c_type and not any(t in c_type for t in ["html", "text", "xhtml"]):
@@ -260,8 +299,25 @@ class OfficialWebsiteSignalProvider(IPublicSignalProvider):
                     clean_text = self._clean_html_text(html_content)
 
                     return {"success": True, "text": clean_text, "raw_html": html_content, "title": title}
+            except urllib.error.HTTPError as err:
+                status = err.code
+                ra = err.headers.get("Retry-After") if (hasattr(err, "headers") and err.headers) else None
+                err_type = "rate_limit" if status == 429 else ("service_unavailable" if status == 503 else ("forbidden" if status == 403 else "http_error"))
+                return {
+                    "success": False,
+                    "error": f"HTTP {status}",
+                    "http_status": status,
+                    "retry_after": ra,
+                    "error_type": err_type,
+                }
+            except urllib.error.URLError as err:
+                err_str = str(err.reason) if hasattr(err, "reason") else str(err)
+                err_type = "timeout" if "timed out" in err_str.lower() else "dns"
+                return {"success": False, "error": f"URLError: {err_str}", "error_type": err_type}
             except Exception as err:
-                return {"success": False, "error": str(err)}
+                err_str = str(err)
+                err_type = "timeout" if "timed out" in err_str.lower() else "network_error"
+                return {"success": False, "error": err_str, "error_type": err_type}
 
         return {"success": False, "error": f"Max redirect limit of {self.MAX_REDIRECTS} exceeded"}
 

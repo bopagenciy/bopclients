@@ -1,7 +1,7 @@
 """ContinuousMonitoringService orchestrating prospect monitoring schedules, due work, and explicit triggers."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
 from bopclients.domain.monitoring_schedule import MonitoringSchedule
 from bopclients.domain.exceptions import TenantAccessError, EntityNotFoundError
@@ -21,12 +21,27 @@ from bopclients.infrastructure.repositories.prospect_priority_repository import 
 from bopclients.infrastructure.repositories.signal_observation_repository import SignalObservationRepository
 from bopclients.infrastructure.repositories.research_run_repository import ResearchRunRepository
 from bopclients.domain.research_run import ResearchRun
+from bopclients.domain.rate_limit import ProviderCallBudget
 
 
 class ContinuousMonitoringService:
     """Application service for monitoring schedule planning, due-work queries, and explicit execution."""
 
-    NON_FAILURE_SKIP_LEVELS = {"SKIPPED_NO_KEY", "SKIPPED_NO_BACKEND", "SKIPPED_NOT_APPLICABLE"}
+    NON_FAILURE_SKIP_LEVELS = {
+        "SKIPPED_NO_KEY",
+        "SKIPPED_NO_BACKEND",
+        "SKIPPED_NOT_APPLICABLE",
+        "SKIPPED_RATE_LIMITED",
+        "SKIPPED_CONCURRENCY_LIMITED",
+        "SKIPPED_COOLDOWN",
+        "SKIPPED_BUDGET_EXHAUSTED",
+    }
+    BACKPRESSURE_SKIP_LEVELS = {
+        "SKIPPED_RATE_LIMITED",
+        "SKIPPED_CONCURRENCY_LIMITED",
+        "SKIPPED_COOLDOWN",
+        "SKIPPED_BUDGET_EXHAUSTED",
+    }
 
     def __init__(
         self,
@@ -201,7 +216,7 @@ class ContinuousMonitoringService:
         ops_failed: List[str],
         provider_results: Dict[str, Any],
     ) -> str:
-        """Single source of truth policy classifying monitoring execution status into SUCCESS, PARTIAL_SUCCESS, FAILED, or SKIPPED."""
+        """Single source of truth policy classifying monitoring execution status into SUCCESS, PARTIAL_SUCCESS, FAILED, SKIPPED, or SKIPPED_BACKPRESSURE."""
         if not ops_attempted:
             return "SKIPPED"
 
@@ -209,14 +224,18 @@ class ContinuousMonitoringService:
         real_successes = 0
         real_failures = 0
         real_skips = 0
+        backpressure_skips = 0
 
         for p_name, res in provider_results.items():
             st = res.get("status", "") if isinstance(res, dict) else ""
-            if st in self.NON_FAILURE_SKIP_LEVELS:
+            if st in self.BACKPRESSURE_SKIP_LEVELS or (isinstance(res, dict) and res.get("is_backpressure")):
+                backpressure_skips += 1
+                real_skips += 1
+            elif st in self.NON_FAILURE_SKIP_LEVELS:
                 real_skips += 1
             elif st in ("SUCCESS", "SUCCESS_NO_SIGNALS", "PARTIAL_SUCCESS", "FIXTURE_VALIDATED"):
                 real_successes += 1
-            elif st == "FAILED" or res.get("errors"):
+            elif st == "FAILED" or (isinstance(res, dict) and res.get("errors")):
                 real_failures += 1
             else:
                 real_successes += 1
@@ -224,13 +243,18 @@ class ContinuousMonitoringService:
         if ops_failed:
             real_failures += len(ops_failed)
 
-        if real_successes > 0 and real_failures == 0:
+        if real_failures > 0:
+            return "PARTIAL_SUCCESS" if real_successes > 0 else "FAILED"
+
+        if real_successes > 0:
+            if backpressure_skips > 0:
+                return "PARTIAL_SUCCESS"
             return "SUCCESS"
-        elif real_successes > 0 and real_failures > 0:
-            return "PARTIAL_SUCCESS"
-        elif real_failures > 0:
-            return "FAILED"
-        elif real_skips > 0 or not ops_succeeded:
+
+        if backpressure_skips > 0 and real_successes == 0 and real_failures == 0:
+            return "SKIPPED_BACKPRESSURE"
+
+        if real_skips > 0 or not ops_succeeded:
             return "SKIPPED"
         else:
             return "SUCCESS"
@@ -242,6 +266,7 @@ class ContinuousMonitoringService:
         now_dt: Optional[datetime] = None,
         force: bool = False,
         execution_attempt_id: Optional[str] = None,
+        call_budget: Optional[ProviderCallBudget] = None,
     ) -> MonitoringExecutionResult:
         """Atomically claim and execute due monitoring work for a single schedule."""
         if not organization_id:
@@ -403,6 +428,7 @@ class ContinuousMonitoringService:
                     provider_names=schedule.provider_names,
                     recompute_priority=False,
                     heartbeat_callback=lease_hb.heartbeat_if_needed,
+                    call_budget=call_budget,
                 )
                 prov_results = mon_res.provider_results
                 warnings.extend(mon_res.warnings)
@@ -478,6 +504,28 @@ class ContinuousMonitoringService:
                     schedule.last_error = (errors[0] if errors else "Execution failed")[:255]
                     schedule.next_check_at = MonitoringBackoffPolicy.compute_backoff_next_check(schedule.failure_count, now_dt=now)
 
+                elif exec_status == "SKIPPED_BACKPRESSURE":
+                    # Defer next_check_at to earliest retry_not_before among throttled providers
+                    earliest_retry = None
+                    for r in prov_results.values():
+                        if isinstance(r, dict) and r.get("retry_not_before"):
+                            rnb = r["retry_not_before"]
+                            if earliest_retry is None or rnb < earliest_retry:
+                                earliest_retry = rnb
+                    if not earliest_retry:
+                        earliest_retry = (now + timedelta(seconds=60)).isoformat()
+
+                    schedule.last_check_at = completed_iso
+                    schedule.next_check_at = earliest_retry
+                    # failure_count is NOT incremented (backpressure is not a prospect/worker failure)
+                    schedule.source_fingerprint = new_decision.source_fingerprint
+                    schedule.data = {
+                        "reasons": new_decision.reasons + ["Schedule deferred by provider backpressure"],
+                        "executable_operations": new_decision.executable_operations,
+                        "recommended_operations": new_decision.recommended_operations,
+                    }
+                    final_skip_reason = "PROVIDER_BACKPRESSURE"
+
                 else:  # SKIPPED
                     schedule.last_check_at = completed_iso
                     schedule.next_check_at = new_decision.next_check_at
@@ -512,8 +560,8 @@ class ContinuousMonitoringService:
                     rr_status = "failed"
                     rr_err = "LEASE_OWNERSHIP_LOST: Lease token expired or reclaimed during execution"
                 else:
-                    rr_status = "completed" if exec_status in ("SUCCESS", "PARTIAL_SUCCESS", "SKIPPED") else "failed"
-                    rr_err = schedule.last_error
+                    rr_status = "completed" if exec_status in ("SUCCESS", "PARTIAL_SUCCESS", "SKIPPED", "SKIPPED_BACKPRESSURE") else "failed"
+                    rr_err = schedule.last_error if exec_status == "FAILED" else None
 
                 self.research_run_repo.update_status(
                     organization_id,

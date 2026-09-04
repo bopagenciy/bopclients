@@ -38,6 +38,15 @@ class PublicSignalProviderCapabilities:
 
 
 @dataclass
+class ProviderThrottleFeedback:
+    """Structured, machine-readable throttle and operational HTTP feedback from a provider execution."""
+
+    http_status: Optional[int] = None
+    retry_after: Optional[str] = None
+    error_type: Optional[str] = None  # e.g. "rate_limit", "service_unavailable", "timeout", "dns", "forbidden"
+
+
+@dataclass
 class PublicSignalDiscoveryResult:
     """Standardized output from a public signal discovery provider run."""
 
@@ -47,6 +56,7 @@ class PublicSignalDiscoveryResult:
     pages_scanned: int = 0
     queried_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     validation_level: str = ProviderValidationLevel.FIXTURE_VALIDATED.value
+    throttle_feedback: Optional[ProviderThrottleFeedback] = None
 
 
 @dataclass

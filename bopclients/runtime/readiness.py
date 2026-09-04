@@ -57,6 +57,8 @@ class RuntimeReadinessCheck:
         "monitoring_schedules",
         "signal_observations",
         "research_runs",
+        "provider_rate_limit_state",
+        "provider_rate_limit_leases",
         "bopclients_schema_version",
     ]
 
@@ -65,6 +67,8 @@ class RuntimeReadinessCheck:
         "idx_schedules_org_prospect",
         "idx_schedules_lease",
         "idx_research_runs_stale",
+        "idx_rate_limit_state_lookup",
+        "idx_rate_limit_leases_active",
     ]
 
     @classmethod

@@ -355,6 +355,34 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         UNIQUE (organization_id, scope_key)
     );
     """,
+    # 21. provider_rate_limit_state (Coordination store for window execution counts & cooldowns)
+    """
+    CREATE TABLE IF NOT EXISTS provider_rate_limit_state (
+        id VARCHAR(36) PRIMARY KEY,
+        provider_key VARCHAR(50) NOT NULL,
+        scope_key VARCHAR(150) NOT NULL,
+        window_started_at VARCHAR(50) NOT NULL,
+        execution_count INTEGER NOT NULL DEFAULT 0,
+        cooldown_until VARCHAR(50),
+        last_status_code INTEGER,
+        last_retry_after_seconds INTEGER,
+        updated_at VARCHAR(50) NOT NULL,
+        UNIQUE (provider_key, scope_key)
+    );
+    """,
+    # 22. provider_rate_limit_leases (In-flight request concurrency reservations with natural expiration)
+    """
+    CREATE TABLE IF NOT EXISTS provider_rate_limit_leases (
+        id VARCHAR(36) PRIMARY KEY,
+        provider_key VARCHAR(50) NOT NULL,
+        scope_key VARCHAR(150) NOT NULL,
+        lease_token VARCHAR(64) NOT NULL,
+        permit_id VARCHAR(36) NOT NULL,
+        expires_at VARCHAR(50) NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        UNIQUE (lease_token)
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -386,4 +414,8 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_schedules_org_due ON monitoring_schedules(organization_id, status, next_check_at);",
     "CREATE INDEX IF NOT EXISTS idx_schedules_org_prospect ON monitoring_schedules(organization_id, prospect_id);",
     "CREATE INDEX IF NOT EXISTS idx_schedules_lease ON monitoring_schedules(organization_id, lease_expires_at);",
+    "CREATE INDEX IF NOT EXISTS idx_rate_limit_state_lookup ON provider_rate_limit_state(provider_key, scope_key);",
+    "CREATE INDEX IF NOT EXISTS idx_rate_limit_state_cooldown ON provider_rate_limit_state(cooldown_until);",
+    "CREATE INDEX IF NOT EXISTS idx_rate_limit_leases_active ON provider_rate_limit_leases(provider_key, scope_key, expires_at);",
+    "CREATE INDEX IF NOT EXISTS idx_rate_limit_leases_token ON provider_rate_limit_leases(lease_token);",
 ]

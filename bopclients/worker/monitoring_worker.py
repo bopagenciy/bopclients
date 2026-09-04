@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any, Callable
 from bopclients.domain.exceptions import BopClientsDomainError
+from bopclients.domain.rate_limit import ProviderCallBudget
 from bopclients.application.monitoring_dto import MonitoringExecutionResult
 from bopclients.application.continuous_monitoring_service import ContinuousMonitoringService
 from bopclients.infrastructure.repositories.monitoring_schedule_repository import MonitoringScheduleRepository
@@ -26,6 +27,7 @@ class MonitoringWorkerConfig:
     research_run_recovery_enabled: bool = True
     research_run_stale_after_seconds: int = 900
     research_run_recovery_limit: int = 100
+    max_provider_calls_per_run: Optional[int] = None
     dry_run: bool = False
 
     def validate(self):
@@ -45,6 +47,8 @@ class MonitoringWorkerConfig:
             raise ValueError("research_run_stale_after_seconds must be greater than 0.")
         if self.research_run_recovery_limit <= 0:
             raise ValueError("research_run_recovery_limit must be greater than 0.")
+        if self.max_provider_calls_per_run is not None and self.max_provider_calls_per_run <= 0:
+            raise ValueError("max_provider_calls_per_run must be greater than 0.")
 
 
 @dataclass
@@ -83,9 +87,16 @@ class MonitoringWorkerRunResult:
     skipped_count: int
     lease_busy_count: int
     organization_count: int
-    stopped_reason: str  # NO_DUE_WORK, MAX_ITEMS_REACHED, MAX_DURATION_REACHED, DRY_RUN, STOP_REQUESTED, FATAL_ERROR
+    stopped_reason: str  # NO_DUE_WORK, MAX_ITEMS_REACHED, MAX_DURATION_REACHED, DRY_RUN, STOP_REQUESTED, FATAL_ERROR, PROVIDER_BUDGET_EXHAUSTED
     item_results: List[MonitoringWorkerItemResult] = field(default_factory=list)
     recovery_result: Optional[Any] = None
+    provider_calls_attempted: int = 0
+    provider_calls_executed: int = 0
+    provider_rate_limited: int = 0
+    provider_concurrency_limited: int = 0
+    provider_cooldown_skips: int = 0
+    provider_budget_skips: int = 0
+    backpressure_count: int = 0
     warnings: List[str] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
 
@@ -137,6 +148,14 @@ class MonitoringWorker:
         failed_count = 0
         skipped_count = 0
         lease_busy_count = 0
+
+        provider_calls_attempted = 0
+        provider_calls_executed = 0
+        provider_rate_limited = 0
+        provider_concurrency_limited = 0
+        provider_cooldown_skips = 0
+        provider_budget_skips = 0
+        backpressure_count = 0
 
         stopped_reason = "NO_DUE_WORK"
 
@@ -199,6 +218,8 @@ class MonitoringWorker:
             )
 
         # REAL EXECUTION LOOP
+        run_call_budget = ProviderCallBudget(max_calls=self.config.max_provider_calls_per_run)
+
         try:
             while items_attempted < self.config.max_items:
                 elapsed_sec = time.monotonic() - start_mono
@@ -238,6 +259,13 @@ class MonitoringWorker:
                         stopped_reason = "STOP_REQUESTED"
                         break
 
+                    if (
+                        self.config.max_provider_calls_per_run is not None
+                        and (provider_calls_executed >= self.config.max_provider_calls_per_run or run_call_budget.is_exhausted)
+                    ):
+                        stopped_reason = "PROVIDER_BUDGET_EXHAUSTED"
+                        break
+
                     seen_schedule_ids.add(s.id)
                     items_attempted += 1
                     processed_in_batch += 1
@@ -253,6 +281,7 @@ class MonitoringWorker:
                                 schedule_id=s.id,
                                 now_dt=item_start,
                                 execution_attempt_id=exec_attempt_id,
+                                call_budget=run_call_budget,
                             )
                         except TypeError:
                             exec_res = self.monitoring_service.execute_due(
@@ -281,8 +310,29 @@ class MonitoringWorker:
                                 partial_success_count += 1
                             elif exec_res.status == "FAILED":
                                 failed_count += 1
-                            elif exec_res.status == "SKIPPED":
+                            elif exec_res.status in ("SKIPPED", "SKIPPED_BACKPRESSURE"):
                                 skipped_count += 1
+
+                            if exec_res.status == "SKIPPED_BACKPRESSURE" or exec_res.skip_reason in (
+                                "BACKPRESSURE",
+                                "PROVIDER_BACKPRESSURE",
+                            ):
+                                backpressure_count += 1
+
+                            # Tally provider-level execution metrics
+                            for p_name, p_res in (exec_res.provider_results or {}).items():
+                                provider_calls_attempted += 1
+                                p_st = p_res.get("status", "") if isinstance(p_res, dict) else ""
+                                if p_st in ("SUCCESS", "SUCCESS_NO_SIGNALS", "PARTIAL_SUCCESS", "FAILED"):
+                                    provider_calls_executed += 1
+                                elif p_st == "SKIPPED_RATE_LIMITED":
+                                    provider_rate_limited += 1
+                                elif p_st == "SKIPPED_CONCURRENCY_LIMITED":
+                                    provider_concurrency_limited += 1
+                                elif p_st == "SKIPPED_COOLDOWN":
+                                    provider_cooldown_skips += 1
+                                elif p_st == "SKIPPED_BUDGET_EXHAUSTED":
+                                    provider_budget_skips += 1
 
                         item_results.append(
                             MonitoringWorkerItemResult(
@@ -307,7 +357,6 @@ class MonitoringWorker:
                         item_dur_ms = (item_end - item_start).total_seconds() * 1000.0
                         failed_count += 1
                         err_msg = str(ex)[:255]
-                        logger.error(f"Error processing schedule {s.id[:8]}: {err_msg}")
                         item_results.append(
                             MonitoringWorkerItemResult(
                                 schedule_id=s.id,
@@ -321,6 +370,16 @@ class MonitoringWorker:
                                 error_summary=err_msg,
                             )
                         )
+
+                    if (
+                        self.config.max_provider_calls_per_run is not None
+                        and (provider_calls_executed >= self.config.max_provider_calls_per_run or run_call_budget.is_exhausted)
+                    ):
+                        stopped_reason = "PROVIDER_BUDGET_EXHAUSTED"
+                        break
+
+                if stopped_reason == "PROVIDER_BUDGET_EXHAUSTED":
+                    break
 
                 if processed_in_batch == 0:
                     stopped_reason = "NO_DUE_WORK"
@@ -362,4 +421,11 @@ class MonitoringWorker:
             stopped_reason=stopped_reason,
             item_results=item_results,
             recovery_result=recovery_result,
+            provider_calls_attempted=provider_calls_attempted,
+            provider_calls_executed=provider_calls_executed,
+            provider_rate_limited=provider_rate_limited,
+            provider_concurrency_limited=provider_concurrency_limited,
+            provider_cooldown_skips=provider_cooldown_skips,
+            provider_budget_skips=provider_budget_skips,
+            backpressure_count=backpressure_count,
         )

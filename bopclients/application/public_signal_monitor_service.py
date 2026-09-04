@@ -1,6 +1,6 @@
 """Service orchestrating public signal monitoring across multiple providers with registry routing, semantic event corroboration & failure isolation."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional, Dict, Any, Callable
 from bopclients.domain.prospect import Prospect
 from bopclients.domain.signal_observation import PublicSignalObservation
@@ -22,6 +22,10 @@ from bopclients.infrastructure.repositories.research_run_repository import Resea
 from bopclients.application.prospect_priority_service import ProspectPriorityService
 
 
+from bopclients.domain.rate_limit import ProviderAcquireStatus, ProviderCallBudget
+from bopclients.application.provider_execution_guard import ProviderExecutionGuard
+
+
 class PublicSignalMonitorService:
     """Application service managing multi-provider public signal discovery, deduplication, semantic event corroboration, and signal reconciliation."""
 
@@ -35,6 +39,7 @@ class PublicSignalMonitorService:
         priority_service: Optional[ProspectPriorityService] = None,
         registry: Optional[PublicSignalProviderRegistry] = None,
         providers: Optional[List[IPublicSignalProvider]] = None,
+        execution_guard: Optional[ProviderExecutionGuard] = None,
     ):
         self.observation_repo = observation_repo
         self.prospect_repo = prospect_repo
@@ -42,6 +47,7 @@ class PublicSignalMonitorService:
         self.research_run_repo = research_run_repo
         self.activation_policy = activation_policy or SignalActivationPolicy()
         self.priority_service = priority_service
+        self.execution_guard = execution_guard
 
         self.registry = registry or PublicSignalProviderRegistry()
         if providers:
@@ -61,6 +67,7 @@ class PublicSignalMonitorService:
         context: Optional[Dict[str, Any]] = None,
         recompute_priority: bool = False,
         heartbeat_callback: Optional[Callable[[], bool]] = None,
+        call_budget: Optional[ProviderCallBudget] = None,
     ) -> ProspectSignalMonitorResult:
         """Monitor public signals for a single prospect with multi-provider routing, semantic event deduplication & failure isolation."""
         prospect = self.prospect_repo.get_prospect_by_id(organization_id, prospect_id)
@@ -87,7 +94,8 @@ class PublicSignalMonitorService:
         # 1. Execute Signal Discovery per Provider with Standardized Statuses & Lease Heartbeat Check
         for prov in active_providers:
             if heartbeat_callback and not heartbeat_callback():
-                result.warnings.append("LEASE_OWNERSHIP_LOST: Lease token ownership lost during monitoring execution; stopping provider scan.")
+                warn_msg = f"LEASE_OWNERSHIP_LOST: Skipping remaining provider '{prov.provider_name}' due to lost lease."
+                result.warnings.append(warn_msg)
                 break
 
             prov_name = prov.provider_name
@@ -123,8 +131,57 @@ class PublicSignalMonitorService:
                 }
                 continue
 
+            # Hard Pre-Call Budget Enforcement: Check BEFORE provider invocation
+            if call_budget is not None and not call_budget.can_execute():
+                warn_msg = f"PROVIDER_BUDGET_EXHAUSTED: Run budget of {call_budget.max_calls} provider calls exhausted. Skipping '{prov_name}'."
+                result.warnings.append(warn_msg)
+                result.provider_results[prov_name] = {
+                    "status": "SKIPPED_BUDGET_EXHAUSTED",
+                    "validation_level": caps.validation_level,
+                    "observations_found": 0,
+                    "observations_created": 0,
+                    "signals_activated": 0,
+                    "warnings": [warn_msg],
+                    "errors": [],
+                    "retry_not_before": (datetime.now(timezone.utc) + timedelta(minutes=1)).isoformat(),
+                    "retry_after_seconds": 60,
+                    "is_backpressure": True,
+                }
+                continue
+
             try:
-                disc_res = prov.discover_signals(prospect, context=context)
+                if self.execution_guard:
+                    disc_res, permit = self.execution_guard.execute_provider(prov, prospect, context=context)
+                    if not permit.acquired:
+                        st_map = {
+                            ProviderAcquireStatus.RATE_LIMITED: "SKIPPED_RATE_LIMITED",
+                            ProviderAcquireStatus.CONCURRENCY_LIMITED: "SKIPPED_CONCURRENCY_LIMITED",
+                            ProviderAcquireStatus.COOLDOWN_ACTIVE: "SKIPPED_COOLDOWN",
+                            ProviderAcquireStatus.PROVIDER_BUDGET_EXHAUSTED: "SKIPPED_BUDGET_EXHAUSTED",
+                        }
+                        st_code = st_map.get(permit.status, "SKIPPED_RATE_LIMITED")
+                        warn_msg = f"PROVIDER_BACKPRESSURE: Provider '{prov_name}' deferred ({st_code}): {permit.reason}"
+                        result.warnings.append(warn_msg)
+                        result.provider_results[prov_name] = {
+                            "status": st_code,
+                            "validation_level": caps.validation_level,
+                            "observations_found": 0,
+                            "observations_created": 0,
+                            "signals_activated": 0,
+                            "warnings": [warn_msg],
+                            "errors": [],
+                            "retry_not_before": permit.retry_not_before,
+                            "retry_after_seconds": permit.retry_after_seconds,
+                            "is_backpressure": True,
+                        }
+                        continue
+                else:
+                    disc_res = prov.discover_signals(prospect, context=context)
+
+                # Provider execution succeeded or returned observations: record against run budget
+                if call_budget is not None:
+                    call_budget.record_call()
+
                 result.warnings.extend([f"[{prov_name}] {w}" for w in disc_res.warnings])
                 result.errors.extend([f"[{prov_name}] {e}" for e in disc_res.errors])
 

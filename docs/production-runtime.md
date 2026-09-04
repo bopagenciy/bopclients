@@ -135,3 +135,61 @@ When a worker process experiences an abrupt termination (such as an OS crash, co
 - **No Schedule Penalty**: Reconciling an orphan run **does NOT increment `schedule.failure_count`**, apply backoff, or alter schedule priority/`next_check_at`. The schedule remains due for normal re-attempt.
 - **Idempotent Provider Deduplication**: Re-execution of provider scans during worker retry may re-invoke external API calls, but persisted `SignalObservation` entities are deduplicated by `semantic_event_key`.
 - **Side-Effect Boundary**: There is no distributed exactly-once guarantee for external HTTP provider calls; in-flight external API calls prior to a crash cannot be cancelled externally.
+
+---
+
+## 12. Distributed Rate Limiting, Provider Budgets & Backpressure (P14)
+
+### Provider Call Granularity & Unit of Measurement
+- **RATE LIMIT UNIT: `PROVIDER_EXECUTION`**, not individual raw HTTP TCP requests.
+- Each acquired token represents one complete provider execution attempt.
+- For `official_website`, a single provider execution safely fetches 1 homepage and up to 5 same-site candidate subpages ($1 \le N \le 6$ bounded HTTP requests).
+- Redirect hops ($M \le 3$) and hidden transport behaviors are internal to the HTTP boundary and are not separately metered.
+- Therefore, P14 provides distributed protection on provider execution rate, **NOT exact outbound HTTP request accounting**.
+- For `government_procurement` (SAM.gov Opportunities v2), each execution issues exactly 1 HTTP GET request.
+- For `gemini` (manual execution only), each execution issues 1 REST API call.
+
+### Canonical Provider Keys
+The system enforces strict, canonical provider keys across all domain policies, repositories, guards, and workers:
+- `official_website`: Prospect website and subpage scanning.
+- `government_procurement`: SAM.gov Opportunities Public API v2.
+- `public_news`: Curated corporate news and press releases.
+- `gemini`: LLM-assisted prospect research (manual-only, never autonomous).
+
+### Database-Coordinated Concurrency & Windows
+- Multi-worker deployments coordinate provider invocations via PostgreSQL tables `provider_rate_limit_state` and `provider_rate_limit_leases` (using `SELECT ... FOR UPDATE` row locks).
+- In SQLite development / single-worker environments, transactions serialize slot reservations without additional infrastructure.
+- **Execution-Level Metrics**: Fixed window progress is tracked via `execution_count` (persisted column) against `policy.max_executions`.
+- **Natural Lease Expiration**: In-flight provider slots are guarded by concurrency leases (`expires_at = now + lease_duration`). If a worker crashes mid-request, subsequent workers naturally clean up expired leases (`cleanup_expired_leases`) and acquire slots without deadlock.
+- **Stale Token Protection**: Concurrency leases are released by explicit `lease_token` (UUID). Stale or mismatched tokens cannot release active leases owned by other workers. Lease tokens are never exposed in operational logs or telemetry.
+
+### Scoping Strategy & Multi-Tenant Capacity
+- **Per-Host Scoping**: Web scraping (`official_website`) is scoped per domain (`host:{netloc}`). Saturated rate limits on one target prospect do not throttle or impede scans on other domains.
+- **Global Provider Scoping**: Third-party APIs (`government_procurement`, `gemini`, `public_news`) share global capacity across all tenants (`global:{provider_key}`).
+- **Fairness & Shared Capacity Warning**: Global scopes provide **GLOBAL MULTI-TENANT SHARED CAPACITY**, not fair queueing or round-robin tenant scheduling. A high-activity tenant can consume the shared request quota within a window, causing backpressure deferrals (`SKIPPED_RATE_LIMITED`) on other tenants until the window resets (noisy-tenant starvation limitation).
+
+### Application-Side Execution Safety Defaults
+Default window limits:
+- `official_website`: 30 provider executions / 60s
+- `government_procurement`: 10 provider executions / 60s
+- `gemini`: 15 provider executions / 60s
+- `public_news`: disabled
+These are **APPLICATION-SIDE EXECUTION SAFETY DEFAULTS** designed to protect upstream infrastructure and ensure stability, NOT provider-published HTTP quotas.
+
+### Structured Dynamic Cooldown & Retry-After
+- HTTP 429 and 503 responses are captured structurally via `ProviderThrottleFeedback` (`http_status`, `retry_after`, `error_type`) emitted directly by provider adapters.
+- Free-form human warning strings are **NEVER parsed or regex-matched** for cooldown decision control flow.
+- Bounded `Retry-After` parsing supports both decimal seconds and RFC 7231 / 1123 HTTP dates, capped between a minimum floor and maximum ceiling (default 3600s).
+- Cooldown deadlines are committed immediately to the database, propagating instant backpressure across all active workers.
+- HTTP 403 Forbidden and network timeouts do NOT set cooldowns, preventing improper lockout on access denied errors.
+
+### Backpressure Deferral without Penalty
+- When all enabled providers for a schedule are throttled (`RATE_LIMITED`, `CONCURRENCY_LIMITED`, or `COOLDOWN_ACTIVE`), execution status is set to `SKIPPED_BACKPRESSURE`.
+- **Failure Count Preservation**: `failure_count` is **not incremented**, preventing premature schedule suspension.
+- **Non-blocking Rescheduling**: `next_check_at` is deferred to `retry_not_before`, eliminating hot-looping or `time.sleep` blocking in workers.
+- The associated `ResearchRun` completes cleanly with `skipped_backpressure` metadata.
+
+### Worker Run Budgets
+- Workers support `max_provider_calls_per_run` budget limits with hard pre-call guards (`ProviderCallBudget`).
+- Call budgets are verified **before** invoking provider network calls. In multi-provider schedules, if the budget is reached mid-schedule, remaining providers are skipped cleanly with `SKIPPED_BUDGET_EXHAUSTED` and never make network calls.
+- When the worker-level budget is reached, workers exit cleanly with `PROVIDER_BUDGET_EXHAUSTED` and report structured observability metrics (`provider_calls_attempted`, `provider_calls_executed`, `provider_rate_limited`, `provider_concurrency_limited`, `provider_cooldown_skips`, `provider_budget_skips`).

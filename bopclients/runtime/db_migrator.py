@@ -14,7 +14,7 @@ logger = logging.getLogger("bopclients.runtime.migrator")
 class DatabaseMigrator:
     """Manager handling database schema versioning and migration execution."""
 
-    EXPECTED_VERSION = "20260902_004"
+    EXPECTED_VERSION = "20260902_005"
 
     @classmethod
     def ensure_version_table(cls, db: Union[ForgeDB, BopDBConnection]):
@@ -106,6 +106,74 @@ class DatabaseMigrator:
         db.commit()
 
     @classmethod
+    def _apply_005_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool):
+        """Apply migration 20260902_005 creating provider_rate_limit_state and provider_rate_limit_leases."""
+        # 1. provider_rate_limit_state
+        state_sql = """
+            CREATE TABLE IF NOT EXISTS provider_rate_limit_state (
+                id VARCHAR(36) PRIMARY KEY,
+                provider_key VARCHAR(50) NOT NULL,
+                scope_key VARCHAR(150) NOT NULL,
+                window_started_at VARCHAR(50) NOT NULL,
+                execution_count INTEGER NOT NULL DEFAULT 0,
+                cooldown_until VARCHAR(50),
+                last_status_code INTEGER,
+                last_retry_after_seconds INTEGER,
+                updated_at VARCHAR(50) NOT NULL,
+                UNIQUE (provider_key, scope_key)
+            );
+        """
+        db.execute(state_sql)
+
+        # Ensure execution_count column is present if table was pre-created with request_count
+        try:
+            if is_pg:
+                db.execute("""
+                    DO $$
+                    BEGIN
+                        IF EXISTS (
+                            SELECT 1 FROM information_schema.columns
+                            WHERE table_name='provider_rate_limit_state' AND column_name='request_count'
+                        ) THEN
+                            ALTER TABLE provider_rate_limit_state RENAME COLUMN request_count TO execution_count;
+                        END IF;
+                    END $$;
+                """)
+            else:
+                cols = [c["name"] for c in db.fetch_dicts("PRAGMA table_info(provider_rate_limit_state)")]
+                if "request_count" in cols and "execution_count" not in cols:
+                    db.execute("ALTER TABLE provider_rate_limit_state RENAME COLUMN request_count TO execution_count")
+        except Exception as ex:
+            logger.debug(f"Column migration compatibility notice: {ex}")
+
+        # 2. provider_rate_limit_leases
+        leases_sql = """
+            CREATE TABLE IF NOT EXISTS provider_rate_limit_leases (
+                id VARCHAR(36) PRIMARY KEY,
+                provider_key VARCHAR(50) NOT NULL,
+                scope_key VARCHAR(150) NOT NULL,
+                lease_token VARCHAR(64) NOT NULL,
+                permit_id VARCHAR(36) NOT NULL,
+                expires_at VARCHAR(50) NOT NULL,
+                created_at VARCHAR(50) NOT NULL,
+                UNIQUE (lease_token)
+            );
+        """
+        db.execute(leases_sql)
+
+        # 3. Indexes
+        idx_stmts = [
+            "CREATE INDEX IF NOT EXISTS idx_rate_limit_state_lookup ON provider_rate_limit_state(provider_key, scope_key);",
+            "CREATE INDEX IF NOT EXISTS idx_rate_limit_state_cooldown ON provider_rate_limit_state(cooldown_until);",
+            "CREATE INDEX IF NOT EXISTS idx_rate_limit_leases_active ON provider_rate_limit_leases(provider_key, scope_key, expires_at);",
+            "CREATE INDEX IF NOT EXISTS idx_rate_limit_leases_token ON provider_rate_limit_leases(lease_token);",
+        ]
+        for idx in idx_stmts:
+            db.execute(idx)
+
+        db.commit()
+
+    @classmethod
     def migrate(cls, db: Union[ForgeDB, BopDBConnection]) -> str:
         """Run idempotent schema migration and record schema version.
         
@@ -134,7 +202,10 @@ class DatabaseMigrator:
         # 3. Apply 004 upgrades (current_execution_attempt_id on monitoring_schedules)
         cls._apply_004_upgrades(db, is_pg)
 
-        # 4. Ensure version table and insert expected version idempotently
+        # 4. Apply 005 upgrades (provider_rate_limit_state, provider_rate_limit_leases)
+        cls._apply_005_upgrades(db, is_pg)
+
+        # 5. Ensure version table and insert expected version idempotently
         cls.ensure_version_table(db)
         now_iso = datetime.now(timezone.utc).isoformat()
         p = "%s" if is_pg else "?"

@@ -37,6 +37,8 @@ class TestPostgresRecoveryP13:
             DatabaseMigrator.migrate(db_admin)
             settings = RuntimeSettings(database_url=TEST_PG_URL, enabled_providers=["official_website"])
             container_admin = build_runtime_container(settings, db=db_admin)
+            # Pre-clean any leftover stale runs from prior runs
+            container_admin.recovery_service.reconcile_stale_runs(now_dt=datetime.now(timezone.utc), stale_after_seconds=0)
 
             # 2. Seed tenant, orphan stale ResearchRun A, and active ResearchRun B
             ts = int(time.time() * 1000)
