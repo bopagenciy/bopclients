@@ -21,3 +21,19 @@ data/
 /miami_dentists_sample.csv
 /validation_miami_dentists.csv
 /validation_miami_dentists_enriched.csv
+
+# Frontend (apps/web)
+node_modules/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+next-env.d.ts
+apps/web/.next/
+apps/web/node_modules/
+apps/web/out/
+apps/web/playwright-report/
+apps/web/test-results/
+apps/web/.env
+apps/web/.env.local
+apps/web/.env.*.local

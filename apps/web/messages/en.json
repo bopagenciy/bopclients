@@ -1,0 +1,236 @@
+{
+  "brand": {
+    "name": "BOP | CLIENTS",
+    "tagline": "Autonomous Client Acquisition Platform",
+    "description": "Enterprise B2B prospecting, ICP discovery, signal enrichment, and lead qualification",
+    "home_label": "BopClients Home"
+  },
+  "auth": {
+    "title": "Sign In to BopClients",
+    "subtitle": "Enter your organization credentials to access the platform",
+    "email_label": "Email Address",
+    "email_placeholder": "name@organization.com",
+    "password_label": "Password",
+    "password_placeholder": "••••••••••••",
+    "signin_button": "Sign In",
+    "signing_in": "Signing In...",
+    "logout_button": "Sign Out",
+    "session_expired": "Your session has expired. Please sign in again.",
+    "invalid_credentials": "Invalid email or password",
+    "auth_failed": "Authentication failed. Please verify your credentials.",
+    "secure_badge": "Encrypted Session (BFF HttpOnly)"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "prospects": "Prospects",
+    "campaigns": "Campaigns",
+    "icps": "ICPs",
+    "target_markets": "Target Markets",
+    "research": "Research & Discovery",
+    "monitoring": "System Monitoring",
+    "integrations": "Integrations",
+    "settings": "Settings",
+    "organization": "Organization",
+    "switch_organization": "Switch Organization",
+    "select_organization": "Select active organization",
+    "language": "Language",
+    "profile": "Profile",
+    "collapse_sidebar": "Collapse sidebar",
+    "expand_sidebar": "Expand sidebar"
+  },
+  "dashboard": {
+    "title": "Executive Overview",
+    "subtitle": "Real-time pipeline metrics, conversion rates, and prospecting health",
+    "metrics": {
+      "total_prospects": "Total Prospects",
+      "total_campaigns": "Total Campaigns",
+      "qualified_leads": "Qualified Leads",
+      "dispatch_rate": "Outbox Dispatch Health",
+      "enriched_signals": "Enriched Signals"
+    },
+    "recent_activity": "Recent System Activity",
+    "top_icps": "Ideal Customer Profiles",
+    "lead_distribution": "Lead Qualification Distribution"
+  },
+  "prospects": {
+    "title": "Prospect Directory",
+    "subtitle": "Audited prospect profiles, enrichment state, signals, and qualification scoring",
+    "search_placeholder": "Search prospects by name, company, email...",
+    "filter_stage": "Stage",
+    "filter_priority": "Priority",
+    "columns": {
+      "name": "Prospect Name",
+      "company": "Company",
+      "email": "Email",
+      "title": "Job Title",
+      "priority": "Priority",
+      "stage": "Stage",
+      "score": "Fit Score",
+      "updated": "Last Activity",
+      "actions": "Actions"
+    },
+    "stages": {
+      "uncontacted": "Uncontacted",
+      "identified": "Identified",
+      "researching": "Researching",
+      "contacted": "Contacted",
+      "qualified": "Qualified",
+      "engaged": "Engaged",
+      "nurturing": "Nurturing",
+      "disqualified": "Disqualified"
+    },
+    "detail": {
+      "overview": "Overview",
+      "signals": "Detected Signals",
+      "intelligence": "Prospect Intelligence",
+      "history": "Activity History",
+      "no_signals": "No enrichment signals detected yet."
+    },
+    "pagination": {
+      "showing": "Showing {start} to {end} of {total} prospects",
+      "previous": "Previous",
+      "next": "Next",
+      "page": "Page {page} of {pages}"
+    },
+    "empty": "No prospects found matching current filters."
+  },
+  "campaigns": {
+    "title": "Prospecting Campaigns",
+    "subtitle": "Multi-channel outbound campaigns, target market mapping, and execution cadence",
+    "create_button": "New Campaign",
+    "columns": {
+      "name": "Campaign Name",
+      "target_market": "Target Market",
+      "status": "Status",
+      "prospects_count": "Prospects",
+      "qualified_count": "Qualified",
+      "created_at": "Created"
+    },
+    "empty": "No campaigns configured for this organization."
+  },
+  "icps": {
+    "title": "Ideal Customer Profiles (ICPs)",
+    "subtitle": "Firmographic parameters, scoring weights, and market criteria definitions",
+    "create_button": "Create ICP",
+    "columns": {
+      "name": "Profile Name",
+      "industry": "Industry",
+      "target_headcount": "Target Headcount",
+      "geo_markets": "Geographic Scope",
+      "weight": "Match Weight"
+    },
+    "empty": "No ICPs defined yet."
+  },
+  "target_markets": {
+    "title": "Target Markets",
+    "subtitle": "Audience segments, vertical clusters, and geographic target territories",
+    "columns": {
+      "name": "Market Segment",
+      "region": "Region",
+      "icp": "Linked ICP",
+      "total_prospects": "Total Market Pool"
+    },
+    "empty": "No target markets mapped."
+  },
+  "research": {
+    "title": "Autonomous Research & Discovery",
+    "subtitle": "Deep-web intelligence, signal harvesting, company dossier discovery",
+    "notice": "Research operations execute under the engine's canonical discovery pipelines.",
+    "boundary_info": "Note: Discovery searches execute across original source languages independent of UI locale.",
+    "columns": {
+      "entity": "Subject Entity",
+      "source": "Discovery Source",
+      "status": "Extraction Status",
+      "signals_extracted": "Signals Extracted",
+      "timestamp": "Timestamp"
+    },
+    "empty": "No recent discovery runs to display."
+  },
+  "monitoring": {
+    "title": "System Monitoring & Reliability",
+    "subtitle": "Dispatcher queue status, outbox throughput, error logs, and multi-worker scheduler",
+    "dispatcher_status": "Outbox Dispatcher Status",
+    "worker_nodes": "Active Worker Nodes",
+    "queue_depth": "Pending Events in Outbox",
+    "dead_letter": "Dead-Letter Queue",
+    "healthy": "All systems operational",
+    "degraded": "Degraded dispatch throughput",
+    "empty": "No active system alerts."
+  },
+  "integrations": {
+    "title": "Integrations & Destinations",
+    "subtitle": "Outbound delivery endpoints, webhook listeners, and platform connectors",
+    "destinations": "Configured Destinations",
+    "add_destination": "Configure Destination",
+    "restricted_notice": "Destination credential management requires Organization Admin or Owner role.",
+    "empty": "No active external destinations configured."
+  },
+  "settings": {
+    "title": "Organization Settings",
+    "subtitle": "Tenant configuration, membership administration, and role-based access control",
+    "tabs": {
+      "general": "General",
+      "members": "Team Members",
+      "security": "Security & Tokens",
+      "audit": "Audit Log"
+    },
+    "members_table": {
+      "user": "User",
+      "email": "Email",
+      "role": "Role",
+      "status": "Status",
+      "actions": "Actions"
+    },
+    "invite_button": "Invite Member",
+    "role_restriction": "Only Organization Owners and Admins can modify team memberships."
+  },
+  "common": {
+    "loading": "Loading...",
+    "save": "Save Changes",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "delete": "Delete",
+    "edit": "Edit",
+    "view": "View Details",
+    "close": "Close",
+    "refresh": "Refresh",
+    "back": "Back",
+    "na": "N/A",
+    "search": "Search...",
+    "all": "All",
+    "actions": "Actions",
+    "success": "Operation completed successfully",
+    "error_occurred": "An error occurred while processing your request",
+    "retry": "Try Again"
+  },
+  "errors": {
+    "not_found": "Resource Not Found",
+    "not_found_desc": "The requested resource could not be found or belongs to another organization.",
+    "unauthorized": "Authentication Required",
+    "unauthorized_desc": "Please sign in to access this resource.",
+    "forbidden": "Access Restricted",
+    "forbidden_desc": "Your current role does not have permission to view or modify this resource.",
+    "server_error": "Internal Error",
+    "server_error_desc": "The system encountered an unexpected error. Please retry or contact support."
+  },
+  "roles": {
+    "owner": "Owner",
+    "admin": "Administrator",
+    "member": "Member",
+    "viewer": "Viewer"
+  },
+  "priority": {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "urgent": "Urgent"
+  },
+  "status": {
+    "active": "Active",
+    "inactive": "Inactive",
+    "paused": "Paused",
+    "completed": "Completed",
+    "draft": "Draft",
+    "failed": "Failed"
+  }
+}

@@ -1,0 +1,236 @@
+{
+  "brand": {
+    "name": "BOP | CLIENTS",
+    "tagline": "Plataforma Autónoma de Adquisición de Clientes",
+    "description": "Prospección B2B empresarial, descubrimiento de ICP, enriquecimiento de señales y calificación de prospectos",
+    "home_label": "Inicio de BopClients"
+  },
+  "auth": {
+    "title": "Iniciar Sesión en BopClients",
+    "subtitle": "Ingrese las credenciales de su organización para acceder a la plataforma",
+    "email_label": "Correo Electrónico",
+    "email_placeholder": "nombre@organizacion.com",
+    "password_label": "Contraseña",
+    "password_placeholder": "••••••••••••",
+    "signin_button": "Iniciar Sesión",
+    "signing_in": "Iniciando sesión...",
+    "logout_button": "Cerrar Sesión",
+    "session_expired": "Su sesión ha expirado. Inicie sesión nuevamente.",
+    "invalid_credentials": "Correo o contraseña no válidos",
+    "auth_failed": "Error de autenticación. Verifique sus credenciales.",
+    "secure_badge": "Sesión Cifrada (BFF HttpOnly)"
+  },
+  "nav": {
+    "dashboard": "Panel Principal",
+    "prospects": "Prospectos",
+    "campaigns": "Campañas",
+    "icps": "ICPs",
+    "target_markets": "Mercados Objetivo",
+    "research": "Investigación y Descubrimiento",
+    "monitoring": "Monitoreo del Sistema",
+    "integrations": "Integraciones",
+    "settings": "Configuración",
+    "organization": "Organización",
+    "switch_organization": "Cambiar Organización",
+    "select_organization": "Seleccionar organización activa",
+    "language": "Idioma",
+    "profile": "Perfil",
+    "collapse_sidebar": "Contraer barra lateral",
+    "expand_sidebar": "Expandir barra lateral"
+  },
+  "dashboard": {
+    "title": "Resumen Ejecutivo",
+    "subtitle": "Métricas de pipeline en tiempo real, tasas de conversión y salud de prospección",
+    "metrics": {
+      "total_prospects": "Total de Prospectos",
+      "total_campaigns": "Campañas Totales",
+      "qualified_leads": "Prospectos Calificados",
+      "dispatch_rate": "Salud de Despacho de Outbox",
+      "enriched_signals": "Señales Enriquecidas"
+    },
+    "recent_activity": "Actividad Reciente del Sistema",
+    "top_icps": "Perfiles de Cliente Ideal",
+    "lead_distribution": "Distribución de Calificación de Prospectos"
+  },
+  "prospects": {
+    "title": "Directorio de Prospectos",
+    "subtitle": "Perfiles auditados de prospectos, estado de enriquecimiento, señales y puntuación",
+    "search_placeholder": "Buscar prospectos por nombre, empresa, correo...",
+    "filter_stage": "Etapa",
+    "filter_priority": "Prioridad",
+    "columns": {
+      "name": "Nombre del Prospecto",
+      "company": "Empresa",
+      "email": "Correo Electrónico",
+      "title": "Cargo",
+      "priority": "Prioridad",
+      "stage": "Etapa",
+      "score": "Puntuación de Ajuste",
+      "updated": "Última Actividad",
+      "actions": "Acciones"
+    },
+    "stages": {
+      "uncontacted": "No Contactado",
+      "identified": "Identificado",
+      "researching": "En Investigación",
+      "contacted": "Contactado",
+      "qualified": "Calificado",
+      "engaged": "En Interacción",
+      "nurturing": "Nutrición",
+      "disqualified": "Descalificado"
+    },
+    "detail": {
+      "overview": "Resumen General",
+      "signals": "Señales Detectadas",
+      "intelligence": "Inteligencia de Prospecto",
+      "history": "Historial de Actividad",
+      "no_signals": "Aún no se han detectado señales de enriquecimiento."
+    },
+    "pagination": {
+      "showing": "Mostrando {start} a {end} de {total} prospectos",
+      "previous": "Anterior",
+      "next": "Siguiente",
+      "page": "Página {page} de {pages}"
+    },
+    "empty": "No se encontraron prospectos que coincidan con los filtros actuales."
+  },
+  "campaigns": {
+    "title": "Campañas de Prospección",
+    "subtitle": "Campañas de salida multicanal, mapeo de mercados objetivo y cadencia de ejecución",
+    "create_button": "Nueva Campaña",
+    "columns": {
+      "name": "Nombre de la Campaña",
+      "target_market": "Mercado Objetivo",
+      "status": "Estado",
+      "prospects_count": "Prospectos",
+      "qualified_count": "Calificados",
+      "created_at": "Creada"
+    },
+    "empty": "No hay campañas configuradas para esta organización."
+  },
+  "icps": {
+    "title": "Perfiles de Cliente Ideal (ICPs)",
+    "subtitle": "Parámetros firmográficos, ponderación de puntuación y criterios de mercado",
+    "create_button": "Crear ICP",
+    "columns": {
+      "name": "Nombre del Perfil",
+      "industry": "Industria",
+      "target_headcount": "Plantilla Objetivo",
+      "geo_markets": "Alcance Geográfico",
+      "weight": "Ponderación de Ajuste"
+    },
+    "empty": "Aún no se han definido ICPs."
+  },
+  "target_markets": {
+    "title": "Mercados Objetivo",
+    "subtitle": "Segmentos de audiencia, agrupaciones verticales y territorios objetivo",
+    "columns": {
+      "name": "Segmento de Mercado",
+      "region": "Región",
+      "icp": "ICP Asociado",
+      "total_prospects": "Total de Prospectos"
+    },
+    "empty": "No hay mercados objetivo mapeados."
+  },
+  "research": {
+    "title": "Investigación y Descubrimiento Autónomo",
+    "subtitle": "Inteligencia profunda de la web, recolección de señales y descubrimiento de expedientes empresariales",
+    "notice": "Las operaciones de investigación se ejecutan bajo los conductos canónicos de descubrimiento del motor.",
+    "boundary_info": "Nota: Las búsquedas de descubrimiento se ejecutan en los idiomas de origen de las fuentes independientemente del idioma de la interfaz.",
+    "columns": {
+      "entity": "Entidad Sujeto",
+      "source": "Fuente de Descubrimiento",
+      "status": "Estado de Extracción",
+      "signals_extracted": "Señales Extraídas",
+      "timestamp": "Marca Temporal"
+    },
+    "empty": "No hay ejecuciones recientes de descubrimiento para mostrar."
+  },
+  "monitoring": {
+    "title": "Monitoreo del Sistema y Confiabilidad",
+    "subtitle": "Estado de cola del despachador, rendimiento de outbox, registros de error y programador multitarea",
+    "dispatcher_status": "Estado del Despachador de Outbox",
+    "worker_nodes": "Nodos de Trabajo Activos",
+    "queue_depth": "Eventos Pendientes en Outbox",
+    "dead_letter": "Cola de Mensajes Fallidos (Dead-Letter)",
+    "healthy": "Todos los sistemas operando con normalidad",
+    "degraded": "Rendimiento de despacho degradado",
+    "empty": "No hay alertas activas del sistema."
+  },
+  "integrations": {
+    "title": "Integraciones y Destinos",
+    "subtitle": "Puntos de entrega salientes, escuchadores de webhooks y conectores de plataforma",
+    "destinations": "Destinos Configurados",
+    "add_destination": "Configurar Destino",
+    "restricted_notice": "La administración de credenciales de destino requiere el rol de Administrador o Propietario.",
+    "empty": "No hay destinos externos activos configurados."
+  },
+  "settings": {
+    "title": "Configuración de la Organización",
+    "subtitle": "Configuración del inquilino, administración de miembros y control de acceso basado en roles",
+    "tabs": {
+      "general": "General",
+      "members": "Miembros del Equipo",
+      "security": "Seguridad y Tokens",
+      "audit": "Registro de Auditoría"
+    },
+    "members_table": {
+      "user": "Usuario",
+      "email": "Correo Electrónico",
+      "role": "Rol",
+      "status": "Estado",
+      "actions": "Acciones"
+    },
+    "invite_button": "Invitar Miembro",
+    "role_restriction": "Solo los Propietarios y Administradores de la organización pueden modificar los miembros del equipo."
+  },
+  "common": {
+    "loading": "Cargando...",
+    "save": "Guardar Cambios",
+    "cancel": "Cancelar",
+    "confirm": "Confirmar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "view": "Ver Detalles",
+    "close": "Cerrar",
+    "refresh": "Actualizar",
+    "back": "Volver",
+    "na": "N/D",
+    "search": "Buscar...",
+    "all": "Todos",
+    "actions": "Acciones",
+    "success": "Operación completada con éxito",
+    "error_occurred": "Ocurrió un error al procesar su solicitud",
+    "retry": "Reintentar"
+  },
+  "errors": {
+    "not_found": "Recurso No Encontrado",
+    "not_found_desc": "El recurso solicitado no pudo ser encontrado o pertenece a otra organización.",
+    "unauthorized": "Autenticación Requerida",
+    "unauthorized_desc": "Inicie sesión para acceder a este recurso.",
+    "forbidden": "Acceso Restringido",
+    "forbidden_desc": "Su rol actual no tiene permisos para ver o modificar este recurso.",
+    "server_error": "Error Interno",
+    "server_error_desc": "El sistema encontró un error inesperado. Intente nuevamente o contacte a soporte técnico."
+  },
+  "roles": {
+    "owner": "Propietario",
+    "admin": "Administrador",
+    "member": "Miembro",
+    "viewer": "Lector"
+  },
+  "priority": {
+    "low": "Baja",
+    "medium": "Media",
+    "high": "Alta",
+    "urgent": "Urgente"
+  },
+  "status": {
+    "active": "Activo",
+    "inactive": "Inactivo",
+    "paused": "Pausado",
+    "completed": "Completado",
+    "draft": "Borrador",
+    "failed": "Fallido"
+  }
+}
