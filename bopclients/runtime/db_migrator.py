@@ -15,7 +15,7 @@ logger = logging.getLogger("bopclients.runtime.migrator")
 class DatabaseMigrator:
     """Manager handling database schema versioning and migration execution."""
 
-    EXPECTED_VERSION = "20260902_007"
+    EXPECTED_VERSION = "20260902_008"
 
     @classmethod
     def ensure_version_table(cls, db: Union[ForgeDB, BopDBConnection]):
@@ -426,6 +426,113 @@ class DatabaseMigrator:
         db.commit()
 
     @classmethod
+    def _apply_008_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool) -> None:
+        """Apply 008 upgrades: integration destinations, subscriptions, deliveries, and delivery attempts."""
+        p = "%s" if is_pg else "?"
+
+        # 1. Create bop_integration_destinations
+        dest_sql = """
+            CREATE TABLE IF NOT EXISTS bop_integration_destinations (
+                id VARCHAR(36) PRIMARY KEY,
+                bop_organization_id VARCHAR(36) NOT NULL,
+                target_app_id VARCHAR(50) NOT NULL,
+                destination_name VARCHAR(100) NOT NULL,
+                transport_type VARCHAR(20) NOT NULL DEFAULT 'HTTP',
+                endpoint_url VARCHAR(500) NOT NULL,
+                secret_key_ref VARCHAR(100),
+                headers_template_json TEXT,
+                is_active BOOLEAN NOT NULL DEFAULT true,
+                created_at VARCHAR(50) NOT NULL,
+                updated_at VARCHAR(50) NOT NULL
+            );
+        """
+        db.execute(dest_sql)
+
+        # 2. Create bop_integration_subscriptions
+        sub_sql = """
+            CREATE TABLE IF NOT EXISTS bop_integration_subscriptions (
+                id VARCHAR(36) PRIMARY KEY,
+                bop_organization_id VARCHAR(36) NOT NULL,
+                destination_id VARCHAR(36) NOT NULL,
+                event_type VARCHAR(100) NOT NULL,
+                is_active BOOLEAN NOT NULL DEFAULT true,
+                created_at VARCHAR(50) NOT NULL,
+                FOREIGN KEY (destination_id) REFERENCES bop_integration_destinations(id) ON DELETE CASCADE
+            );
+        """
+        db.execute(sub_sql)
+
+        # 3. Create bop_integration_deliveries
+        deliv_sql = """
+            CREATE TABLE IF NOT EXISTS bop_integration_deliveries (
+                id VARCHAR(36) PRIMARY KEY,
+                event_id VARCHAR(36) NOT NULL,
+                destination_id VARCHAR(36) NOT NULL,
+                bop_organization_id VARCHAR(36) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                max_attempts INTEGER NOT NULL DEFAULT 5,
+                next_attempt_at VARCHAR(50) NOT NULL,
+                claim_token VARCHAR(64),
+                claim_expires_at VARCHAR(50),
+                delivered_at VARCHAR(50),
+                last_error_code VARCHAR(50),
+                last_error_message VARCHAR(500),
+                created_at VARCHAR(50) NOT NULL,
+                updated_at VARCHAR(50) NOT NULL,
+                FOREIGN KEY (destination_id) REFERENCES bop_integration_destinations(id) ON DELETE RESTRICT,
+                UNIQUE (event_id, destination_id)
+            );
+        """
+        db.execute(deliv_sql)
+
+        if is_pg:
+            # If table existed with legacy CASCADE, upgrade constraint to RESTRICT
+            chk_fk = db.fetch_dicts("""
+                SELECT rc.constraint_name, rc.delete_rule
+                FROM information_schema.referential_constraints rc
+                JOIN information_schema.table_constraints tc ON rc.constraint_name = tc.constraint_name
+                WHERE tc.table_name = 'bop_integration_deliveries' AND rc.delete_rule = 'CASCADE';
+            """)
+            for fk in chk_fk:
+                cname = fk["constraint_name"]
+                db.execute(f"ALTER TABLE bop_integration_deliveries DROP CONSTRAINT IF EXISTS {cname};")
+                db.execute("ALTER TABLE bop_integration_deliveries ADD CONSTRAINT bop_integration_deliveries_destination_id_fkey FOREIGN KEY (destination_id) REFERENCES bop_integration_destinations(id) ON DELETE RESTRICT;")
+                db.commit()
+
+        # 4. Create bop_integration_delivery_attempts
+        att_sql = """
+            CREATE TABLE IF NOT EXISTS bop_integration_delivery_attempts (
+                id VARCHAR(36) PRIMARY KEY,
+                delivery_id VARCHAR(36) NOT NULL,
+                attempt_number INTEGER NOT NULL,
+                started_at VARCHAR(50) NOT NULL,
+                finished_at VARCHAR(50) NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                status_code INTEGER,
+                error_code VARCHAR(50),
+                error_message VARCHAR(500),
+                response_body_sample VARCHAR(1000),
+                FOREIGN KEY (delivery_id) REFERENCES bop_integration_deliveries(id) ON DELETE CASCADE
+            );
+        """
+        db.execute(att_sql)
+
+        # 5. Create P18 indexes
+        idx_stmts = [
+            "CREATE INDEX IF NOT EXISTS idx_dest_tenant ON bop_integration_destinations(bop_organization_id, is_active);",
+            "CREATE INDEX IF NOT EXISTS idx_sub_event_type ON bop_integration_subscriptions(bop_organization_id, event_type, is_active);",
+            "CREATE INDEX IF NOT EXISTS idx_deliv_due_claim ON bop_integration_deliveries(status, next_attempt_at);",
+            "CREATE INDEX IF NOT EXISTS idx_deliv_tenant ON bop_integration_deliveries(bop_organization_id, status);",
+            "CREATE INDEX IF NOT EXISTS idx_deliv_claim_lease ON bop_integration_deliveries(claim_expires_at);",
+            "CREATE INDEX IF NOT EXISTS idx_deliv_att_delivery ON bop_integration_delivery_attempts(delivery_id, attempt_number);",
+        ]
+        for idx in idx_stmts:
+            db.execute(idx)
+
+        db.commit()
+
+    @classmethod
     def migrate(cls, db: Union[ForgeDB, BopDBConnection]) -> str:
         """Run idempotent schema migration and record schema version.
         
@@ -463,7 +570,10 @@ class DatabaseMigrator:
         # 6. Apply 007 upgrades (bop_organization_id, outbox, inbox)
         cls._apply_007_upgrades(db, is_pg)
 
-        # 7. Ensure version table and insert expected version idempotently
+        # 7. Apply 008 upgrades (destinations, subscriptions, deliveries, delivery attempts)
+        cls._apply_008_upgrades(db, is_pg)
+
+        # 8. Ensure version table and insert expected version idempotently
         cls.ensure_version_table(db)
         now_iso = datetime.now(timezone.utc).isoformat()
         p = "%s" if is_pg else "?"

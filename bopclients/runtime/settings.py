@@ -27,12 +27,17 @@ def sanitize_error_message(err: Any, max_length: int = 500) -> Optional[str]:
     if err is None:
         return None
     text = str(err)
-    # Mask passwords in connection URIs (e.g. postgresql://user:password@host/db)
+    # Mask passwords in connection URIs (e.g. postgresql://user:password@host/db or http://user:pass@host)
     text = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", text)
     # Mask authorization headers / bearer tokens
+    text = re.sub(r"(?i)(authorization|proxy-authorization)\s*[:=]\s*['\"]?[^\s,'\"]+['\"]?", r"\1: ***", text)
     text = re.sub(r"(?i)(bearer\s+)[a-zA-Z0-9_\-\.]+", r"\1***", text)
+    # Mask cookies / session tokens
+    text = re.sub(r"(?i)(cookie|set-cookie)\s*[:=]\s*['\"]?[^\r\n]+['\"]?", r"\1: ***", text)
+    # Mask query parameters in URLs (e.g. ?api_key=secret, &token=secret, ?password=secret)
+    text = re.sub(r"([?&](?:api[_-]?key|token|access_token|refresh_token|secret|password|passwd|pwd|auth|key)=)([^&#\s]+)", r"\1***", text, flags=re.IGNORECASE)
     # Mask explicit api keys, secrets, tokens, and passwords
-    text = re.sub(r"(?i)(api[_-]?key|token|secret|password|passwd|pwd)\s*([:=])\s*['\"]?[^\s,'\"]+['\"]?", r"\1\2***", text)
+    text = re.sub(r"(?i)(api[_-]?key|token|secret|password|passwd|pwd)\s*([:=])\s*['\"]?[^\s,'\"&#]+['\"]?", r"\1\2***", text)
     # Strip traceback preamble if present
     if "Traceback (most recent call last)" in text:
         lines = [line.strip() for line in text.splitlines() if line.strip()]
@@ -75,6 +80,16 @@ class RuntimeSettings:
     scheduler_recovery_stale_after_seconds: int = 900
     scheduler_recovery_limit: int = 100
 
+    # Integration Outbox Publisher configuration (P18)
+    integration_publisher_enabled: bool = False
+    integration_batch_size: int = 25
+    integration_claim_lease_seconds: int = 60
+    integration_max_runtime_seconds: int = 300
+    integration_http_connect_timeout: float = 5.0
+    integration_http_read_timeout: float = 10.0
+    integration_max_attempts: int = 5
+    integration_allow_insecure_http: bool = False
+
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
         """Factory instantiating RuntimeSettings from environment variables."""
@@ -105,6 +120,19 @@ class RuntimeSettings:
         sched_stale = int(os.environ.get("SCHEDULER_RECOVERY_STALE_AFTER_SECONDS", "900"))
         sched_rec_lim = int(os.environ.get("SCHEDULER_RECOVERY_LIMIT", "100"))
 
+        pub_enabled = os.environ.get("INTEGRATION_PUBLISHER_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+        pub_batch = int(os.environ.get("INTEGRATION_BATCH_SIZE", "25"))
+        pub_claim_lease = int(os.environ.get("INTEGRATION_CLAIM_LEASE_SECONDS", "60"))
+        pub_max_runtime = int(os.environ.get("INTEGRATION_MAX_RUNTIME_SECONDS", "300"))
+        pub_conn_timeout = float(os.environ.get("INTEGRATION_HTTP_CONNECT_TIMEOUT", "5.0"))
+        pub_read_timeout = float(os.environ.get("INTEGRATION_HTTP_READ_TIMEOUT", "10.0"))
+        pub_max_attempts = int(os.environ.get("INTEGRATION_MAX_ATTEMPTS", "5"))
+        pub_allow_insecure = os.environ.get("INTEGRATION_ALLOW_INSECURE_HTTP", "false").strip().lower() in ("true", "1", "yes")
+
+        # In production, insecure http is strictly disallowed
+        if env == AppEnvironment.PRODUCTION:
+            pub_allow_insecure = False
+
         return cls(
             environment=env,
             database_url=db_url,
@@ -126,6 +154,14 @@ class RuntimeSettings:
             scheduler_renew_before_seconds=sched_renew,
             scheduler_recovery_stale_after_seconds=sched_stale,
             scheduler_recovery_limit=sched_rec_lim,
+            integration_publisher_enabled=pub_enabled,
+            integration_batch_size=pub_batch,
+            integration_claim_lease_seconds=pub_claim_lease,
+            integration_max_runtime_seconds=pub_max_runtime,
+            integration_http_connect_timeout=pub_conn_timeout,
+            integration_http_read_timeout=pub_read_timeout,
+            integration_max_attempts=pub_max_attempts,
+            integration_allow_insecure_http=pub_allow_insecure,
         )
 
     def validate(self):
@@ -146,6 +182,18 @@ class RuntimeSettings:
             raise ValueError("scheduler_recovery_stale_after_seconds must be strictly greater than scheduler_lease_seconds.")
         if self.scheduler_recovery_limit <= 0:
             raise ValueError("scheduler_recovery_limit must be > 0.")
+
+        # Integration Publisher bounds (P18)
+        if self.integration_batch_size <= 0:
+            raise ValueError("integration_batch_size must be > 0.")
+        if self.integration_claim_lease_seconds <= 0:
+            raise ValueError("integration_claim_lease_seconds must be > 0.")
+        if self.integration_max_runtime_seconds <= 0:
+            raise ValueError("integration_max_runtime_seconds must be > 0.")
+        if self.integration_http_connect_timeout <= 0 or self.integration_http_read_timeout <= 0:
+            raise ValueError("HTTP connect and read timeouts must be > 0.")
+        if self.integration_max_attempts <= 0:
+            raise ValueError("integration_max_attempts must be > 0.")
 
         # Database scheme validation
         db_lower = (self.database_url or "").strip().lower()
@@ -185,4 +233,10 @@ class RuntimeSettings:
             "scheduler_renew_before_seconds": self.scheduler_renew_before_seconds,
             "scheduler_recovery_stale_after_seconds": self.scheduler_recovery_stale_after_seconds,
             "scheduler_recovery_limit": self.scheduler_recovery_limit,
+            "integration_publisher_enabled": self.integration_publisher_enabled,
+            "integration_batch_size": self.integration_batch_size,
+            "integration_claim_lease_seconds": self.integration_claim_lease_seconds,
+            "integration_max_runtime_seconds": self.integration_max_runtime_seconds,
+            "integration_max_attempts": self.integration_max_attempts,
+            "integration_allow_insecure_http": self.integration_allow_insecure_http,
         }

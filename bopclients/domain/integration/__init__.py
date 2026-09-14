@@ -14,6 +14,22 @@ from bopclients.domain.integration.exceptions import (
 from bopclients.domain.integration.registry import BopEventRegistry, EventPayloadValidator
 from bopclients.domain.integration.outbox import OutboxStatus, OutboxRecord
 from bopclients.domain.integration.inbox import InboxStatus, InboxRecord
+from bopclients.domain.integration.destination import (
+    DestinationTransportType,
+    IntegrationDestination,
+    IntegrationSubscription,
+)
+from bopclients.domain.integration.delivery import (
+    DeliveryStatus,
+    TransportResultStatus,
+    TransportPublishResult,
+    DeliveryRecord,
+    DeliveryAttemptRecord,
+    IntegrationSecretResolver,
+    EnvIntegrationSecretResolver,
+    FakeIntegrationSecretResolver,
+)
+from bopclients.domain.integration.transport import IntegrationTransport
 
 __all__ = [
     "BopAppId",
@@ -33,4 +49,16 @@ __all__ = [
     "OutboxRecord",
     "InboxStatus",
     "InboxRecord",
+    "DestinationTransportType",
+    "IntegrationDestination",
+    "IntegrationSubscription",
+    "DeliveryStatus",
+    "TransportResultStatus",
+    "TransportPublishResult",
+    "DeliveryRecord",
+    "DeliveryAttemptRecord",
+    "IntegrationSecretResolver",
+    "EnvIntegrationSecretResolver",
+    "FakeIntegrationSecretResolver",
+    "IntegrationTransport",
 ]

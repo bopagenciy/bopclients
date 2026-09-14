@@ -460,6 +460,72 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         last_error_message VARCHAR(500)
     );
     """,
+    # 27. bop_integration_destinations (Outbound delivery destinations for external applications)
+    """
+    CREATE TABLE IF NOT EXISTS bop_integration_destinations (
+        id VARCHAR(36) PRIMARY KEY,
+        bop_organization_id VARCHAR(36) NOT NULL,
+        target_app_id VARCHAR(50) NOT NULL,
+        destination_name VARCHAR(100) NOT NULL,
+        transport_type VARCHAR(20) NOT NULL DEFAULT 'HTTP',
+        endpoint_url VARCHAR(500) NOT NULL,
+        secret_key_ref VARCHAR(100),
+        headers_template_json TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL
+    );
+    """,
+    # 28. bop_integration_subscriptions (Routing rules mapping event types to destinations)
+    """
+    CREATE TABLE IF NOT EXISTS bop_integration_subscriptions (
+        id VARCHAR(36) PRIMARY KEY,
+        bop_organization_id VARCHAR(36) NOT NULL,
+        destination_id VARCHAR(36) NOT NULL,
+        event_type VARCHAR(100) NOT NULL,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (destination_id) REFERENCES bop_integration_destinations(id) ON DELETE CASCADE
+    );
+    """,
+    # 29. bop_integration_deliveries (Destination-specific delivery tracking with atomic claim leases)
+    """
+    CREATE TABLE IF NOT EXISTS bop_integration_deliveries (
+        id VARCHAR(36) PRIMARY KEY,
+        event_id VARCHAR(36) NOT NULL,
+        destination_id VARCHAR(36) NOT NULL,
+        bop_organization_id VARCHAR(36) NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        max_attempts INTEGER NOT NULL DEFAULT 5,
+        next_attempt_at VARCHAR(50) NOT NULL,
+        claim_token VARCHAR(64),
+        claim_expires_at VARCHAR(50),
+        delivered_at VARCHAR(50),
+        last_error_code VARCHAR(50),
+        last_error_message VARCHAR(500),
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (destination_id) REFERENCES bop_integration_destinations(id) ON DELETE RESTRICT,
+        UNIQUE (event_id, destination_id)
+    );
+    """,
+    # 30. bop_integration_delivery_attempts (Audit history of individual delivery attempts)
+    """
+    CREATE TABLE IF NOT EXISTS bop_integration_delivery_attempts (
+        id VARCHAR(36) PRIMARY KEY,
+        delivery_id VARCHAR(36) NOT NULL,
+        attempt_number INTEGER NOT NULL,
+        started_at VARCHAR(50) NOT NULL,
+        finished_at VARCHAR(50) NOT NULL,
+        status VARCHAR(20) NOT NULL,
+        status_code INTEGER,
+        error_code VARCHAR(50),
+        error_message VARCHAR(500),
+        response_body_sample VARCHAR(1000),
+        FOREIGN KEY (delivery_id) REFERENCES bop_integration_deliveries(id) ON DELETE CASCADE
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -502,4 +568,10 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_outbox_correlation ON bop_integration_outbox(correlation_id);",
     "CREATE INDEX IF NOT EXISTS idx_inbox_tenant_received ON bop_integration_inbox(bop_organization_id, received_at);",
     "CREATE INDEX IF NOT EXISTS idx_inbox_status ON bop_integration_inbox(status, received_at);",
+    "CREATE INDEX IF NOT EXISTS idx_dest_tenant ON bop_integration_destinations(bop_organization_id, is_active);",
+    "CREATE INDEX IF NOT EXISTS idx_sub_event_type ON bop_integration_subscriptions(bop_organization_id, event_type, is_active);",
+    "CREATE INDEX IF NOT EXISTS idx_deliv_due_claim ON bop_integration_deliveries(status, next_attempt_at);",
+    "CREATE INDEX IF NOT EXISTS idx_deliv_tenant ON bop_integration_deliveries(bop_organization_id, status);",
+    "CREATE INDEX IF NOT EXISTS idx_deliv_claim_lease ON bop_integration_deliveries(claim_expires_at);",
+    "CREATE INDEX IF NOT EXISTS idx_deliv_att_delivery ON bop_integration_delivery_attempts(delivery_id, attempt_number);",
 ]

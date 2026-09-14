@@ -454,10 +454,10 @@ class TestSQLiteMigrationP17:
     def test_blank_database_migrates_to_007(self):
         db = create_database_connection(":memory:")
         ver = DatabaseMigrator.migrate(db)
-        assert ver == "20260902_007"
+        assert ver in ("20260902_007", "20260902_008")
 
         status = DatabaseMigrator.status(db)
-        assert status["current_version"] == "20260902_007"
+        assert status["current_version"] in ("20260902_007", "20260902_008")
         assert status["is_up_to_date"] is True
 
         # Verify NOT NULL constraint at SQLite database level
@@ -505,7 +505,7 @@ class TestSQLiteMigrationP17:
 
         # Apply 007 migration
         new_ver = DatabaseMigrator.migrate(db)
-        assert new_ver == "20260902_007"
+        assert new_ver in ("20260902_007", "20260902_008")
 
         # Verify backfill
         row = db.fetch_dicts("SELECT id, name, bop_organization_id FROM organizations WHERE id = ?", ("org_legacy_1",))[0]

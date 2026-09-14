@@ -63,6 +63,10 @@ class RuntimeReadinessCheck:
         "scheduler_runs",
         "bop_integration_outbox",
         "bop_integration_inbox",
+        "bop_integration_destinations",
+        "bop_integration_subscriptions",
+        "bop_integration_deliveries",
+        "bop_integration_delivery_attempts",
         "bopclients_schema_version",
     ]
 
@@ -79,6 +83,12 @@ class RuntimeReadinessCheck:
         "idx_outbox_status_available",
         "idx_outbox_correlation",
         "idx_inbox_tenant_received",
+        "idx_dest_tenant",
+        "idx_sub_event_type",
+        "idx_deliv_due_claim",
+        "idx_deliv_tenant",
+        "idx_deliv_claim_lease",
+        "idx_deliv_att_delivery",
     ]
 
     @classmethod

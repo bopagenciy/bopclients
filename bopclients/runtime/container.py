@@ -20,6 +20,12 @@ from bopclients.infrastructure.repositories.provider_rate_limit_repository impor
 from bopclients.infrastructure.repositories.scheduler_repository import SchedulerRepository
 from bopclients.infrastructure.repositories.integration_outbox_repository import IntegrationOutboxRepository
 from bopclients.infrastructure.repositories.integration_inbox_repository import IntegrationInboxRepository
+from bopclients.infrastructure.repositories.integration_destination_repository import IntegrationDestinationRepository
+from bopclients.infrastructure.repositories.integration_delivery_repository import IntegrationDeliveryRepository
+from bopclients.domain.integration.delivery import EnvIntegrationSecretResolver
+from bopclients.infrastructure.transports.http_transport import HttpWebhookTransport
+from bopclients.application.integration_dispatcher import IntegrationOutboxDispatcher
+from bopclients.runtime.integration_publisher_worker import IntegrationPublisherWorker
 
 from bopclients.application.provider_registry import PublicSignalProviderRegistry
 from bopclients.application.signal_provider import OfficialWebsiteSignalProvider
@@ -71,6 +77,15 @@ class RuntimeContainer:
     scheduler: ProductionScheduler
     outbox_repo: IntegrationOutboxRepository
     inbox_repo: IntegrationInboxRepository
+    destination_repo: IntegrationDestinationRepository
+    delivery_repo: IntegrationDeliveryRepository
+    integration_dispatcher: IntegrationOutboxDispatcher
+    integration_publisher_worker: IntegrationPublisherWorker
+
+    @classmethod
+    def initialize(cls, settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> "RuntimeContainer":
+        """Alternative constructor initializing RuntimeContainer."""
+        return build_runtime_container(settings=settings, db=db)
 
 
 def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> RuntimeContainer:
@@ -102,6 +117,27 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
     rate_limit_repo = ProviderRateLimitRepository(db)
     outbox_repo = IntegrationOutboxRepository(db, org_repo=org_repo)
     inbox_repo = IntegrationInboxRepository(db)
+    destination_repo = IntegrationDestinationRepository(db)
+    delivery_repo = IntegrationDeliveryRepository(db)
+
+    # Integration Outbox Dispatcher & Publisher Worker (P18 / P18.1)
+    secret_resolver = EnvIntegrationSecretResolver()
+    http_transport = HttpWebhookTransport(
+        connect_timeout=settings.integration_http_connect_timeout,
+        read_timeout=settings.integration_http_read_timeout,
+        secret_resolver=secret_resolver,
+        allow_insecure_http=settings.integration_allow_insecure_http,
+    )
+    integration_dispatcher = IntegrationOutboxDispatcher(
+        outbox_repo=outbox_repo,
+        destination_repo=destination_repo,
+        delivery_repo=delivery_repo,
+        transports={"HTTP": http_transport},
+    )
+    integration_publisher_worker = IntegrationPublisherWorker(
+        dispatcher=integration_dispatcher,
+        settings=settings,
+    )
 
     # Distributed Rate Limiting & Execution Guard
     rate_limit_service = ProviderRateLimitService(rate_limit_repo)
@@ -198,6 +234,10 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         scheduler=scheduler,
         outbox_repo=outbox_repo,
         inbox_repo=inbox_repo,
+        destination_repo=destination_repo,
+        delivery_repo=delivery_repo,
+        integration_dispatcher=integration_dispatcher,
+        integration_publisher_worker=integration_publisher_worker,
     )
 
 
@@ -211,3 +251,9 @@ def build_production_scheduler(settings: Optional[RuntimeSettings] = None, db: O
     """Convenience helper building ProductionScheduler from RuntimeContainer."""
     container = build_runtime_container(settings=settings, db=db)
     return container.scheduler
+
+
+def build_integration_publisher_worker(settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> IntegrationPublisherWorker:
+    """Convenience helper building IntegrationPublisherWorker from RuntimeContainer."""
+    container = build_runtime_container(settings=settings, db=db)
+    return container.integration_publisher_worker

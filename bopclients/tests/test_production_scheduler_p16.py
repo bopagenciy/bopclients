@@ -244,7 +244,7 @@ class TestProductionSchedulerDryRunAndCheck:
         scheduler = sqlite_container.scheduler
         info = scheduler.check()
 
-        assert info["schema_version"] in ("20260902_006", "20260902_007")
+        assert info["schema_version"] in ("20260902_006", "20260902_007", "20260902_008")
         assert info["readiness_status"] in ("READY", "DEGRADED")
         assert info["tables_present"] is True
         assert info["mutations_count"] == 0
@@ -525,13 +525,13 @@ class TestDatabaseMigratorP16:
 
         # Run 006 migration
         ver = DatabaseMigrator.migrate(db)
-        assert ver in ("20260902_006", "20260902_007")
+        assert ver in ("20260902_006", "20260902_007", "20260902_008")
 
         status = DatabaseMigrator.status(db)
-        assert status["current_version"] in ("20260902_006", "20260902_007")
+        assert status["current_version"] in ("20260902_006", "20260902_007", "20260902_008")
         assert status["is_up_to_date"] is True
 
-        # Verify tables exist
+        # Check tables created
         rows_state = db.fetch_dicts("SELECT name FROM sqlite_master WHERE type='table' AND name='scheduler_dispatch_state'")
         assert len(rows_state) == 1
 
@@ -552,7 +552,7 @@ class TestDatabaseMigratorP16:
 
         # Re-run migrate idempotently
         ver = DatabaseMigrator.migrate(db)
-        assert ver in ("20260902_006", "20260902_007")
+        assert ver in ("20260902_006", "20260902_007", "20260902_008")
 
         rows = db.fetch_dicts("SELECT name FROM organizations WHERE id = ?", ("org_pre16",))
         assert len(rows) == 1

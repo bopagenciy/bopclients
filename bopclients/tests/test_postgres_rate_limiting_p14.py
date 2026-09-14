@@ -246,7 +246,7 @@ class TestPostgresRateLimitingP14:
 
         # 1. Verify migrator runs and yields 20260902_005 or higher
         ver = DatabaseMigrator.migrate(db)
-        assert ver in ("20260902_005", "20260902_006", "20260902_007")
+        assert ver in ("20260902_005", "20260902_006", "20260902_007", "20260902_008")
 
         # 2. Check execution_count column in PostgreSQL information_schema
         check_col_sql = """
