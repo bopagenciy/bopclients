@@ -48,10 +48,10 @@ class TestPostgresSchedulerP16:
         db = create_database_connection(TEST_PG_URL)
         try:
             ver = DatabaseMigrator.migrate(db)
-            assert ver in ("20260902_006", "20260902_007", "20260902_008")
+            assert ver in ("20260902_006", "20260902_007", "20260902_008", "20260902_009")
 
             status = DatabaseMigrator.status(db)
-            assert status["current_version"] in ("20260902_006", "20260902_007", "20260902_008")
+            assert status["current_version"] in ("20260902_006", "20260902_007", "20260902_008", "20260902_009")
             assert status["is_up_to_date"] is True
 
             settings = RuntimeSettings(
@@ -322,7 +322,7 @@ class TestPostgresSchedulerP16:
         try:
             # Ensure schema 006 is present
             ver = DatabaseMigrator.migrate(db)
-            assert ver in ("20260902_006", "20260902_007", "20260902_008")
+            assert ver in ("20260902_006", "20260902_007", "20260902_008", "20260902_009")
 
             import uuid
             ts = int(time.time() * 1000)
@@ -336,7 +336,7 @@ class TestPostgresSchedulerP16:
 
             # Re-run migration idempotently
             ver_after = DatabaseMigrator.migrate(db)
-            assert ver_after in ("20260902_006", "20260902_007", "20260902_008")
+            assert ver_after in ("20260902_006", "20260902_007", "20260902_008", "20260902_009")
 
             # Verify data is fully preserved
             rows = db.fetch_dicts("SELECT name FROM organizations WHERE id = %s", (org_id,))

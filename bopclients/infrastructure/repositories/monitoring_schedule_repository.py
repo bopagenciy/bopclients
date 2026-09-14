@@ -154,6 +154,11 @@ class MonitoringScheduleRepository(BaseTenantRepository):
         rows = self.db.fetch_dicts(query, (organization_id, prospect_id))
         return [self._map_row_to_entity(r) for r in rows]
 
+    def get_by_prospect(self, organization_id: str, prospect_id: str) -> Optional[MonitoringSchedule]:
+        """Get the primary/latest monitoring schedule for a prospect in a tenant."""
+        schedules = self.list_for_prospect(organization_id, prospect_id)
+        return schedules[0] if schedules else None
+
     def list_due(
         self, organization_id: str, now_iso: Optional[str] = None, limit: Optional[int] = None
     ) -> List[MonitoringSchedule]:

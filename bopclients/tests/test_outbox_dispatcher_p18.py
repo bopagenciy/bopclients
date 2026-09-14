@@ -115,7 +115,7 @@ def sample_event(sample_tenant):
 def test_migration_008_creates_all_tables_and_indexes(test_db):
     """Verify that migration 20260902_008 creates all 4 new tables and their indexes."""
     current_ver = DatabaseMigrator.get_current_version(test_db)
-    assert current_ver == "20260902_008"
+    assert current_ver in ("20260902_008", "20260902_009")
 
     table_names = [r["name"] for r in test_db.fetch_dicts("SELECT name FROM sqlite_master WHERE type='table'")]
     assert "bop_integration_destinations" in table_names
@@ -838,7 +838,7 @@ def test_sqlite_migration_007_to_008_preserves_data():
 
     # Migrate 007 -> 008
     new_ver = DatabaseMigrator.migrate(db)
-    assert new_ver == "20260902_008"
+    assert new_ver in ("20260902_008", "20260902_009")
 
     # Verify rows preserved
     assert len(db.fetch_dicts("SELECT * FROM organizations WHERE id = ?", (org_id,))) == 1

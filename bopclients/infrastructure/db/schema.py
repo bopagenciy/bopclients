@@ -13,6 +13,9 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         id VARCHAR(36) PRIMARY KEY,
         email VARCHAR(255) UNIQUE NOT NULL,
         full_name VARCHAR(255) NOT NULL,
+        password_hash VARCHAR(255),
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        locale VARCHAR(10) NOT NULL DEFAULT 'en',
         created_at VARCHAR(50) NOT NULL
     );
     """,
@@ -526,6 +529,30 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         FOREIGN KEY (delivery_id) REFERENCES bop_integration_deliveries(id) ON DELETE CASCADE
     );
     """,
+    # 31. bop_auth_sessions (Persisted auth sessions with hashed tokens)
+    """
+    CREATE TABLE IF NOT EXISTS bop_auth_sessions (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        token_hash VARCHAR(64) UNIQUE NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        expires_at VARCHAR(50) NOT NULL,
+        revoked_at VARCHAR(50),
+        last_used_at VARCHAR(50),
+        user_agent_hash VARCHAR(64),
+        ip_address VARCHAR(45),
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    """,
+    # 32. bop_auth_login_attempts (Brute-force protection tracking)
+    """
+    CREATE TABLE IF NOT EXISTS bop_auth_login_attempts (
+        id VARCHAR(36) PRIMARY KEY,
+        identifier_hash VARCHAR(64) NOT NULL,
+        attempt_time VARCHAR(50) NOT NULL,
+        is_successful BOOLEAN NOT NULL
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -574,4 +601,7 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_deliv_tenant ON bop_integration_deliveries(bop_organization_id, status);",
     "CREATE INDEX IF NOT EXISTS idx_deliv_claim_lease ON bop_integration_deliveries(claim_expires_at);",
     "CREATE INDEX IF NOT EXISTS idx_deliv_att_delivery ON bop_integration_delivery_attempts(delivery_id, attempt_number);",
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash ON bop_auth_sessions(token_hash);",
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON bop_auth_sessions(user_id, expires_at);",
+    "CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup ON bop_auth_login_attempts(identifier_hash, attempt_time);",
 ]

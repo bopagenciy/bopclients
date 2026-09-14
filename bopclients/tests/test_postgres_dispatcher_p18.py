@@ -100,12 +100,12 @@ class TestPostgresDispatcherP18:
         db = create_database_connection(TEST_PG_URL)
         try:
             ver = DatabaseMigrator.migrate(db)
-            assert ver == "20260902_008"
+            assert ver in ("20260902_008", "20260902_009")
 
             settings = RuntimeSettings(database_url=TEST_PG_URL)
             res = RuntimeReadinessCheck.check(settings, db)
             assert res.status == ReadinessStatus.READY
-            assert res.schema_version == "20260902_008"
+            assert res.schema_version in ("20260902_008", "20260902_009")
             assert res.tables_present is True
             assert not res.errors
         finally:
@@ -276,7 +276,7 @@ class TestPostgresDispatcherP18:
         try:
             # Re-run migration idempotently
             ver = DatabaseMigrator.migrate(db)
-            assert ver == "20260902_008"
+            assert ver in ("20260902_008", "20260902_009")
 
             tenant = self._create_tenant(db)
             now_iso = datetime.now(timezone.utc).isoformat()
@@ -299,7 +299,7 @@ class TestPostgresDispatcherP18:
 
             # Re-run migrate
             ver_after = DatabaseMigrator.migrate(db)
-            assert ver_after == "20260902_008"
+            assert ver_after in ("20260902_008", "20260902_009")
 
             # Check rows intact
             rows_out = db.fetch_dicts("SELECT * FROM bop_integration_outbox WHERE event_id = %s", (evt_id,))

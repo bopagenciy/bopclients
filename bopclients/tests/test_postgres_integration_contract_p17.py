@@ -58,10 +58,10 @@ class TestPostgresIntegrationContractP17:
         db = create_database_connection(TEST_PG_URL)
         try:
             ver = DatabaseMigrator.migrate(db)
-            assert ver in ("20260902_007", "20260902_008")
+            assert ver in ("20260902_007", "20260902_008", "20260902_009")
 
             status = DatabaseMigrator.status(db)
-            assert status["current_version"] in ("20260902_007", "20260902_008")
+            assert status["current_version"] in ("20260902_007", "20260902_008", "20260902_009")
             assert status["is_up_to_date"] is True
 
             # Verify tables exist in information_schema
@@ -79,7 +79,7 @@ class TestPostgresIntegrationContractP17:
             )
             readiness = RuntimeReadinessCheck.check(settings, db=db)
             assert readiness.status == ReadinessStatus.READY
-            assert readiness.schema_version in ("20260902_007", "20260902_008")
+            assert readiness.schema_version in ("20260902_007", "20260902_008", "20260902_009")
             assert readiness.tables_present is True
         finally:
             db.close()
@@ -194,7 +194,7 @@ class TestPostgresIntegrationContractP17:
 
             # Migrate
             ver = DatabaseMigrator.migrate(db)
-            assert ver in ("20260902_007", "20260902_008")
+            assert ver in ("20260902_007", "20260902_008", "20260902_009")
 
             row = db.fetch_dicts("SELECT id, name, bop_organization_id FROM organizations WHERE id = %s", (org_id,))[0]
             bop_org_id = row["bop_organization_id"]
@@ -203,7 +203,7 @@ class TestPostgresIntegrationContractP17:
 
             # Re-run migration idempotently and confirm bop_organization_id is preserved
             ver2 = DatabaseMigrator.migrate(db)
-            assert ver2 in ("20260902_007", "20260902_008")
+            assert ver2 in ("20260902_007", "20260902_008", "20260902_009")
             row2 = db.fetch_dicts("SELECT bop_organization_id FROM organizations WHERE id = %s", (org_id,))[0]
             assert row2["bop_organization_id"] == bop_org_id
         finally:
@@ -330,7 +330,7 @@ class TestPostgresIntegrationContractP17:
 
             # Execute migration 007
             ver = DatabaseMigrator.migrate(db)
-            assert ver in ("20260902_007", "20260902_008")
+            assert ver in ("20260902_007", "20260902_008", "20260902_009")
 
             # Verify organization and child rows survive
             org_row = db.fetch_dicts("SELECT * FROM organizations WHERE id = %s", (org_id,))[0]

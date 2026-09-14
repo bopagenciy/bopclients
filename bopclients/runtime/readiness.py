@@ -67,6 +67,8 @@ class RuntimeReadinessCheck:
         "bop_integration_subscriptions",
         "bop_integration_deliveries",
         "bop_integration_delivery_attempts",
+        "bop_auth_sessions",
+        "bop_auth_login_attempts",
         "bopclients_schema_version",
     ]
 
@@ -89,6 +91,7 @@ class RuntimeReadinessCheck:
         "idx_deliv_tenant",
         "idx_deliv_claim_lease",
         "idx_deliv_att_delivery",
+        "idx_auth_sessions_token_hash",
     ]
 
     @classmethod

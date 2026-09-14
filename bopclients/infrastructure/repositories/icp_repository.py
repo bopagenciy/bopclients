@@ -45,12 +45,12 @@ class ICPRepository(BaseTenantRepository, IICPRepository):
         for tm in icp.target_markets:
             tm.icp_id = icp.id
             tm_sql = f"""
-            INSERT INTO target_markets (id, icp_id, country, region, city, postal_code, radius_miles, language)
-            VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+            INSERT INTO target_markets (id, organization_id, icp_id, country, region, city, postal_code, radius_miles, language)
+            VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
             """
             self.db.execute(
                 tm_sql,
-                (tm.id, tm.icp_id, tm.country, tm.region, tm.city, tm.postal_code, tm.radius_miles, tm.language),
+                (tm.id, org_id, tm.icp_id, tm.country, tm.region, tm.city, tm.postal_code, tm.radius_miles, tm.language),
             )
 
         self.db.commit()

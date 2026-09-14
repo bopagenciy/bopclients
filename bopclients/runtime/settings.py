@@ -90,6 +90,14 @@ class RuntimeSettings:
     integration_max_attempts: int = 5
     integration_allow_insecure_http: bool = False
 
+    # Product API & Auth configuration (P19)
+    auth_signing_key: str = "bop_default_dev_secret_key_change_in_production_32bytes"
+    auth_token_expire_seconds: int = 3600
+    auth_session_expire_days: int = 30
+    cors_allowed_origins: List[str] = field(default_factory=lambda: ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"])
+    api_port: int = 8100
+    api_host: str = "127.0.0.1"
+
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
         """Factory instantiating RuntimeSettings from environment variables."""
@@ -133,6 +141,14 @@ class RuntimeSettings:
         if env == AppEnvironment.PRODUCTION:
             pub_allow_insecure = False
 
+        auth_key = os.environ.get("BOP_AUTH_SIGNING_KEY", "bop_default_dev_secret_key_change_in_production_32bytes").strip()
+        auth_expire_sec = int(os.environ.get("BOP_AUTH_TOKEN_EXPIRE_SECONDS", "3600"))
+        session_expire_days = int(os.environ.get("BOP_AUTH_SESSION_EXPIRE_DAYS", "30"))
+        cors_raw = os.environ.get("BOP_CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000")
+        cors_origins = [o.strip() for o in cors_raw.split(",") if o.strip()]
+        api_p = int(os.environ.get("BOP_API_PORT", "8100"))
+        api_h = os.environ.get("BOP_API_HOST", "127.0.0.1").strip()
+
         return cls(
             environment=env,
             database_url=db_url,
@@ -162,6 +178,12 @@ class RuntimeSettings:
             integration_http_read_timeout=pub_read_timeout,
             integration_max_attempts=pub_max_attempts,
             integration_allow_insecure_http=pub_allow_insecure,
+            auth_signing_key=auth_key,
+            auth_token_expire_seconds=auth_expire_sec,
+            auth_session_expire_days=session_expire_days,
+            cors_allowed_origins=cors_origins,
+            api_port=api_p,
+            api_host=api_h,
         )
 
     def validate(self):
@@ -195,20 +217,30 @@ class RuntimeSettings:
         if self.integration_max_attempts <= 0:
             raise ValueError("integration_max_attempts must be > 0.")
 
+        # Auth bounds (P19)
+        if self.auth_token_expire_seconds <= 0:
+            raise ValueError("auth_token_expire_seconds must be > 0.")
+        if self.auth_session_expire_days <= 0:
+            raise ValueError("auth_session_expire_days must be > 0.")
+        if not self.auth_signing_key or len(self.auth_signing_key.strip()) < 32:
+            raise ValueError("auth_signing_key must be at least 32 characters for security.")
+
         # Database scheme validation
         db_lower = (self.database_url or "").strip().lower()
+        if self.environment == AppEnvironment.PRODUCTION and db_lower == ":memory:":
+            raise ValueError("In-memory SQLite database is not persistent and cannot be used in production.")
+
         if db_lower.startswith(("postgresql://", "postgres://")):
-            try:
-                import psycopg
-            except ImportError:
-                raise ValueError("PostgreSQL driver 'psycopg' is not installed.")
-        if self.environment == AppEnvironment.PRODUCTION and db_lower in (":memory:", "sqlite:///:memory:"):
-            raise ValueError("In-memory SQLite database is not persistent and cannot be used in production environment.")
+            pass
+        elif db_lower == ":memory:" or db_lower.endswith(".db") or db_lower.startswith("sqlite:"):
+            pass
+        else:
+            raise ValueError(f"Unsupported database scheme: '{self.database_url}'")
 
     def mask_database_url(self) -> str:
-        """Return safe database URL with credentials masked."""
-        if not self.database_url or self.database_url == ":memory:":
-            return ":memory:"
+        """Return database URI with user credentials safely redacted."""
+        if not self.database_url:
+            return ""
         # Mask password in URL pattern scheme://user:password@host/db
         masked = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", self.database_url)
         return masked
@@ -239,4 +271,10 @@ class RuntimeSettings:
             "integration_max_runtime_seconds": self.integration_max_runtime_seconds,
             "integration_max_attempts": self.integration_max_attempts,
             "integration_allow_insecure_http": self.integration_allow_insecure_http,
+            "auth_configured": bool(self.auth_signing_key),
+            "auth_token_expire_seconds": self.auth_token_expire_seconds,
+            "auth_session_expire_days": self.auth_session_expire_days,
+            "cors_allowed_origins": self.cors_allowed_origins,
+            "api_port": self.api_port,
+            "api_host": self.api_host,
         }

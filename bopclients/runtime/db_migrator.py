@@ -15,7 +15,7 @@ logger = logging.getLogger("bopclients.runtime.migrator")
 class DatabaseMigrator:
     """Manager handling database schema versioning and migration execution."""
 
-    EXPECTED_VERSION = "20260902_008"
+    EXPECTED_VERSION = "20260902_009"
 
     @classmethod
     def ensure_version_table(cls, db: Union[ForgeDB, BopDBConnection]):
@@ -533,6 +533,73 @@ class DatabaseMigrator:
         db.commit()
 
     @classmethod
+    def _apply_009_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool) -> None:
+        """Apply migration 20260902_009: user auth fields, auth sessions, login attempts."""
+        # 1. Check and add missing columns to users table
+        if is_pg:
+            chk_cols_sql = """
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'users'
+            """
+            user_cols = {r["column_name"] for r in db.fetch_dicts(chk_cols_sql)}
+            if "password_hash" not in user_cols:
+                db.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);")
+            if "is_active" not in user_cols:
+                db.execute("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true;")
+            if "locale" not in user_cols:
+                db.execute("ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'en';")
+            db.commit()
+        else:
+            pragma_sql = "PRAGMA table_info(users)"
+            user_cols = {r["name"] for r in db.fetch_dicts(pragma_sql)}
+            if "password_hash" not in user_cols:
+                db.execute("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255);")
+            if "is_active" not in user_cols:
+                db.execute("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1;")
+            if "locale" not in user_cols:
+                db.execute("ALTER TABLE users ADD COLUMN locale VARCHAR(10) NOT NULL DEFAULT 'en';")
+            db.commit()
+
+        # 2. Create bop_auth_sessions
+        sessions_sql = """
+            CREATE TABLE IF NOT EXISTS bop_auth_sessions (
+                id VARCHAR(36) PRIMARY KEY,
+                user_id VARCHAR(36) NOT NULL,
+                token_hash VARCHAR(64) UNIQUE NOT NULL,
+                created_at VARCHAR(50) NOT NULL,
+                expires_at VARCHAR(50) NOT NULL,
+                revoked_at VARCHAR(50),
+                last_used_at VARCHAR(50),
+                user_agent_hash VARCHAR(64),
+                ip_address VARCHAR(45),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        """
+        db.execute(sessions_sql)
+
+        # 3. Create bop_auth_login_attempts
+        attempts_sql = """
+            CREATE TABLE IF NOT EXISTS bop_auth_login_attempts (
+                id VARCHAR(36) PRIMARY KEY,
+                identifier_hash VARCHAR(64) NOT NULL,
+                attempt_time VARCHAR(50) NOT NULL,
+                is_successful BOOLEAN NOT NULL
+            );
+        """
+        db.execute(attempts_sql)
+
+        # 4. Create P19 indexes
+        idx_stmts = [
+            "CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash ON bop_auth_sessions(token_hash);",
+            "CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON bop_auth_sessions(user_id, expires_at);",
+            "CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup ON bop_auth_login_attempts(identifier_hash, attempt_time);",
+        ]
+        for idx in idx_stmts:
+            db.execute(idx)
+
+        db.commit()
+
+    @classmethod
     def migrate(cls, db: Union[ForgeDB, BopDBConnection]) -> str:
         """Run idempotent schema migration and record schema version.
         
@@ -573,7 +640,10 @@ class DatabaseMigrator:
         # 7. Apply 008 upgrades (destinations, subscriptions, deliveries, delivery attempts)
         cls._apply_008_upgrades(db, is_pg)
 
-        # 8. Ensure version table and insert expected version idempotently
+        # 8. Apply 009 upgrades (auth fields, auth sessions, login attempts)
+        cls._apply_009_upgrades(db, is_pg)
+
+        # 9. Ensure version table and insert expected version idempotently
         cls.ensure_version_table(db)
         now_iso = datetime.now(timezone.utc).isoformat()
         p = "%s" if is_pg else "?"

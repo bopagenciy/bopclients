@@ -7,7 +7,12 @@ from typing import Optional, Any
 from bopclients.runtime.settings import RuntimeSettings
 from bopclients.runtime.readiness import RuntimeReadinessCheck, ReadinessStatus
 
-from bopclients.infrastructure.repositories.organization_repository import OrganizationRepository
+from bopclients.infrastructure.repositories.organization_repository import OrganizationRepository, UserRepository
+from bopclients.infrastructure.repositories.icp_repository import ICPRepository
+from bopclients.infrastructure.repositories.auth_repository import AuthSessionRepository, LoginAttemptRepository
+from bopclients.domain.auth.password import PasswordHasher
+from bopclients.domain.auth.token import TokenService
+from bopclients.application.auth_service import AuthService
 from bopclients.infrastructure.repositories.campaign_repository import CampaignRepository
 from bopclients.infrastructure.repositories.prospect_repository import ProspectRepository
 from bopclients.infrastructure.repositories.prospect_priority_repository import ProspectPriorityRepository
@@ -81,6 +86,13 @@ class RuntimeContainer:
     delivery_repo: IntegrationDeliveryRepository
     integration_dispatcher: IntegrationOutboxDispatcher
     integration_publisher_worker: IntegrationPublisherWorker
+    user_repo: UserRepository
+    icp_repo: ICPRepository
+    auth_session_repo: AuthSessionRepository
+    login_attempt_repo: LoginAttemptRepository
+    token_service: TokenService
+    password_hasher: PasswordHasher
+    auth_service: AuthService
 
     @classmethod
     def initialize(cls, settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> "RuntimeContainer":
@@ -106,6 +118,8 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
 
     # Repositories
     org_repo = OrganizationRepository(db)
+    user_repo = UserRepository(db)
+    icp_repo = ICPRepository(db)
     campaign_repo = CampaignRepository(db)
     prospect_repo = ProspectRepository(db)
     priority_repo = ProspectPriorityRepository(db)
@@ -119,6 +133,24 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
     inbox_repo = IntegrationInboxRepository(db)
     destination_repo = IntegrationDestinationRepository(db)
     delivery_repo = IntegrationDeliveryRepository(db)
+    auth_session_repo = AuthSessionRepository(db)
+    login_attempt_repo = LoginAttemptRepository(db)
+
+    # Auth & Security Foundation (P19)
+    password_hasher = PasswordHasher()
+    token_service = TokenService(
+        signing_key=settings.auth_signing_key,
+        access_token_expire_seconds=settings.auth_token_expire_seconds,
+    )
+    auth_service = AuthService(
+        user_repo=user_repo,
+        org_repo=org_repo,
+        session_repo=auth_session_repo,
+        attempt_repo=login_attempt_repo,
+        token_service=token_service,
+        password_hasher=password_hasher,
+        session_expire_days=settings.auth_session_expire_days,
+    )
 
     # Integration Outbox Dispatcher & Publisher Worker (P18 / P18.1)
     secret_resolver = EnvIntegrationSecretResolver()
@@ -238,6 +270,13 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         delivery_repo=delivery_repo,
         integration_dispatcher=integration_dispatcher,
         integration_publisher_worker=integration_publisher_worker,
+        user_repo=user_repo,
+        icp_repo=icp_repo,
+        auth_session_repo=auth_session_repo,
+        login_attempt_repo=login_attempt_repo,
+        token_service=token_service,
+        password_hasher=password_hasher,
+        auth_service=auth_service,
     )
 
 

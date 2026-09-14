@@ -12,35 +12,55 @@ from bopclients.infrastructure.repositories.base_repository import BaseTenantRep
 class UserRepository(BaseTenantRepository, IUserRepository):
     """Repository for User entity persistence."""
 
+    @staticmethod
+    def _row_to_user(r: dict) -> User:
+        return User(
+            id=r["id"],
+            email=r["email"],
+            full_name=r["full_name"],
+            password_hash=r.get("password_hash"),
+            is_active=bool(r.get("is_active", True)),
+            locale=r.get("locale") or "en",
+            created_at=r["created_at"],
+        )
+
     def save(self, user: User, commit: bool = True) -> User:
         p = self._placeholder()
+        user.email = user.email.strip().lower()
+        user.validate()
         sql = f"""
-        INSERT INTO users (id, email, full_name, created_at)
-        VALUES ({p}, {p}, {p}, {p})
-        ON CONFLICT(email) DO UPDATE SET full_name = EXCLUDED.full_name
+        INSERT INTO users (id, email, full_name, password_hash, is_active, locale, created_at)
+        VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p})
+        ON CONFLICT(email) DO UPDATE SET
+            full_name = EXCLUDED.full_name,
+            password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash),
+            is_active = EXCLUDED.is_active,
+            locale = EXCLUDED.locale
         """
-        self.db.execute(sql, (user.id, user.email, user.full_name, user.created_at))
+        self.db.execute(
+            sql,
+            (user.id, user.email, user.full_name, user.password_hash, user.is_active, user.locale, user.created_at),
+        )
         if commit:
             self._commit_if_not_in_tx()
         return user
 
     def get_by_id(self, user_id: str) -> Optional[User]:
         p = self._placeholder()
-        sql = f"SELECT id, email, full_name, created_at FROM users WHERE id = {p}"
+        sql = f"SELECT id, email, full_name, password_hash, is_active, locale, created_at FROM users WHERE id = {p}"
         rows = self.db.fetch_dicts(sql, (user_id,))
         if not rows:
             return None
-        r = rows[0]
-        return User(id=r["id"], email=r["email"], full_name=r["full_name"], created_at=r["created_at"])
+        return self._row_to_user(rows[0])
 
     def get_by_email(self, email: str) -> Optional[User]:
         p = self._placeholder()
-        sql = f"SELECT id, email, full_name, created_at FROM users WHERE LOWER(email) = LOWER({p})"
-        rows = self.db.fetch_dicts(sql, (email,))
+        normalized = email.strip().lower()
+        sql = f"SELECT id, email, full_name, password_hash, is_active, locale, created_at FROM users WHERE LOWER(email) = {p}"
+        rows = self.db.fetch_dicts(sql, (normalized,))
         if not rows:
             return None
-        r = rows[0]
-        return User(id=r["id"], email=r["email"], full_name=r["full_name"], created_at=r["created_at"])
+        return self._row_to_user(rows[0])
 
 
 class OrganizationRepository(BaseTenantRepository, IOrganizationRepository):
@@ -173,12 +193,13 @@ class OrganizationRepository(BaseTenantRepository, IOrganizationRepository):
         rows = self.db.fetch_dicts(sql, (org_id,))
         res = []
         for r in rows:
+            role_val = r["role"].lower() if isinstance(r["role"], str) else r["role"]
             res.append(
                 OrganizationMember(
                     id=r["id"],
                     organization_id=r["organization_id"],
                     user_id=r["user_id"],
-                    role=MemberRole(r["role"]),
+                    role=MemberRole(role_val),
                     created_at=r["created_at"],
                 )
             )
@@ -192,10 +213,32 @@ class OrganizationRepository(BaseTenantRepository, IOrganizationRepository):
         if not rows:
             return None
         r = rows[0]
+        role_val = r["role"].lower() if isinstance(r["role"], str) else r["role"]
         return OrganizationMember(
             id=r["id"],
             organization_id=r["organization_id"],
             user_id=r["user_id"],
-            role=MemberRole(r["role"]),
+            role=MemberRole(role_val),
             created_at=r["created_at"],
         )
+
+    def get_user_memberships(self, user_id: str) -> List[dict]:
+        """Fetch all organizations and roles for a specific user."""
+        p = self._placeholder()
+        sql = f"""
+        SELECT
+            m.id as membership_id,
+            m.role,
+            m.created_at as joined_at,
+            o.id as organization_id,
+            o.bop_organization_id,
+            o.name as organization_name,
+            o.slug as organization_slug,
+            o.default_language,
+            o.country
+        FROM organization_members m
+        JOIN organizations o ON m.organization_id = o.id
+        WHERE m.user_id = {p}
+        ORDER BY o.name ASC
+        """
+        return self.db.fetch_dicts(sql, (user_id,))
