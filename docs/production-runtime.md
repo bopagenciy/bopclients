@@ -239,3 +239,187 @@ These are **APPLICATION-SIDE EXECUTION SAFETY DEFAULTS** designed to protect ups
   6. Coordination applies only across worker instances sharing the same PostgreSQL database.
   7. Rate limit enforcement operates at provider-execution granularity, not raw HTTP request granularity.
   8. External HTTP requests in-flight cannot be cancelled mid-request.
+
+---
+
+## 14. Production Scheduler, Job Dispatch & Deployment Operations (P16)
+
+### Run-Once Scheduler Contract
+`ProductionScheduler` operates on a deterministic **run-once tick contract** rather than an internal infinite sleep loop:
+- External process supervisors (such as Kubernetes CronJobs, systemd timers, Cloud Run Jobs, or AWS EventBridge scheduled tasks) invoke one tick periodically.
+- Each tick acquires the distributed scheduler lease, reconciles stale runs, optionally launches a single `MonitoringWorker.run()`, persists execution outcomes to `scheduler_runs`, releases the lease, and terminates with an explicit exit code.
+- This model cleanly aligns with modern cloud container architectures, prevents unmonitored zombie background loops, and facilitates transparent logging and monitoring.
+
+### Distributed Scheduler Dispatch Lease
+- Coordination is enforced via PostgreSQL table `scheduler_dispatch_state` using `SELECT ... FOR UPDATE` row locks keyed by `scheduler_key` (canonical key: `monitoring_worker`).
+- In SQLite development / single-worker environments, transactions serialize dispatch attempts without distributed guarantees.
+- **Amplification Prevention**: The scheduler lease prevents overlapping dispatch invocations from multiple replicas or rapid cron triggers from launching redundant worker processes simultaneously.
+- **Separation of Concerns**:
+  - The scheduler lease coordinates **PROCESS DISPATCH**.
+  - Monitoring schedule claims (`claim_due_work`) in `monitoring_schedules` remain the final, authoritative correctness boundary for individual prospect schedule execution.
+- **Ownership Token Protection**: The lease token is a cryptographically random UUID generated per tick. Lease tokens are **never written to logs or telemetry**. Stale tokens cannot renew or release leases owned by newer dispatchers.
+
+### State vs History Architecture (ACQUIRED_DISPATCH_ONLY Model)
+- **`scheduler_dispatch_state`**: Single-row-per-key tracking current lease ownership (`lease_token`, `lease_expires_at`, `current_run_id`), latest execution timestamps, and last terminal status.
+- **`scheduler_runs`**: Append-only operational audit trail recording dispatches that acquired the lease and ran (`id`, `scheduler_key`, `started_at`, `completed_at`, `status`, `worker_run_id`, `worker_stopped_reason`, items attempted/claimed, success/failure/backpressure counts, error codes, and messages).
+- **Run History Policy (`ACQUIRED_DISPATCH_ONLY`)**:
+  - `scheduler_runs` records ONLY ticks where the distributed lease was successfully acquired (`COMPLETED`, `FAILED`, `OWNERSHIP_LOST`).
+  - Safe skips (`SKIPPED_LEASE_HELD`, `SKIPPED_DISABLED`, `DATABASE_NOT_READY`) do NOT insert rows into `scheduler_runs`, keeping audit logs lean and eliminating unbounded growth from high-frequency cron ticks.
+
+### Autonomous Heartbeat & Thread-Safe Concurrency
+- `SchedulerHeartbeat` runs on an **autonomous background thread** (`BACKGROUND_THREAD` architecture) rather than relying solely on loop boundaries.
+- **Continuous Lease Protection**: Even if `MonitoringWorker.run()` is blocked in slow upstream provider I/O (e.g. multi-second HTTP requests or web scrapes), the daemon thread continuously monitors expiration and renews the lease in PostgreSQL / SQLite before `renew_before_seconds` expires.
+- **Thread Safety & Database Connection Isolation**:
+  - **PostgreSQL**: Concurrent queries on a single connection are prohibited by `psycopg`. The heartbeat thread uses a dedicated, thread-isolated database connection opened via `db_factory`.
+  - **SQLite File Mode**: The heartbeat thread uses its own dedicated SQLite connection (separate from the main scheduler connection) pointing to the same persistent `.db`/`.sqlite` database file with WAL journal mode (`PRAGMA journal_mode=WAL`).
+  - **SQLite `:memory:` Mode**: In-memory SQLite is a test-only, single-process environment without distributed coordination. Because separate `:memory:` connections open independent blank databases, in-memory tests safely fall back to sharing the single connection guarded by `_write_lock` and `check_same_thread=False`. Production deployments require PostgreSQL or persistent SQLite file mode.
+  - **Thread Shutdown & Join Contract**: The heartbeat thread checks `_stop_event` immediately before and after every renewal query. Upon scheduler completion or context manager exit, `stop()` sets `_stop_event`, cleanly joins the thread (`thread.is_alive() == False`), and closes dedicated connections exactly once without connection leakage. No renewals occur post-stop.
+- **Ownership Loss Detection & Graceful Halting**:
+  - If the lease is stolen or expired and reclaimed by another dispatcher during a blocked worker operation, the background thread detects ownership loss immediately.
+  - In-flight HTTP requests are allowed to complete cleanly without hard aborts or corrupted state.
+  - `heartbeat.should_stop_callback()` signals cooperative shutdown, preventing the worker from claiming any subsequent schedules.
+  - The stale owner never clears the competing owner's lease on shutdown and records final status as `OWNERSHIP_LOST`.
+  - Zero token exposure: Lease tokens are never revealed in logs, exceptions, or audit metadata.
+
+### Stale Scheduler Run Recovery
+- On every scheduler tick, `reconcile_stale_runs` evaluates orphan records in `scheduler_runs` with `status = 'RUNNING'` started before `scheduler_recovery_stale_after_seconds` (default: 900s / 15m).
+- **Lease Correlation Guard**: If `scheduler_dispatch_state` indicates that an active, non-expired lease is currently held by that exact run (`current_run_id == candidate.id`), the run is **skipped and protected**.
+- If the lease has expired or belongs to a different dispatcher, the stale run is safely terminalized to `FAILED` with error code `SCHEDULER_EXECUTION_LOST`.
+- Tenant schedules are never penalized by scheduler recovery passes (`failure_count` remains untouched).
+
+### Operational Exit Code Matrix
+
+| CLI Exit Code | Scheduler Status | Condition / Context |
+| :---: | :--- | :--- |
+| **0** | `COMPLETED` | Worker finished processing items, or returned `NO_DUE_WORK` / backpressure. Normal execution. |
+| **0** | `SKIPPED_LEASE_HELD` | Another scheduler tick currently owns the dispatch lease. Overlapping execution safely skipped. |
+| **0** | `SKIPPED_DISABLED` | Scheduler is disabled in configuration (`PRODUCTION_SCHEDULER_ENABLED=false`) and `--force` was not provided. |
+| **0** | Check Passed | `scheduler_cli --check` completed successfully with `READY` or `DEGRADED` status. |
+| **1** | `FAILED` | Fatal database/schema error, unhandled worker exception, or check failure (`NOT_READY`). |
+| **130** | Interrupted | Process received termination signal (`SIGINT`, `SIGTERM`, `KeyboardInterrupt`). Best-effort lease release performed. |
+
+### Recommended Scheduler Cadence
+- **Recommended Schedule**: Every **2 to 5 minutes**.
+- **Explanation**: A prospect's `next_check_at` dictates *when* actual work should take place. The scheduler frequency only dictates *polling latency*—how soon after becoming due a schedule will be picked up. Cadence of 2–5 minutes offers responsive detection while keeping resource usage minimal.
+
+### Signal Handling & Graceful Shutdown
+- The CLI captures POSIX `SIGINT`, `SIGTERM`, and Windows `KeyboardInterrupt`.
+- Upon receipt of a termination signal, the runner triggers `worker.request_stop()` so the worker finishes its current in-flight item boundary cleanly before exiting.
+- If the scheduler process owns the active lease, it performs a best-effort release of the lease token upon shutdown so subsequent ticks are not unnecessarily blocked until lease expiration.
+
+### Operator Runbook
+
+#### 1. Inspect Database Schema & Run Migrations
+```bash
+# Check current schema version
+python -m bopclients.runtime.db_cli status --json
+
+# Apply migrations up to 20260902_006
+python -m bopclients.runtime.db_cli migrate
+```
+
+#### 2. Run Environment Readiness & Scheduler Validation
+```bash
+# Full environment readiness check
+python -m bopclients.runtime.readiness_cli --json
+
+# Scheduler pre-flight check (read-only, 0 mutations)
+python -m bopclients.runtime.scheduler_cli --check
+
+# Dry-run scheduling inspection (read-only, 0 mutations)
+python -m bopclients.runtime.scheduler_cli --dry-run
+```
+
+#### 3. Inspect Scheduler Lease via SQL (Safe Projection)
+```sql
+-- Safe operator inspection: NEVER project lease_token or internal ownership secrets
+SELECT
+    scheduler_key,
+    lease_expires_at,
+    current_run_id,
+    last_heartbeat_at,
+    updated_at
+FROM scheduler_dispatch_state;
+```
+
+#### 4. Execute Production Scheduler Tick
+```bash
+# Order of execution: operator migration -> readiness verification -> scheduler tick
+# Note: The scheduler tick NEVER automatically migrates the database schema.
+
+# Single production scheduler tick (standard invocation)
+python -m bopclients.runtime.scheduler_cli
+
+# Single scheduler tick with JSON output
+python -m bopclients.runtime.scheduler_cli --json
+
+# Single scheduler tick bypassing disabled flag (strictly enforces lease)
+python -m bopclients.runtime.scheduler_cli --force
+```
+
+### Generic Process Supervisor Patterns
+
+#### Option A: Kubernetes CronJob
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: bopclients-scheduler
+spec:
+  schedule: "*/2 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: scheduler
+              image: bopclients-worker:latest
+              command: ["python", "-m", "bopclients.runtime.scheduler_cli"]
+              envFrom:
+                - secretRef:
+                    name: bopclients-secrets
+```
+
+#### Option B: systemd Timer (Linux Host)
+`/etc/systemd/system/bopclients-scheduler.service`:
+```ini
+[Unit]
+Description=BopClients Production Scheduler Tick
+After=network.target
+
+[Service]
+Type=oneshot
+User=bopuser
+WorkingDirectory=/opt/dataforge
+ExecStart=/opt/dataforge/.venv/bin/python -m bopclients.runtime.scheduler_cli
+EnvironmentFile=/etc/bopclients.env
+```
+
+`/etc/systemd/system/bopclients-scheduler.timer`:
+```ini
+[Unit]
+Description=Run BopClients Scheduler every 2 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=2min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+### Remaining Operational Risks
+1. **Accidental Overlap vs Correctness Boundary**: The scheduler lease prevents accidental deployment amplification and overlapping runs, but schedule claims in `monitoring_schedules` remain the final correctness boundary.
+2. **No Distributed Queue / Broker**: Dispatches occur synchronously per tick; there is no Celery/RabbitMQ/Redis queue buffering jobs.
+3. **Single Worker Process per Tick**: By default, each tick invokes a single worker instance (`max_parallel_dispatches = 1`).
+4. **Sequential Processing per Worker**: Each worker executes candidate items sequentially; internal processing is single-threaded.
+5. **Database-Scoped Coordination**: Distributed scheduler coordination applies only across instances sharing the same PostgreSQL database. Different databases are not coordinated.
+6. **Append-Only History Growth**: `scheduler_runs` grows append-only; an operational retention or archival policy must be implemented in future phases.
+7. **No Outbound Exactly-Once Guarantee**: External HTTP provider requests are not transactional and cannot be cancelled mid-flight if a crash occurs during a provider scan.
+8. **Serverless Limitations**: Workers running against large backlogs may exceed short execution limits (e.g. AWS Lambda 15-minute ceiling); containerized jobs or VMs are required.
+9. **No Production Cloud Deployment**: P16 establishes deployable runtime contracts, but live production deployment to cloud infrastructure has not been performed.

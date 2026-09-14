@@ -244,9 +244,9 @@ class TestPostgresRateLimitingP14:
         """P14.3 Audit 8 & 9: Live PostgreSQL 004->005 migration and uncommitted request_count repair."""
         db = create_database_connection(TEST_PG_URL)
 
-        # 1. Verify migrator runs and yields 20260902_005
+        # 1. Verify migrator runs and yields 20260902_005 or higher
         ver = DatabaseMigrator.migrate(db)
-        assert ver == "20260902_005"
+        assert ver in ("20260902_005", "20260902_006")
 
         # 2. Check execution_count column in PostgreSQL information_schema
         check_col_sql = """

@@ -94,9 +94,13 @@ class SQLiteConnectionAdapter(BopDBConnection):
     def execute_rowcount(self, sql: str, params: Optional[Tuple[Any, ...]] = None) -> int:
         p = params or ()
         if hasattr(self._db, "_backend") and hasattr(self._db._backend, "_conn"):
-            cur = self._db._backend._conn.cursor()
-            cur.execute(sql, p)
-            return cur.rowcount
+            with self._db._backend.write_connection() as conn:
+                cur = conn.cursor()
+                cur.execute(sql, p)
+                rc = cur.rowcount
+                cur.close()
+                conn.commit()
+                return rc
         res = self._db.execute(sql, p)
         if hasattr(res, "rowcount"):
             return res.rowcount
@@ -111,10 +115,14 @@ class SQLiteConnectionAdapter(BopDBConnection):
         return self._db.fetch_dicts(sql, p)
 
     def commit(self) -> None:
-        self._db.commit()
+        if hasattr(self._db, "_backend") and hasattr(self._db._backend, "_conn"):
+            self._db._backend._conn.commit()
+        else:
+            self._db.commit()
 
     def rollback(self) -> None:
-        pass
+        if hasattr(self._db, "_backend") and hasattr(self._db._backend, "_conn"):
+            self._db._backend._conn.rollback()
 
     def close(self) -> None:
         if hasattr(self._db, "_backend") and hasattr(self._db._backend, "close"):

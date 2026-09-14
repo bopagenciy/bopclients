@@ -383,6 +383,40 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         UNIQUE (lease_token)
     );
     """,
+    # 23. scheduler_dispatch_state (Coordination store for production scheduler distributed dispatch lease)
+    """
+    CREATE TABLE IF NOT EXISTS scheduler_dispatch_state (
+        scheduler_key VARCHAR(64) PRIMARY KEY,
+        lease_token VARCHAR(64),
+        lease_expires_at VARCHAR(50),
+        last_started_at VARCHAR(50),
+        last_completed_at VARCHAR(50),
+        last_status VARCHAR(50),
+        last_worker_run_id VARCHAR(36),
+        current_run_id VARCHAR(36),
+        updated_at VARCHAR(50) NOT NULL
+    );
+    """,
+    # 24. scheduler_runs (Operational audit trail for scheduler dispatch ticks)
+    """
+    CREATE TABLE IF NOT EXISTS scheduler_runs (
+        id VARCHAR(36) PRIMARY KEY,
+        scheduler_key VARCHAR(64) NOT NULL,
+        started_at VARCHAR(50) NOT NULL,
+        completed_at VARCHAR(50),
+        status VARCHAR(50) NOT NULL,
+        worker_run_id VARCHAR(36),
+        worker_stopped_reason VARCHAR(50),
+        items_attempted INTEGER NOT NULL DEFAULT 0,
+        items_claimed INTEGER NOT NULL DEFAULT 0,
+        success_count INTEGER NOT NULL DEFAULT 0,
+        failure_count INTEGER NOT NULL DEFAULT 0,
+        backpressure_count INTEGER NOT NULL DEFAULT 0,
+        error_code VARCHAR(50),
+        error_message VARCHAR(500),
+        created_at VARCHAR(50) NOT NULL
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -418,4 +452,6 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_rate_limit_state_cooldown ON provider_rate_limit_state(cooldown_until);",
     "CREATE INDEX IF NOT EXISTS idx_rate_limit_leases_active ON provider_rate_limit_leases(provider_key, scope_key, expires_at);",
     "CREATE INDEX IF NOT EXISTS idx_rate_limit_leases_token ON provider_rate_limit_leases(lease_token);",
+    "CREATE INDEX IF NOT EXISTS idx_scheduler_runs_key_started ON scheduler_runs(scheduler_key, started_at);",
+    "CREATE INDEX IF NOT EXISTS idx_scheduler_runs_status ON scheduler_runs(status, started_at);",
 ]

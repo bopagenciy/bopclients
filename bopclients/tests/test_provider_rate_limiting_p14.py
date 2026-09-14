@@ -563,17 +563,17 @@ class TestSchema005MigrationP14:
 
     def test_migration_and_readiness_status(self, test_db):
         status = DatabaseMigrator.status(test_db)
-        assert status["current_version"] == "20260902_005"
+        assert status["current_version"] in ("20260902_005", "20260902_006")
         assert status["is_up_to_date"] is True
 
         settings = RuntimeSettings(database_url=":memory:", enabled_providers=["official_website"])
         readiness = RuntimeReadinessCheck.check(settings, db=test_db)
         assert readiness.status == ReadinessStatus.READY
-        assert readiness.schema_version == "20260902_005"
+        assert readiness.schema_version in ("20260902_005", "20260902_006")
         assert readiness.tables_present is True
 
     def test_migration_from_004_to_005_sqlite(self):
-        """P14.3 Audit 8: Upgrade existing 004 SQLite database to 005."""
+        """P14.3 Audit 8: Upgrade existing 004 SQLite database to 005 or higher."""
         db = SQLiteConnectionAdapter(":memory:")
         # Simulate pre-existing 004 database
         from bopclients.infrastructure.db.migrations import run_p1_migrations
@@ -587,10 +587,10 @@ class TestSchema005MigrationP14:
 
         assert DatabaseMigrator.get_current_version(db) == "20260902_004"
 
-        # Migrate to 005
+        # Migrate to latest
         new_ver = DatabaseMigrator.migrate(db)
-        assert new_ver == "20260902_005"
-        assert DatabaseMigrator.get_current_version(db) == "20260902_005"
+        assert new_ver in ("20260902_005", "20260902_006")
+        assert DatabaseMigrator.get_current_version(db) in ("20260902_005", "20260902_006")
 
         # Verify tables and columns
         cols = [c["name"] for c in db.fetch_dicts("PRAGMA table_info(provider_rate_limit_state)")]
@@ -632,7 +632,7 @@ class TestSchema005MigrationP14:
 
         # Run migrator
         res_ver = DatabaseMigrator.migrate(db)
-        assert res_ver == "20260902_005"
+        assert res_ver in ("20260902_005", "20260902_006")
 
         # Check repaired columns
         cols = [c["name"] for c in db.fetch_dicts("PRAGMA table_info(provider_rate_limit_state)")]

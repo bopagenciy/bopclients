@@ -22,6 +22,26 @@ class AppEnvironment(str, Enum):
         return cls.DEVELOPMENT
 
 
+def sanitize_error_message(err: Any, max_length: int = 500) -> Optional[str]:
+    """Sanitize error messages ensuring passwords, DSNs, auth headers, API keys, and tokens are masked."""
+    if err is None:
+        return None
+    text = str(err)
+    # Mask passwords in connection URIs (e.g. postgresql://user:password@host/db)
+    text = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", text)
+    # Mask authorization headers / bearer tokens
+    text = re.sub(r"(?i)(bearer\s+)[a-zA-Z0-9_\-\.]+", r"\1***", text)
+    # Mask explicit api keys, secrets, tokens, and passwords
+    text = re.sub(r"(?i)(api[_-]?key|token|secret|password|passwd|pwd)\s*([:=])\s*['\"]?[^\s,'\"]+['\"]?", r"\1\2***", text)
+    # Strip traceback preamble if present
+    if "Traceback (most recent call last)" in text:
+        lines = [line.strip() for line in text.splitlines() if line.strip()]
+        text = lines[-1] if lines else "Unhandled Exception"
+    if len(text) > max_length:
+        text = text[: max_length - 3] + "..."
+    return text
+
+
 @dataclass
 class RuntimeSettings:
     """Centralized runtime settings parsed from environment variables."""
@@ -47,6 +67,14 @@ class RuntimeSettings:
     research_run_stale_after_seconds: int = 900
     research_run_recovery_limit: int = 100
 
+    # Production Scheduler configuration
+    production_scheduler_enabled: bool = False
+    scheduler_key: str = "monitoring_worker"
+    scheduler_lease_seconds: int = 300
+    scheduler_renew_before_seconds: int = 90
+    scheduler_recovery_stale_after_seconds: int = 900
+    scheduler_recovery_limit: int = 100
+
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
         """Factory instantiating RuntimeSettings from environment variables."""
@@ -70,6 +98,13 @@ class RuntimeSettings:
         stale_sec = int(os.environ.get("RESEARCH_RUN_STALE_AFTER_SECONDS", "900"))
         rec_lim = int(os.environ.get("RESEARCH_RUN_RECOVERY_LIMIT", "100"))
 
+        sched_enabled = os.environ.get("PRODUCTION_SCHEDULER_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+        sched_key = os.environ.get("PRODUCTION_SCHEDULER_KEY", "monitoring_worker").strip() or "monitoring_worker"
+        sched_lease = int(os.environ.get("SCHEDULER_LEASE_SECONDS", "300"))
+        sched_renew = int(os.environ.get("SCHEDULER_RENEW_BEFORE_SECONDS", "90"))
+        sched_stale = int(os.environ.get("SCHEDULER_RECOVERY_STALE_AFTER_SECONDS", "900"))
+        sched_rec_lim = int(os.environ.get("SCHEDULER_RECOVERY_LIMIT", "100"))
+
         return cls(
             environment=env,
             database_url=db_url,
@@ -85,6 +120,12 @@ class RuntimeSettings:
             research_run_recovery_enabled=rec_enabled,
             research_run_stale_after_seconds=stale_sec,
             research_run_recovery_limit=rec_lim,
+            production_scheduler_enabled=sched_enabled,
+            scheduler_key=sched_key,
+            scheduler_lease_seconds=sched_lease,
+            scheduler_renew_before_seconds=sched_renew,
+            scheduler_recovery_stale_after_seconds=sched_stale,
+            scheduler_recovery_limit=sched_rec_lim,
         )
 
     def validate(self):
@@ -97,6 +138,14 @@ class RuntimeSettings:
             raise ValueError("lease_renew_before_seconds must be strictly less than lease_duration_seconds.")
         if self.research_run_stale_after_seconds <= self.lease_duration_seconds:
             raise ValueError("research_run_stale_after_seconds must be strictly greater than lease_duration_seconds.")
+        if self.scheduler_lease_seconds <= 0 or self.scheduler_renew_before_seconds <= 0:
+            raise ValueError("Scheduler lease seconds and renew before seconds must be > 0.")
+        if self.scheduler_renew_before_seconds >= self.scheduler_lease_seconds:
+            raise ValueError("scheduler_renew_before_seconds must be strictly less than scheduler_lease_seconds.")
+        if self.scheduler_recovery_stale_after_seconds <= self.scheduler_lease_seconds:
+            raise ValueError("scheduler_recovery_stale_after_seconds must be strictly greater than scheduler_lease_seconds.")
+        if self.scheduler_recovery_limit <= 0:
+            raise ValueError("scheduler_recovery_limit must be > 0.")
 
         # Database scheme validation
         db_lower = (self.database_url or "").strip().lower()
@@ -130,4 +179,10 @@ class RuntimeSettings:
             "worker_max_seconds": self.worker_max_seconds,
             "lease_duration_seconds": self.lease_duration_seconds,
             "lease_renew_before_seconds": self.lease_renew_before_seconds,
+            "production_scheduler_enabled": self.production_scheduler_enabled,
+            "scheduler_key": self.scheduler_key,
+            "scheduler_lease_seconds": self.scheduler_lease_seconds,
+            "scheduler_renew_before_seconds": self.scheduler_renew_before_seconds,
+            "scheduler_recovery_stale_after_seconds": self.scheduler_recovery_stale_after_seconds,
+            "scheduler_recovery_limit": self.scheduler_recovery_limit,
         }

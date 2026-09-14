@@ -1,4 +1,4 @@
-# BopClients Continuous Monitoring Worker Production Container
+# BopClients Production Runtime & Operational Container
 FROM python:3.11-slim
 
 # Create non-root system user and working directory
@@ -22,5 +22,5 @@ ENV PYTHONPATH=/app
 ENV BOPCLIENTS_ENV=production
 ENV LOG_LEVEL=INFO
 
-# Entrypoint default runs the monitoring worker run-once CLI
-CMD ["python", "-m", "bopclients.worker.monitoring_worker_cli", "--once"]
+# Default CMD runs the production scheduler tick; can be overridden for worker, db migrate, or readiness CLI
+CMD ["python", "-m", "bopclients.runtime.scheduler_cli"]

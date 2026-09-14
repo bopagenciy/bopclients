@@ -17,6 +17,7 @@ from bopclients.infrastructure.repositories.enrichment_result_repository import 
 from bopclients.infrastructure.repositories.research_run_repository import ResearchRunRepository
 from bopclients.infrastructure.repositories.monitoring_schedule_repository import MonitoringScheduleRepository
 from bopclients.infrastructure.repositories.provider_rate_limit_repository import ProviderRateLimitRepository
+from bopclients.infrastructure.repositories.scheduler_repository import SchedulerRepository
 
 from bopclients.application.provider_registry import PublicSignalProviderRegistry
 from bopclients.application.signal_provider import OfficialWebsiteSignalProvider
@@ -29,6 +30,7 @@ from bopclients.application.provider_execution_guard import ProviderExecutionGua
 from bopclients.application.public_signal_monitor_service import PublicSignalMonitorService
 from bopclients.application.continuous_monitoring_service import ContinuousMonitoringService
 from bopclients.application.research_run_recovery_service import ResearchRunRecoveryService
+from bopclients.application.production_scheduler import ProductionScheduler
 
 from bopclients.worker.monitoring_worker import MonitoringWorker, MonitoringWorkerConfig
 
@@ -63,6 +65,8 @@ class RuntimeContainer:
     continuous_monitoring_service: ContinuousMonitoringService
     recovery_service: ResearchRunRecoveryService
     worker: MonitoringWorker
+    scheduler_repo: SchedulerRepository
+    scheduler: ProductionScheduler
 
 
 def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> RuntimeContainer:
@@ -156,6 +160,14 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         config=worker_config,
     )
 
+    scheduler_repo = SchedulerRepository(db)
+    scheduler = ProductionScheduler(
+        scheduler_repo=scheduler_repo,
+        worker=worker,
+        settings=settings,
+        schedule_repo=schedule_repo,
+    )
+
     return RuntimeContainer(
         settings=settings,
         db=db,
@@ -176,6 +188,8 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         continuous_monitoring_service=continuous_monitoring_service,
         recovery_service=recovery_service,
         worker=worker,
+        scheduler_repo=scheduler_repo,
+        scheduler=scheduler,
     )
 
 
@@ -183,3 +197,9 @@ def build_monitoring_worker(settings: Optional[RuntimeSettings] = None, db: Opti
     """Convenience helper building MonitoringWorker from RuntimeContainer."""
     container = build_runtime_container(settings=settings, db=db)
     return container.worker
+
+
+def build_production_scheduler(settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> ProductionScheduler:
+    """Convenience helper building ProductionScheduler from RuntimeContainer."""
+    container = build_runtime_container(settings=settings, db=db)
+    return container.scheduler

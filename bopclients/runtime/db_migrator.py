@@ -14,7 +14,7 @@ logger = logging.getLogger("bopclients.runtime.migrator")
 class DatabaseMigrator:
     """Manager handling database schema versioning and migration execution."""
 
-    EXPECTED_VERSION = "20260902_005"
+    EXPECTED_VERSION = "20260902_006"
 
     @classmethod
     def ensure_version_table(cls, db: Union[ForgeDB, BopDBConnection]):
@@ -174,6 +174,57 @@ class DatabaseMigrator:
         db.commit()
 
     @classmethod
+    def _apply_006_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool):
+        """Apply migration 20260902_006 creating scheduler_dispatch_state and scheduler_runs."""
+        # 1. scheduler_dispatch_state
+        state_sql = """
+            CREATE TABLE IF NOT EXISTS scheduler_dispatch_state (
+                scheduler_key VARCHAR(64) PRIMARY KEY,
+                lease_token VARCHAR(64),
+                lease_expires_at VARCHAR(50),
+                last_started_at VARCHAR(50),
+                last_completed_at VARCHAR(50),
+                last_status VARCHAR(50),
+                last_worker_run_id VARCHAR(36),
+                current_run_id VARCHAR(36),
+                updated_at VARCHAR(50) NOT NULL
+            );
+        """
+        db.execute(state_sql)
+
+        # 2. scheduler_runs
+        runs_sql = """
+            CREATE TABLE IF NOT EXISTS scheduler_runs (
+                id VARCHAR(36) PRIMARY KEY,
+                scheduler_key VARCHAR(64) NOT NULL,
+                started_at VARCHAR(50) NOT NULL,
+                completed_at VARCHAR(50),
+                status VARCHAR(50) NOT NULL,
+                worker_run_id VARCHAR(36),
+                worker_stopped_reason VARCHAR(50),
+                items_attempted INTEGER NOT NULL DEFAULT 0,
+                items_claimed INTEGER NOT NULL DEFAULT 0,
+                success_count INTEGER NOT NULL DEFAULT 0,
+                failure_count INTEGER NOT NULL DEFAULT 0,
+                backpressure_count INTEGER NOT NULL DEFAULT 0,
+                error_code VARCHAR(50),
+                error_message VARCHAR(500),
+                created_at VARCHAR(50) NOT NULL
+            );
+        """
+        db.execute(runs_sql)
+
+        # 3. Indexes
+        idx_stmts = [
+            "CREATE INDEX IF NOT EXISTS idx_scheduler_runs_key_started ON scheduler_runs(scheduler_key, started_at);",
+            "CREATE INDEX IF NOT EXISTS idx_scheduler_runs_status ON scheduler_runs(status, started_at);",
+        ]
+        for idx in idx_stmts:
+            db.execute(idx)
+
+        db.commit()
+
+    @classmethod
     def migrate(cls, db: Union[ForgeDB, BopDBConnection]) -> str:
         """Run idempotent schema migration and record schema version.
         
@@ -205,7 +256,10 @@ class DatabaseMigrator:
         # 4. Apply 005 upgrades (provider_rate_limit_state, provider_rate_limit_leases)
         cls._apply_005_upgrades(db, is_pg)
 
-        # 5. Ensure version table and insert expected version idempotently
+        # 5. Apply 006 upgrades (scheduler_dispatch_state, scheduler_runs)
+        cls._apply_006_upgrades(db, is_pg)
+
+        # 6. Ensure version table and insert expected version idempotently
         cls.ensure_version_table(db)
         now_iso = datetime.now(timezone.utc).isoformat()
         p = "%s" if is_pg else "?"

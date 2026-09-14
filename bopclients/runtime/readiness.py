@@ -59,6 +59,8 @@ class RuntimeReadinessCheck:
         "research_runs",
         "provider_rate_limit_state",
         "provider_rate_limit_leases",
+        "scheduler_dispatch_state",
+        "scheduler_runs",
         "bopclients_schema_version",
     ]
 
@@ -69,6 +71,8 @@ class RuntimeReadinessCheck:
         "idx_research_runs_stale",
         "idx_rate_limit_state_lookup",
         "idx_rate_limit_leases_active",
+        "idx_scheduler_runs_key_started",
+        "idx_scheduler_runs_status",
     ]
 
     @classmethod
