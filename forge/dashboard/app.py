@@ -262,9 +262,9 @@ async def page_index(request: Request):
     db = _get_db()
     stats = db.get_stats() if db else {}
     return templates.TemplateResponse(
-        "index.html",
-        {
-            "request": request,
+        request=request,
+        name="index.html",
+        context={
             "active_page": "dashboard",
             "stats": stats,
         },
@@ -275,9 +275,9 @@ async def page_index(request: Request):
 async def page_discover(request: Request):
     """Discovery page. Search for businesses by ZIP."""
     return templates.TemplateResponse(
-        "discover.html",
-        {
-            "request": request,
+        request=request,
+        name="discover.html",
+        context={
             "active_page": "discover",
             "industries": INDUSTRY_WHITELIST,
         },
@@ -288,9 +288,9 @@ async def page_discover(request: Request):
 async def page_enrich(request: Request):
     """Enrichment control page."""
     return templates.TemplateResponse(
-        "enrich.html",
-        {
-            "request": request,
+        request=request,
+        name="enrich.html",
+        context={
             "active_page": "enrich",
         },
     )
@@ -300,9 +300,9 @@ async def page_enrich(request: Request):
 async def page_import(request: Request):
     """CSV upload page."""
     return templates.TemplateResponse(
-        "import.html",
-        {
-            "request": request,
+        request=request,
+        name="import.html",
+        context={
             "active_page": "import",
         },
     )
@@ -312,9 +312,9 @@ async def page_import(request: Request):
 async def page_export(request: Request):
     """Export page."""
     return templates.TemplateResponse(
-        "export.html",
-        {
-            "request": request,
+        request=request,
+        name="export.html",
+        context={
             "active_page": "export",
         },
     )
@@ -325,9 +325,9 @@ async def page_settings(request: Request):
     """Settings page."""
     config = _get_config()
     return templates.TemplateResponse(
-        "settings.html",
-        {
-            "request": request,
+        request=request,
+        name="settings.html",
+        context={
             "active_page": "settings",
             "config": config,
         },
