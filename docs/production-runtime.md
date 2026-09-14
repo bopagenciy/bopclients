@@ -337,7 +337,9 @@ SELECT
     scheduler_key,
     lease_expires_at,
     current_run_id,
-    last_heartbeat_at,
+    last_started_at,
+    last_completed_at,
+    last_status,
     updated_at
 FROM scheduler_dispatch_state;
 ```
