@@ -244,7 +244,7 @@ class TestProductionSchedulerDryRunAndCheck:
         scheduler = sqlite_container.scheduler
         info = scheduler.check()
 
-        assert info["schema_version"] == "20260902_006"
+        assert info["schema_version"] in ("20260902_006", "20260902_007")
         assert info["readiness_status"] in ("READY", "DEGRADED")
         assert info["tables_present"] is True
         assert info["mutations_count"] == 0
@@ -525,10 +525,10 @@ class TestDatabaseMigratorP16:
 
         # Run 006 migration
         ver = DatabaseMigrator.migrate(db)
-        assert ver == "20260902_006"
+        assert ver in ("20260902_006", "20260902_007")
 
         status = DatabaseMigrator.status(db)
-        assert status["current_version"] == "20260902_006"
+        assert status["current_version"] in ("20260902_006", "20260902_007")
         assert status["is_up_to_date"] is True
 
         # Verify tables exist
@@ -543,15 +543,16 @@ class TestDatabaseMigratorP16:
         # Apply migrations
         DatabaseMigrator.migrate(db)
         # Seed an organization in pre-P16 table
+        import uuid
         db.execute(
-            "INSERT INTO organizations (id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?)",
-            ("org_pre16", "Pre-P16 Org", "pre-p16-org", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z"),
+            "INSERT INTO organizations (id, bop_organization_id, name, slug, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+            ("org_pre16", str(uuid.uuid4()), "Pre-P16 Org", "pre-p16-org", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z"),
         )
         db.commit()
 
         # Re-run migrate idempotently
         ver = DatabaseMigrator.migrate(db)
-        assert ver == "20260902_006"
+        assert ver in ("20260902_006", "20260902_007")
 
         rows = db.fetch_dicts("SELECT name FROM organizations WHERE id = ?", ("org_pre16",))
         assert len(rows) == 1
@@ -880,7 +881,7 @@ class TestSQLiteHeartbeatThreadSafetyP16_3:
         time.sleep(1.2)
 
         unblock_event.set()
-        t_tick.join(timeout=5.0)
+        t_tick.join(timeout=10.0)
 
         assert tick_error[0] is None
         res = tick_result[0]

@@ -1,6 +1,7 @@
 """DatabaseMigrator managing schema versioning and idempotent migration execution for BopClients."""
 
 import logging
+import uuid
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Union
 from bopclients.infrastructure.db.migrations import run_p1_migrations
@@ -14,7 +15,7 @@ logger = logging.getLogger("bopclients.runtime.migrator")
 class DatabaseMigrator:
     """Manager handling database schema versioning and migration execution."""
 
-    EXPECTED_VERSION = "20260902_006"
+    EXPECTED_VERSION = "20260902_007"
 
     @classmethod
     def ensure_version_table(cls, db: Union[ForgeDB, BopDBConnection]):
@@ -225,6 +226,206 @@ class DatabaseMigrator:
         db.commit()
 
     @classmethod
+    def _apply_007_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool):
+        """Apply migration 20260902_007 enforcing NOT NULL bop_organization_id, outbox, and inbox."""
+        if is_pg:
+            chk_sql = """
+                SELECT column_name, is_nullable FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = 'organizations' AND column_name = 'bop_organization_id'
+            """
+            rows = db.fetch_dicts(chk_sql)
+            if not rows:
+                db.execute("ALTER TABLE organizations ADD COLUMN bop_organization_id VARCHAR(36);")
+                db.commit()
+
+            # Backfill existing rows where bop_organization_id IS NULL with random UUID v4
+            null_rows = db.fetch_dicts(
+                "SELECT id FROM organizations WHERE bop_organization_id IS NULL OR bop_organization_id = ''"
+            )
+            if null_rows:
+                for r in null_rows:
+                    gen_uuid = str(uuid.uuid4())
+                    db.execute("UPDATE organizations SET bop_organization_id = %s WHERE id = %s", (gen_uuid, r["id"]))
+                db.commit()
+
+            # Enforce NOT NULL at database level
+            db.execute("ALTER TABLE organizations ALTER COLUMN bop_organization_id SET NOT NULL;")
+            db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_bop_org_id ON organizations(bop_organization_id);")
+            db.commit()
+        else:
+            pragma_rows = db.fetch_dicts("PRAGMA table_info(organizations);")
+            bop_col = next((r for r in pragma_rows if r.get("name") == "bop_organization_id"), None)
+            is_not_null = bop_col and bop_col.get("notnull") == 1
+
+            if not bop_col or not is_not_null:
+                # Table rebuild to enforce NOT NULL constraint at SQLite database level
+                # PRAGMA foreign_keys must be toggled outside the active transaction
+                db.execute("PRAGMA foreign_keys = OFF;")
+                try:
+                    db.begin()
+                    db.execute("""
+                        CREATE TABLE IF NOT EXISTS organizations_p17 (
+                            id VARCHAR(36) PRIMARY KEY,
+                            bop_organization_id VARCHAR(36) NOT NULL UNIQUE,
+                            name VARCHAR(255) NOT NULL,
+                            slug VARCHAR(100) UNIQUE NOT NULL,
+                            description TEXT,
+                            website VARCHAR(255),
+                            country VARCHAR(10) NOT NULL DEFAULT 'US',
+                            default_language VARCHAR(10) NOT NULL DEFAULT 'en',
+                            timezone VARCHAR(50) NOT NULL DEFAULT 'UTC',
+                            created_at VARCHAR(50) NOT NULL,
+                            updated_at VARCHAR(50) NOT NULL
+                        );
+                    """)
+                    existing_orgs = db.fetch_dicts("SELECT * FROM organizations;")
+                    for org in existing_orgs:
+                        bop_id = org.get("bop_organization_id")
+                        if not bop_id:
+                            bop_id = str(uuid.uuid4())
+                        db.execute(
+                            """
+                            INSERT INTO organizations_p17 (
+                                id, bop_organization_id, name, slug, description, website,
+                                country, default_language, timezone, created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                org["id"],
+                                bop_id,
+                                org["name"],
+                                org["slug"],
+                                org.get("description"),
+                                org.get("website"),
+                                org.get("country", "US"),
+                                org.get("default_language", "en"),
+                                org.get("timezone", "UTC"),
+                                org["created_at"],
+                                org["updated_at"],
+                            ),
+                        )
+                    db.execute("DROP TABLE organizations;")
+                    db.execute("ALTER TABLE organizations_p17 RENAME TO organizations;")
+                    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_bop_org_id ON organizations(bop_organization_id);")
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    raise
+                finally:
+                    db.execute("PRAGMA foreign_keys = ON;")
+            else:
+                null_rows = db.fetch_dicts(
+                    "SELECT id FROM organizations WHERE bop_organization_id IS NULL OR bop_organization_id = ''"
+                )
+                for r in null_rows:
+                    db.execute("UPDATE organizations SET bop_organization_id = ? WHERE id = ?", (str(uuid.uuid4()), r["id"]))
+                db.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_organizations_bop_org_id ON organizations(bop_organization_id);")
+                db.commit()
+
+        # 4. Create or upgrade bop_integration_outbox
+        outbox_sql = """
+            CREATE TABLE IF NOT EXISTS bop_integration_outbox (
+                id VARCHAR(36) PRIMARY KEY,
+                event_id VARCHAR(36) NOT NULL UNIQUE,
+                bop_organization_id VARCHAR(36) NOT NULL,
+                event_type VARCHAR(100) NOT NULL,
+                event_version INTEGER NOT NULL DEFAULT 1,
+                producer_app VARCHAR(50) NOT NULL,
+                subject_bop_org_id VARCHAR(36) NOT NULL,
+                subject_application_id VARCHAR(50) NOT NULL,
+                subject_entity_type VARCHAR(50) NOT NULL,
+                subject_entity_id VARCHAR(128) NOT NULL,
+                correlation_id VARCHAR(36) NOT NULL,
+                causation_id VARCHAR(128),
+                envelope_json TEXT NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                available_at VARCHAR(50) NOT NULL,
+                created_at VARCHAR(50) NOT NULL,
+                published_at VARCHAR(50),
+                last_error_code VARCHAR(50),
+                last_error_message VARCHAR(500)
+            );
+        """
+        db.execute(outbox_sql)
+
+        # Ensure missing columns exist if upgrading from earlier intermediate table
+        if is_pg:
+            chk_corr = db.fetch_dicts(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'bop_integration_outbox' AND column_name = 'correlation_id'"
+            )
+            if not chk_corr:
+                db.execute("ALTER TABLE bop_integration_outbox ADD COLUMN IF NOT EXISTS subject_bop_org_id VARCHAR(36);")
+                db.execute("ALTER TABLE bop_integration_outbox ADD COLUMN IF NOT EXISTS correlation_id VARCHAR(36);")
+                db.execute("ALTER TABLE bop_integration_outbox ADD COLUMN IF NOT EXISTS causation_id VARCHAR(128);")
+                db.commit()
+        else:
+            chk_cols = db.fetch_dicts("PRAGMA table_info(bop_integration_outbox);")
+            col_names = {r.get("name") for r in chk_cols}
+            if chk_cols and "correlation_id" not in col_names:
+                db.execute("ALTER TABLE bop_integration_outbox ADD COLUMN subject_bop_org_id VARCHAR(36);")
+                db.execute("ALTER TABLE bop_integration_outbox ADD COLUMN correlation_id VARCHAR(36);")
+                db.execute("ALTER TABLE bop_integration_outbox ADD COLUMN causation_id VARCHAR(128);")
+                db.commit()
+
+        # 5. Create or upgrade bop_integration_inbox
+        inbox_sql = """
+            CREATE TABLE IF NOT EXISTS bop_integration_inbox (
+                id VARCHAR(36) PRIMARY KEY,
+                event_id VARCHAR(36) NOT NULL UNIQUE,
+                producer_app VARCHAR(50) NOT NULL,
+                bop_organization_id VARCHAR(36) NOT NULL,
+                event_type VARCHAR(100) NOT NULL,
+                event_version INTEGER NOT NULL DEFAULT 1,
+                envelope_json TEXT NOT NULL DEFAULT '{}',
+                received_at VARCHAR(50) NOT NULL,
+                processed_at VARCHAR(50),
+                status VARCHAR(20) NOT NULL DEFAULT 'RECEIVED',
+                last_error_code VARCHAR(50),
+                last_error_message VARCHAR(500)
+            );
+        """
+        db.execute(inbox_sql)
+
+        if is_pg:
+            chk_inbox_env = db.fetch_dicts(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'bop_integration_inbox' AND column_name = 'envelope_json'"
+            )
+            if not chk_inbox_env:
+                db.execute("ALTER TABLE bop_integration_inbox ADD COLUMN IF NOT EXISTS envelope_json TEXT NOT NULL DEFAULT '{}';")
+                db.commit()
+            chk_inbox_err = db.fetch_dicts(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'bop_integration_inbox' AND column_name = 'last_error_code'"
+            )
+            if not chk_inbox_err:
+                db.execute("ALTER TABLE bop_integration_inbox ADD COLUMN IF NOT EXISTS last_error_code VARCHAR(50);")
+                db.execute("ALTER TABLE bop_integration_inbox ADD COLUMN IF NOT EXISTS last_error_message VARCHAR(500);")
+                db.commit()
+        else:
+            chk_inbox_cols = db.fetch_dicts("PRAGMA table_info(bop_integration_inbox);")
+            col_inbox_names = {r.get("name") for r in chk_inbox_cols}
+            if chk_inbox_cols and "envelope_json" not in col_inbox_names:
+                db.execute("ALTER TABLE bop_integration_inbox ADD COLUMN envelope_json TEXT NOT NULL DEFAULT '{}';")
+                db.commit()
+            if chk_inbox_cols and "last_error_code" not in col_inbox_names:
+                db.execute("ALTER TABLE bop_integration_inbox ADD COLUMN last_error_code VARCHAR(50);")
+                db.execute("ALTER TABLE bop_integration_inbox ADD COLUMN last_error_message VARCHAR(500);")
+                db.commit()
+
+        # 6. Indexes for outbox and inbox
+        idx_stmts = [
+            "CREATE INDEX IF NOT EXISTS idx_outbox_status_available ON bop_integration_outbox(status, available_at);",
+            "CREATE INDEX IF NOT EXISTS idx_outbox_tenant_created ON bop_integration_outbox(bop_organization_id, created_at);",
+            "CREATE INDEX IF NOT EXISTS idx_outbox_correlation ON bop_integration_outbox(correlation_id);",
+            "CREATE INDEX IF NOT EXISTS idx_inbox_tenant_received ON bop_integration_inbox(bop_organization_id, received_at);",
+            "CREATE INDEX IF NOT EXISTS idx_inbox_status ON bop_integration_inbox(status, received_at);",
+        ]
+        for idx in idx_stmts:
+            db.execute(idx)
+
+        db.commit()
+
+    @classmethod
     def migrate(cls, db: Union[ForgeDB, BopDBConnection]) -> str:
         """Run idempotent schema migration and record schema version.
         
@@ -259,7 +460,10 @@ class DatabaseMigrator:
         # 5. Apply 006 upgrades (scheduler_dispatch_state, scheduler_runs)
         cls._apply_006_upgrades(db, is_pg)
 
-        # 6. Ensure version table and insert expected version idempotently
+        # 6. Apply 007 upgrades (bop_organization_id, outbox, inbox)
+        cls._apply_007_upgrades(db, is_pg)
+
+        # 7. Ensure version table and insert expected version idempotently
         cls.ensure_version_table(db)
         now_iso = datetime.now(timezone.utc).isoformat()
         p = "%s" if is_pg else "?"

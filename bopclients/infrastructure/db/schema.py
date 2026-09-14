@@ -20,6 +20,7 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
     """
     CREATE TABLE IF NOT EXISTS organizations (
         id VARCHAR(36) PRIMARY KEY,
+        bop_organization_id VARCHAR(36) NOT NULL UNIQUE,
         name VARCHAR(255) NOT NULL,
         slug VARCHAR(100) UNIQUE NOT NULL,
         description TEXT,
@@ -417,6 +418,48 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         created_at VARCHAR(50) NOT NULL
     );
     """,
+    # 25. bop_integration_outbox (Outbox store for tenant-safe integration event publication)
+    """
+    CREATE TABLE IF NOT EXISTS bop_integration_outbox (
+        id VARCHAR(36) PRIMARY KEY,
+        event_id VARCHAR(36) NOT NULL UNIQUE,
+        bop_organization_id VARCHAR(36) NOT NULL,
+        event_type VARCHAR(100) NOT NULL,
+        event_version INTEGER NOT NULL DEFAULT 1,
+        producer_app VARCHAR(50) NOT NULL,
+        subject_bop_org_id VARCHAR(36) NOT NULL,
+        subject_application_id VARCHAR(50) NOT NULL,
+        subject_entity_type VARCHAR(50) NOT NULL,
+        subject_entity_id VARCHAR(128) NOT NULL,
+        correlation_id VARCHAR(36) NOT NULL,
+        causation_id VARCHAR(128),
+        envelope_json TEXT NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        available_at VARCHAR(50) NOT NULL,
+        created_at VARCHAR(50) NOT NULL,
+        published_at VARCHAR(50),
+        last_error_code VARCHAR(50),
+        last_error_message VARCHAR(500)
+    );
+    """,
+    # 26. bop_integration_inbox (Inbox store for idempotent external integration event receipt)
+    """
+    CREATE TABLE IF NOT EXISTS bop_integration_inbox (
+        id VARCHAR(36) PRIMARY KEY,
+        event_id VARCHAR(36) NOT NULL UNIQUE,
+        producer_app VARCHAR(50) NOT NULL,
+        bop_organization_id VARCHAR(36) NOT NULL,
+        event_type VARCHAR(100) NOT NULL,
+        event_version INTEGER NOT NULL DEFAULT 1,
+        envelope_json TEXT NOT NULL,
+        received_at VARCHAR(50) NOT NULL,
+        processed_at VARCHAR(50),
+        status VARCHAR(20) NOT NULL DEFAULT 'RECEIVED',
+        last_error_code VARCHAR(50),
+        last_error_message VARCHAR(500)
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -454,4 +497,9 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_rate_limit_leases_token ON provider_rate_limit_leases(lease_token);",
     "CREATE INDEX IF NOT EXISTS idx_scheduler_runs_key_started ON scheduler_runs(scheduler_key, started_at);",
     "CREATE INDEX IF NOT EXISTS idx_scheduler_runs_status ON scheduler_runs(status, started_at);",
+    "CREATE INDEX IF NOT EXISTS idx_outbox_status_available ON bop_integration_outbox(status, available_at);",
+    "CREATE INDEX IF NOT EXISTS idx_outbox_tenant_created ON bop_integration_outbox(bop_organization_id, created_at);",
+    "CREATE INDEX IF NOT EXISTS idx_outbox_correlation ON bop_integration_outbox(correlation_id);",
+    "CREATE INDEX IF NOT EXISTS idx_inbox_tenant_received ON bop_integration_inbox(bop_organization_id, received_at);",
+    "CREATE INDEX IF NOT EXISTS idx_inbox_status ON bop_integration_inbox(status, received_at);",
 ]

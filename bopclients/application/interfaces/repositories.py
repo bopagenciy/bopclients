@@ -43,6 +43,9 @@ class IOrganizationRepository(ABC):
     def get_by_slug(self, slug: str) -> Optional[Organization]: ...
 
     @abstractmethod
+    def get_by_bop_organization_id(self, bop_org_id: str) -> Optional[Organization]: ...
+
+    @abstractmethod
     def add_member(self, member: OrganizationMember) -> OrganizationMember: ...
 
     @abstractmethod

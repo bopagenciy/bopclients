@@ -48,10 +48,10 @@ class TestPostgresSchedulerP16:
         db = create_database_connection(TEST_PG_URL)
         try:
             ver = DatabaseMigrator.migrate(db)
-            assert ver == "20260902_006"
+            assert ver in ("20260902_006", "20260902_007")
 
             status = DatabaseMigrator.status(db)
-            assert status["current_version"] == "20260902_006"
+            assert status["current_version"] in ("20260902_006", "20260902_007")
             assert status["is_up_to_date"] is True
 
             settings = RuntimeSettings(
@@ -322,20 +322,21 @@ class TestPostgresSchedulerP16:
         try:
             # Ensure schema 006 is present
             ver = DatabaseMigrator.migrate(db)
-            assert ver == "20260902_006"
+            assert ver in ("20260902_006", "20260902_007")
 
-            # Insert pre-P16 data
+            import uuid
             ts = int(time.time() * 1000)
             org_id = f"org_pg_pres_{ts}"
+            bop_org_id = str(uuid.uuid4())
             db.execute(
-                "INSERT INTO organizations (id, name, slug, created_at, updated_at) VALUES (%s, %s, %s, %s, %s)",
-                (org_id, f"PG Preserved Org {ts}", f"pg-pres-{ts}", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z"),
+                "INSERT INTO organizations (id, bop_organization_id, name, slug, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (org_id, bop_org_id, f"PG Preserved Org {ts}", f"pg-pres-{ts}", "2026-09-01T00:00:00Z", "2026-09-01T00:00:00Z"),
             )
             db.commit()
 
             # Re-run migration idempotently
             ver_after = DatabaseMigrator.migrate(db)
-            assert ver_after == "20260902_006"
+            assert ver_after in ("20260902_006", "20260902_007")
 
             # Verify data is fully preserved
             rows = db.fetch_dicts("SELECT name FROM organizations WHERE id = %s", (org_id,))

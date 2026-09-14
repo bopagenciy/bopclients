@@ -18,6 +18,8 @@ from bopclients.infrastructure.repositories.research_run_repository import Resea
 from bopclients.infrastructure.repositories.monitoring_schedule_repository import MonitoringScheduleRepository
 from bopclients.infrastructure.repositories.provider_rate_limit_repository import ProviderRateLimitRepository
 from bopclients.infrastructure.repositories.scheduler_repository import SchedulerRepository
+from bopclients.infrastructure.repositories.integration_outbox_repository import IntegrationOutboxRepository
+from bopclients.infrastructure.repositories.integration_inbox_repository import IntegrationInboxRepository
 
 from bopclients.application.provider_registry import PublicSignalProviderRegistry
 from bopclients.application.signal_provider import OfficialWebsiteSignalProvider
@@ -67,6 +69,8 @@ class RuntimeContainer:
     worker: MonitoringWorker
     scheduler_repo: SchedulerRepository
     scheduler: ProductionScheduler
+    outbox_repo: IntegrationOutboxRepository
+    inbox_repo: IntegrationInboxRepository
 
 
 def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> RuntimeContainer:
@@ -96,6 +100,8 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
     research_run_repo = ResearchRunRepository(db)
     schedule_repo = MonitoringScheduleRepository(db)
     rate_limit_repo = ProviderRateLimitRepository(db)
+    outbox_repo = IntegrationOutboxRepository(db, org_repo=org_repo)
+    inbox_repo = IntegrationInboxRepository(db)
 
     # Distributed Rate Limiting & Execution Guard
     rate_limit_service = ProviderRateLimitService(rate_limit_repo)
@@ -190,6 +196,8 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         worker=worker,
         scheduler_repo=scheduler_repo,
         scheduler=scheduler,
+        outbox_repo=outbox_repo,
+        inbox_repo=inbox_repo,
     )
 
 

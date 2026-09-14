@@ -61,6 +61,8 @@ class RuntimeReadinessCheck:
         "provider_rate_limit_leases",
         "scheduler_dispatch_state",
         "scheduler_runs",
+        "bop_integration_outbox",
+        "bop_integration_inbox",
         "bopclients_schema_version",
     ]
 
@@ -73,6 +75,10 @@ class RuntimeReadinessCheck:
         "idx_rate_limit_leases_active",
         "idx_scheduler_runs_key_started",
         "idx_scheduler_runs_status",
+        "idx_organizations_bop_org_id",
+        "idx_outbox_status_available",
+        "idx_outbox_correlation",
+        "idx_inbox_tenant_received",
     ]
 
     @classmethod

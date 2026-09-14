@@ -259,7 +259,7 @@ def run_manual_validation():
         # It must fail with DATABASE_NOT_READY and must NOT migrate the db
         current_ver_after = DatabaseMigrator.get_current_version(unmigrated_db)
         auto_migration_during_tick = (
-            current_ver_after == "20260902_006" or tick_unmigrated.status != "FAILED"
+            current_ver_after in ("20260902_006", "20260902_007") or tick_unmigrated.status != "FAILED"
         )
 
         # 11. Autonomous Heartbeat During Blocked Work (PostgreSQL Live)

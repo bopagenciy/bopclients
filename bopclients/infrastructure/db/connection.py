@@ -4,6 +4,7 @@ import re
 import os
 import logging
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 from typing import List, Dict, Any, Optional, Tuple
 from forge.db import ForgeDB
 from forge.db_schema import _SQLiteBackend
@@ -21,7 +22,18 @@ except ImportError:
 
 
 class BopDBConnection(ABC):
-    """Abstract interface defining database execution contract."""
+    """Abstract interface defining database execution and transaction contract."""
+
+    @property
+    @abstractmethod
+    def in_transaction(self) -> bool:
+        """Whether a caller-managed transaction block is currently active."""
+        pass
+
+    @abstractmethod
+    def begin(self) -> None:
+        """Begin an explicit database transaction."""
+        pass
 
     @abstractmethod
     def execute(self, sql: str, params: Optional[Tuple[Any, ...]] = None) -> Any:
@@ -61,6 +73,31 @@ class BopDBConnection(ABC):
     def backend_name(self) -> str:
         pass
 
+    _tx_depth: int = 0
+
+    @contextmanager
+    def transaction(self):
+        """Context manager providing an atomic database transaction boundary with depth tracking.
+
+        Reuses outer transaction on nested invocations to prevent premature commits.
+        """
+        is_outermost = (getattr(self, "_tx_depth", 0) == 0)
+        self._tx_depth = getattr(self, "_tx_depth", 0) + 1
+        if is_outermost:
+            self.begin()
+        try:
+            yield self
+            if is_outermost:
+                self.commit()
+        except Exception:
+            if is_outermost:
+                self.rollback()
+            raise
+        finally:
+            self._tx_depth = getattr(self, "_tx_depth", 1) - 1
+            if self._tx_depth < 0:
+                self._tx_depth = 0
+
 
 class SQLiteConnectionAdapter(BopDBConnection):
     """Adapter wrapping ForgeDB for SQLite database backend."""
@@ -74,6 +111,7 @@ class SQLiteConnectionAdapter(BopDBConnection):
             path = path[9:]
         self._db_path = path
         self._db = ForgeDB(_SQLiteBackend(db_path=path))
+        self._manual_in_tx = False
 
     @property
     def forge_db(self) -> ForgeDB:
@@ -87,6 +125,14 @@ class SQLiteConnectionAdapter(BopDBConnection):
     def backend_name(self) -> str:
         return "sqlite"
 
+    @property
+    def in_transaction(self) -> bool:
+        return self._manual_in_tx or getattr(self._db._in_transaction, "active", False)
+
+    def begin(self) -> None:
+        self._manual_in_tx = True
+        self._db._in_transaction.active = True
+
     def execute(self, sql: str, params: Optional[Tuple[Any, ...]] = None) -> Any:
         p = params or ()
         return self._db.execute(sql, p)
@@ -94,13 +140,14 @@ class SQLiteConnectionAdapter(BopDBConnection):
     def execute_rowcount(self, sql: str, params: Optional[Tuple[Any, ...]] = None) -> int:
         p = params or ()
         if hasattr(self._db, "_backend") and hasattr(self._db._backend, "_conn"):
-            with self._db._backend.write_connection() as conn:
-                cur = conn.cursor()
-                cur.execute(sql, p)
-                rc = cur.rowcount
-                cur.close()
+            conn = self._db._backend._conn
+            cur = conn.cursor()
+            cur.execute(sql, p)
+            rc = cur.rowcount
+            cur.close()
+            if not self.in_transaction:
                 conn.commit()
-                return rc
+            return rc
         res = self._db.execute(sql, p)
         if hasattr(res, "rowcount"):
             return res.rowcount
@@ -115,14 +162,22 @@ class SQLiteConnectionAdapter(BopDBConnection):
         return self._db.fetch_dicts(sql, p)
 
     def commit(self) -> None:
-        if hasattr(self._db, "_backend") and hasattr(self._db._backend, "_conn"):
-            self._db._backend._conn.commit()
-        else:
-            self._db.commit()
+        try:
+            if hasattr(self._db, "_backend") and hasattr(self._db._backend, "_conn"):
+                self._db._backend._conn.commit()
+            else:
+                self._db.commit()
+        finally:
+            self._manual_in_tx = False
+            self._db._in_transaction.active = False
 
     def rollback(self) -> None:
-        if hasattr(self._db, "_backend") and hasattr(self._db._backend, "_conn"):
-            self._db._backend._conn.rollback()
+        try:
+            if hasattr(self._db, "_backend") and hasattr(self._db._backend, "_conn"):
+                self._db._backend._conn.rollback()
+        finally:
+            self._manual_in_tx = False
+            self._db._in_transaction.active = False
 
     def close(self) -> None:
         if hasattr(self._db, "_backend") and hasattr(self._db._backend, "close"):
@@ -143,6 +198,7 @@ class PostgresConnectionAdapter(BopDBConnection):
 
         logger.info("Opening PostgreSQL database connection via psycopg...")
         self._conn = psycopg.connect(url, row_factory=dict_row, autocommit=False)
+        self._manual_in_tx = False
 
     @property
     def raw_connection(self):
@@ -155,6 +211,13 @@ class PostgresConnectionAdapter(BopDBConnection):
     @property
     def backend_name(self) -> str:
         return "postgresql"
+
+    @property
+    def in_transaction(self) -> bool:
+        return self._manual_in_tx
+
+    def begin(self) -> None:
+        self._manual_in_tx = True
 
     def _convert_sql(self, sql: str) -> str:
         """Convert SQLite parameter placeholders (?) to PostgreSQL placeholders (%s)."""
@@ -191,10 +254,16 @@ class PostgresConnectionAdapter(BopDBConnection):
             return []
 
     def commit(self) -> None:
-        self._conn.commit()
+        try:
+            self._conn.commit()
+        finally:
+            self._manual_in_tx = False
 
     def rollback(self) -> None:
-        self._conn.rollback()
+        try:
+            self._conn.rollback()
+        finally:
+            self._manual_in_tx = False
 
     def close(self) -> None:
         try:

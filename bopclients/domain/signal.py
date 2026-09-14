@@ -81,3 +81,17 @@ class Signal:
             raise ValueError("Signal type cannot be empty")
         if not (0.0 <= self.confidence <= 1.0):
             raise ValueError(f"Confidence must be between 0.0 and 1.0, got {self.confidence}")
+
+
+def get_canonical_signal_category(signal_type: str) -> Optional[SignalCategory]:
+    """Return the canonical SignalCategory for a signal type string based on SIGNAL_TAXONOMY_MAP."""
+    st = (signal_type or "").strip().lower()
+    if st in SIGNAL_TAXONOMY_MAP:
+        cat_val = SIGNAL_TAXONOMY_MAP[st][0]
+        return SignalCategory(cat_val)
+    return None
+
+
+def is_canonical_buying_intent_signal(signal_type: str) -> bool:
+    """Return True if the signal_type is classified as BUYING_INTENT in the canonical taxonomy."""
+    return get_canonical_signal_category(signal_type) == SignalCategory.BUYING_INTENT

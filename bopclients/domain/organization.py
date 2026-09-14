@@ -12,6 +12,7 @@ class Organization:
     """Organization entity representing a business tenant in BopClients."""
 
     id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    bop_organization_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     name: str = ""
     slug: str = ""
     description: Optional[str] = None
@@ -32,6 +33,12 @@ class Organization:
             raise ValueError("Organization name cannot be empty")
         if not self.slug.strip():
             raise ValueError("Organization slug cannot be empty")
+        if not self.bop_organization_id or not self.bop_organization_id.strip():
+            raise ValueError("Organization bop_organization_id cannot be empty")
+        try:
+            uuid.UUID(self.bop_organization_id.strip())
+        except (ValueError, AttributeError):
+            raise ValueError(f"Organization bop_organization_id '{self.bop_organization_id}' must be a valid UUID")
 
 
 @dataclass

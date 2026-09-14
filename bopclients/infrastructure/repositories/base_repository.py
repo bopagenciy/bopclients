@@ -23,6 +23,11 @@ class BaseTenantRepository:
             return self.db.placeholder
         return "%s" if getattr(self.db, "backend_name", "") == "postgresql" else "?"
 
+    def _commit_if_not_in_tx(self) -> None:
+        """Commit transaction if connection is not within an active caller-managed transaction."""
+        if not getattr(self.db, "in_transaction", False):
+            self.db.commit()
+
     def _execute_rowcount(self, sql: str, params: Optional[Tuple[Any, ...]] = None) -> int:
         """Execute query and return affected rowcount atomically."""
         if hasattr(self.db, "execute_rowcount"):
