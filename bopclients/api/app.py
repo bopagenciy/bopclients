@@ -21,6 +21,7 @@ from bopclients.api.routers.campaigns_router import router as campaigns_router
 from bopclients.api.routers.icps_router import router as icps_router
 from bopclients.api.routers.target_markets_router import router as target_markets_router
 from bopclients.api.routers.prospects_router import router as prospects_router
+from bopclients.api.routers.discovery_router import router as discovery_router
 from bopclients.api.routers.signals_router import router as signals_router
 from bopclients.api.routers.research_router import router as research_router
 from bopclients.api.routers.monitoring_router import router as monitoring_router
@@ -91,6 +92,7 @@ def create_bopclients_api_app(
     app.include_router(icps_router)
     app.include_router(target_markets_router)
     app.include_router(prospects_router)
+    app.include_router(discovery_router)
     app.include_router(signals_router)
     app.include_router(research_router)
     app.include_router(monitoring_router)

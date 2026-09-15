@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useI18n } from '@/lib/i18n/context';
 import { useAuth } from '@/lib/auth/context';
 import { DataTable, Column } from '@/components/ui/DataTable';
@@ -48,7 +49,7 @@ interface SignalItem {
 }
 
 export default function ProspectsPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { activeOrg } = useAuth();
 
   const [prospects, setProspects] = useState<ProspectItem[]>([]);
@@ -143,7 +144,12 @@ export default function ProspectsPage() {
       cell: (row) => (
         <div className="font-medium text-foreground flex items-center gap-2">
           <Building className="w-4 h-4 text-brand-gold shrink-0" />
-          <span className="truncate">{row.name}</span>
+          <Link
+            href={`/${locale}/prospects/${row.id}`}
+            className="truncate hover:text-brand-gold hover:underline transition-colors"
+          >
+            {row.name}
+          </Link>
         </div>
       ),
     },

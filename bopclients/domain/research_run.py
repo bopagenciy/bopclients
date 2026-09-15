@@ -3,7 +3,17 @@
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import uuid
-from typing import Optional
+from typing import Optional, List
+
+
+CANONICAL_RESEARCH_RUN_TYPES: List[str] = [
+    "full_diligence",
+    "prospect_research",
+    "discovery",
+    "enrichment",
+    "signal_monitoring",
+    "prioritization",
+]
 
 
 @dataclass

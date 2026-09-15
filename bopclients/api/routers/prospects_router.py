@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, HTTPException
 from bopclients.api.schemas.prospects import (
     ProspectFilterParams,
     ProspectCreate,
@@ -163,16 +163,19 @@ async def get_prospect_detail(
 
     # 1. Campaign associations
     campaign_prospects = container.prospect_repo.get_campaign_prospects_by_prospect(org_id, prospect_id)
-    cp_items = [
-        {
-            "id": cp.id,
-            "campaign_id": cp.campaign_id,
-            "status": cp.status.value if hasattr(cp.status, "value") else str(cp.status),
-            "priority": cp.priority,
-            "added_at": cp.added_at,
-        }
-        for cp in campaign_prospects
-    ]
+    cp_items = []
+    for cp in campaign_prospects:
+        camp = container.campaign_repo.get_by_id(org_id, cp.campaign_id)
+        cp_items.append(
+            {
+                "id": cp.id,
+                "campaign_id": cp.campaign_id,
+                "campaign_name": camp.name if camp else None,
+                "status": cp.status.value if hasattr(cp.status, "value") else str(cp.status),
+                "priority": cp.priority,
+                "added_at": cp.added_at,
+            }
+        )
 
     # 2. Lead score
     lead_scores = container.prospect_repo.get_lead_scores_by_prospect(org_id, prospect_id)
@@ -269,6 +272,189 @@ async def get_prospect_intelligence(
         "intelligence": intel.data if intel else None,
         "confidence": intel.confidence if intel else None,
         "research_version": intel.research_version if intel else None,
+    }
+
+
+@router.get(
+    "/{prospect_id}/score",
+    status_code=status.HTTP_200_OK,
+    summary="Get latest lead score for a prospect",
+)
+async def get_prospect_score(
+    prospect_id: str,
+    tenant: TenantContext = Depends(require_permission(Permission.PROSPECT_READ)),
+    container: RuntimeContainer = Depends(get_container),
+):
+    org_id = tenant.organization_id
+    prospect = container.prospect_repo.get_prospect_by_id(org_id, prospect_id)
+    if not prospect:
+        raise EntityNotFoundError(f"Prospect '{prospect_id}' not found.")
+
+    scores = container.prospect_repo.get_lead_scores_by_prospect(org_id, prospect_id)
+    if not scores:
+        return {
+            "prospect_id": prospect_id,
+            "organization_id": org_id,
+            "score": None,
+            "explanation": "Not scored yet",
+            "calculated_at": None,
+        }
+
+    s = scores[0]
+    return {
+        "prospect_id": prospect_id,
+        "organization_id": org_id,
+        "score": s.score,
+        "explanation": s.explanation,
+        "confidence": getattr(s, "confidence", None),
+        "components": getattr(s, "components", None),
+        "calculated_at": getattr(s, "calculated_at", getattr(s, "created_at", None)),
+    }
+
+
+@router.post(
+    "/{prospect_id}/score/recalculate",
+    status_code=status.HTTP_200_OK,
+    summary="Recalculate lead score for a prospect based on signals and ICP fit",
+)
+async def recalculate_prospect_score(
+    prospect_id: str,
+    tenant: TenantContext = Depends(require_permission(Permission.PROSPECT_UPDATE)),
+    container: RuntimeContainer = Depends(get_container),
+):
+    org_id = tenant.organization_id
+    prospect = container.prospect_repo.get_prospect_by_id(org_id, prospect_id)
+    if not prospect:
+        raise EntityNotFoundError(f"Prospect '{prospect_id}' not found.")
+
+    signals = container.prospect_repo.get_signals_by_prospect(org_id, prospect_id)
+
+    icp = None
+    cps = container.prospect_repo.get_campaign_prospects_by_prospect(org_id, prospect_id)
+    if cps and cps[0].campaign_id:
+        camp = container.campaign_repo.get_by_id(org_id, cps[0].campaign_id)
+        if camp and camp.icp_id:
+            icp = container.icp_repo.get_by_id(org_id, camp.icp_id)
+
+    score, explanation, recommendations = container.opportunity_scorer.score(
+        org_id=org_id,
+        prospect=prospect,
+        signals=signals,
+        services=[],
+        icp=icp,
+    )
+
+    lead_score = container.prospect_service.assign_score(
+        org_id=org_id,
+        prospect_id=prospect_id,
+        score=score,
+        explanation=explanation,
+    )
+
+    return {
+        "prospect_id": prospect_id,
+        "organization_id": org_id,
+        "score": lead_score.score,
+        "explanation": lead_score.explanation,
+        "calculated_at": lead_score.calculated_at,
+    }
+
+
+@router.get(
+    "/{prospect_id}/priority",
+    status_code=status.HTTP_200_OK,
+    summary="Get latest priority calculation for a prospect",
+)
+async def get_prospect_priority(
+    prospect_id: str,
+    tenant: TenantContext = Depends(require_permission(Permission.PROSPECT_READ)),
+    container: RuntimeContainer = Depends(get_container),
+):
+    org_id = tenant.organization_id
+    prospect = container.prospect_repo.get_prospect_by_id(org_id, prospect_id)
+    if not prospect:
+        raise EntityNotFoundError(f"Prospect '{prospect_id}' not found.")
+
+    priorities = container.priority_repo.get_by_prospect(org_id, prospect_id)
+    if not priorities:
+        return {
+            "prospect_id": prospect_id,
+            "organization_id": org_id,
+            "priority": None,
+            "message": "No priority calculated yet",
+        }
+
+    p_row = priorities[0]
+    return {
+        "prospect_id": prospect_id,
+        "organization_id": org_id,
+        "campaign_id": p_row.campaign_id,
+        "tier": p_row.tier.value if hasattr(p_row.tier, "value") else str(p_row.tier),
+        "score": p_row.score,
+        "reasons": p_row.reasons,
+        "lead_score_component": p_row.lead_score_component,
+        "intent_signal_component": p_row.intent_signal_component,
+        "research_confidence_component": p_row.research_confidence_component,
+        "freshness_component": p_row.freshness_component,
+        "updated_at": p_row.updated_at,
+    }
+
+
+@router.post(
+    "/{prospect_id}/priority/recalculate",
+    status_code=status.HTTP_200_OK,
+    summary="Recalculate priority for a prospect",
+)
+async def recalculate_prospect_priority(
+    prospect_id: str,
+    campaign_id: Optional[str] = Query(default=None),
+    tenant: TenantContext = Depends(require_permission(Permission.PROSPECT_UPDATE)),
+    container: RuntimeContainer = Depends(get_container),
+):
+    org_id = tenant.organization_id
+    prospect = container.prospect_repo.get_prospect_by_id(org_id, prospect_id)
+    if not prospect:
+        raise EntityNotFoundError(f"Prospect '{prospect_id}' not found.")
+
+    target_camp_id = campaign_id
+    if not target_camp_id:
+        cps = container.prospect_repo.get_campaign_prospects_by_prospect(org_id, prospect_id)
+        if cps:
+            target_camp_id = cps[0].campaign_id
+
+    if not target_camp_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Prospect must be associated with a campaign to calculate priority.",
+        )
+
+    scores = container.prospect_repo.get_lead_scores_by_prospect(org_id, prospect_id)
+    lead_score = scores[0] if scores else None
+    signals = container.prospect_repo.get_signals_by_prospect(org_id, prospect_id)
+    intel = container.intel_repo.get_latest(org_id, prospect_id)
+
+    calculated = container.priority_scorer.calculate_priority(
+        organization_id=org_id,
+        campaign_id=target_camp_id,
+        prospect=prospect,
+        lead_score=lead_score,
+        signals=signals,
+        intelligence=intel,
+    )
+
+    saved = container.priority_repo.save(org_id, calculated)
+    return {
+        "prospect_id": prospect_id,
+        "organization_id": org_id,
+        "campaign_id": target_camp_id,
+        "tier": saved.tier.value if hasattr(saved.tier, "value") else str(saved.tier),
+        "score": saved.score,
+        "reasons": saved.reasons,
+        "lead_score_component": saved.lead_score_component,
+        "intent_signal_component": saved.intent_signal_component,
+        "research_confidence_component": saved.research_confidence_component,
+        "freshness_component": saved.freshness_component,
+        "updated_at": saved.updated_at,
     }
 
 

@@ -170,3 +170,155 @@ export interface ApiError {
   code?: string;
   status?: number;
 }
+
+export interface SearchIntent {
+  organization_id: string;
+  campaign_id?: string | null;
+  raw_query: string;
+  industries: string[];
+  business_categories: string[];
+  countries: string[];
+  regions: string[];
+  cities: string[];
+  languages: string[];
+  company_size_min?: number | null;
+  company_size_max?: number | null;
+  decision_maker_roles: string[];
+  keywords: string[];
+  services_to_offer: string[];
+  desired_signals: string[];
+  max_results: number;
+}
+
+export interface DiscoveryTask {
+  task_id: string;
+  provider: string;
+  query_params: Record<string, any>;
+  priority: number;
+  status: string;
+  estimated_items?: number | null;
+}
+
+export interface SearchPlan {
+  organization_id: string;
+  campaign_id?: string | null;
+  tasks: DiscoveryTask[];
+  warnings: string[];
+  estimated_total_cost_credits: number;
+  generated_at: string;
+}
+
+export interface DiscoveredProspectSummary {
+  id: string;
+  name: string;
+  website_url?: string | null;
+  phone?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  industry?: string | null;
+  source?: string | null;
+}
+
+export interface DiscoveryExecutionResult {
+  status: 'completed' | 'partial' | 'failed';
+  campaign_id: string;
+  tasks_executed: number;
+  tasks_succeeded: number;
+  tasks_failed: number;
+  discovered_businesses_count: number;
+  prospects_created: number;
+  prospects_reused: number;
+  total_imported_prospects: number;
+  imported_prospects: DiscoveredProspectSummary[];
+  errors: string[];
+}
+
+export interface LeadScoreDetail {
+  prospect_id: string;
+  organization_id: string;
+  score: number | null;
+  explanation?: string | null;
+  confidence?: number | null;
+  components?: Record<string, any> | null;
+  calculated_at?: string | null;
+}
+
+export interface PriorityDetail {
+  prospect_id: string;
+  organization_id: string;
+  campaign_id?: string | null;
+  tier: 'low' | 'medium' | 'high' | 'urgent' | null;
+  score: number | null;
+  reasons: string[];
+  lead_score_component?: number | null;
+  intent_signal_component?: number | null;
+  research_confidence_component?: number | null;
+  freshness_component?: number | null;
+  updated_at?: string | null;
+}
+
+export interface CampaignProspectItem {
+  id: string;
+  organization_id: string;
+  campaign_id: string;
+  prospect_id: string;
+  name: string;
+  website_url?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  industry?: string | null;
+  source?: string | null;
+  status: string;
+  priority?: number;
+  added_at: string;
+}
+
+export interface ProspectDetail {
+  prospect: Prospect;
+  campaign_associations: {
+    id: string;
+    campaign_id: string;
+    campaign_name?: string | null;
+    status: string;
+    priority?: number;
+    added_at: string;
+  }[];
+  lead_score?: {
+    score: number;
+    confidence?: number | null;
+    components?: Record<string, any> | null;
+    calculated_at: string;
+  } | null;
+  priority?: {
+    tier: 'low' | 'medium' | 'high' | 'urgent' | string;
+    score: number;
+    reasons: string[];
+    updated_at: string;
+  } | null;
+  intelligence_summary?: {
+    summary_text?: string | null;
+    key_insights?: string[];
+    recommended_angle?: string | null;
+    generated_at?: string;
+  } | null;
+  recent_signals: {
+    id: string;
+    category: string;
+    display_key: string;
+    signal_type: string;
+    confidence: number;
+    headline: string;
+    detected_at: string;
+  }[];
+  monitoring_schedule?: {
+    id: string;
+    status: string;
+    next_check_at?: string;
+    last_check_at?: string;
+    recommended_interval_days?: number;
+  } | null;
+}

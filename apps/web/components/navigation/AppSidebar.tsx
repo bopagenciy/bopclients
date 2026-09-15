@@ -43,6 +43,11 @@ export function AppSidebar() {
       icon: Megaphone,
     },
     {
+      label: t('nav.discovery'),
+      href: `/${locale}/discovery`,
+      icon: Compass,
+    },
+    {
       label: t('nav.icps'),
       href: `/${locale}/icps`,
       icon: Target,

@@ -55,6 +55,16 @@ async def trigger_prospect_research(
         if not campaign:
             raise EntityNotFoundError(f"Campaign '{payload.campaign_id}' not found.")
 
+    # Idempotency / Duplicate Guard: If there is an existing pending or running research run for this prospect, return it
+    existing_runs = container.research_run_repo.list_by_organization(
+        org_id,
+        prospect_id=prospect_id,
+        limit=5,
+    )
+    active_run = next((r for r in existing_runs if r.status in ("pending", "running")), None)
+    if active_run:
+        return _run_to_response(active_run)
+
     now = datetime.now(timezone.utc).isoformat()
     run = ResearchRun(
         id=str(uuid.uuid4()),

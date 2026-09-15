@@ -38,6 +38,17 @@ from bopclients.application.providers.procurement_provider import GovernmentProc
 from bopclients.application.providers.news_provider import PublicNewsSignalProvider
 from bopclients.application.providers.gemini_research_provider import GeminiProspectResearchProvider
 
+from bopclients.application.search_intent_parser import RuleBasedSearchIntentParser
+from bopclients.application.search_planner import DefaultSearchPlanner
+from bopclients.infrastructure.location.static_location_resolver import StaticLocationResolver
+from bopclients.infrastructure.gateways.forge_gateway import ForgeDiscoveryGatewayAdapter
+from bopclients.infrastructure.providers.overture_provider import OvertureDiscoveryProvider
+from bopclients.application.discovery_orchestrator import DiscoveryOrchestrator
+from bopclients.application.search_service import SearchService
+from bopclients.application.prospect_service import ProspectService
+from bopclients.application.opportunity_scorer import RuleBasedOpportunityScorer
+from bopclients.application.priority_scorer import RuleBasedPriorityScorer
+
 from bopclients.application.provider_rate_limit_service import ProviderRateLimitService
 from bopclients.application.provider_execution_guard import ProviderExecutionGuard
 from bopclients.application.public_signal_monitor_service import PublicSignalMonitorService
@@ -93,6 +104,10 @@ class RuntimeContainer:
     token_service: TokenService
     password_hasher: PasswordHasher
     auth_service: AuthService
+    search_service: Optional[SearchService] = None
+    prospect_service: Optional[ProspectService] = None
+    opportunity_scorer: Optional[RuleBasedOpportunityScorer] = None
+    priority_scorer: Optional[RuleBasedPriorityScorer] = None
 
     @classmethod
     def initialize(cls, settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> "RuntimeContainer":
@@ -242,6 +257,31 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         schedule_repo=schedule_repo,
     )
 
+    # Discovery & Prospecting Application Services (P21)
+    try:
+        discovery_gateway = ForgeDiscoveryGatewayAdapter()
+    except Exception:
+        discovery_gateway = None
+
+    discovery_provider = OvertureDiscoveryProvider(discovery_gateway)
+    prospect_service = ProspectService(prospect_repo, discovery_gateway)
+    discovery_orchestrator = DiscoveryOrchestrator(
+        providers=[discovery_provider],
+        prospect_service=prospect_service,
+        research_run_repo=research_run_repo,
+        campaign_repo=campaign_repo,
+    )
+    search_parser = RuleBasedSearchIntentParser()
+    search_planner = DefaultSearchPlanner(location_resolver=StaticLocationResolver())
+    search_service = SearchService(
+        intent_parser=search_parser,
+        search_planner=search_planner,
+        orchestrator=discovery_orchestrator,
+        campaign_repo=campaign_repo,
+    )
+    opportunity_scorer = RuleBasedOpportunityScorer()
+    priority_scorer = RuleBasedPriorityScorer()
+
     return RuntimeContainer(
         settings=settings,
         db=db,
@@ -277,6 +317,10 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         token_service=token_service,
         password_hasher=password_hasher,
         auth_service=auth_service,
+        search_service=search_service,
+        prospect_service=prospect_service,
+        opportunity_scorer=opportunity_scorer,
+        priority_scorer=priority_scorer,
     )
 
 

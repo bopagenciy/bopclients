@@ -27,3 +27,7 @@ class LeadScore:
             raise ValueError("prospect_id required")
         if not (0 <= self.score <= 100):
             raise ValueError(f"Score must be between 0 and 100, got {self.score}")
+
+    @property
+    def calculated_at(self) -> str:
+        return self.created_at

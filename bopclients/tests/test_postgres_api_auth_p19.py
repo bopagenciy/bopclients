@@ -24,6 +24,12 @@ from bopclients.runtime.container import build_runtime_container
 from bopclients.domain.organization import Organization, OrganizationMember
 from bopclients.domain.campaign import Campaign
 from bopclients.domain.enums import CampaignStatus
+from bopclients.domain.prospect import Prospect
+from bopclients.domain.campaign_prospect import CampaignProspect
+from bopclients.domain.prospect_priority import ProspectPriority
+from bopclients.domain.lead_score import LeadScore
+from bopclients.domain.research_run import ResearchRun
+from bopclients.domain.exceptions import TenantAccessError
 
 TEST_PG_URL = os.environ.get(
     "BOPCLIENTS_TEST_POSTGRES_URL",
@@ -220,3 +226,130 @@ class TestPostgresAPIAuthP19:
         )
         assert patch_res.status_code == 200
         assert patch_res.json()["city"] == "Houston"
+
+    def test_postgres_p21_persistence_and_uniqueness(self, pg_api_context):
+        """Validates real PostgreSQL persistence and uniqueness for P21:
+        1. CampaignProspect uniqueness / idempotent upsert
+        2. Prospect dedupe query behavior
+        3. ProspectPriority snapshot persistence & update
+        4. LeadScore persistence & retrieval
+        5. ResearchRun active-run lookup & idempotency
+        6. Tenant-scoped repository boundary isolation
+        """
+        container = pg_api_context["container"]
+        org = pg_api_context["org"]
+        org_id = org.id
+
+        # 1. Create a campaign and prospect on Postgres
+        camp = Campaign(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            name="PG Persistence Camp",
+            status=CampaignStatus.ACTIVE,
+        )
+        container.campaign_repo.save(org_id, camp)
+
+        prospect = Prospect(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            name="Apex Safety Postgres",
+            website_url="https://apex-safety.example.com",
+            source="test_p21_pg",
+        )
+        container.prospect_repo.save_prospect(org_id, prospect)
+
+        # 2. CampaignProspect uniqueness/upsert behavior
+        cp1 = CampaignProspect(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            campaign_id=camp.id,
+            prospect_id=prospect.id,
+            status="added",
+        )
+        container.prospect_repo.add_prospect_to_campaign(org_id, cp1)
+
+        # Re-adding same campaign-prospect association (upsert on conflict)
+        cp2 = CampaignProspect(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            campaign_id=camp.id,
+            prospect_id=prospect.id,
+            status="contacted",
+        )
+        container.prospect_repo.add_prospect_to_campaign(org_id, cp2)
+
+        # Confirm exactly 1 row exists
+        prospects_in_camp = container.prospect_repo.list_prospects_by_campaign(org_id, camp.id)
+        assert len(prospects_in_camp) == 1
+        assert prospects_in_camp[0].id == prospect.id
+
+        # 3. Prospect dedupe query behavior
+        found = container.prospect_repo.find_existing_prospect(
+            org_id, website_url="https://apex-safety.example.com/"
+        )
+        assert found is not None
+        assert found.id == prospect.id
+
+        # 4. LeadScore persistence
+        score = LeadScore(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            prospect_id=prospect.id,
+            score=88,
+            explanation="Strong fit on Texas safety distributors",
+        )
+        container.prospect_repo.save_lead_score(org_id, score)
+        fetched_scores = container.prospect_repo.get_lead_scores_by_prospect(org_id, prospect.id)
+        assert len(fetched_scores) >= 1
+        assert fetched_scores[0].score == 88
+
+        # 5. ProspectPriority persistence & update
+        pri = ProspectPriority(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            campaign_id=camp.id,
+            prospect_id=prospect.id,
+            priority_score=92.0,
+            priority_label="urgent",
+            lead_score_component=45.0,
+            intent_signal_component=40.0,
+            research_confidence_component=5.0,
+            freshness_component=2.0,
+            policy_version="1.0",
+            data={"reasons": ["Urgent expansion signal", "Strong ICP fit"]},
+        )
+        container.priority_repo.save(org_id, pri)
+        saved_pri = container.priority_repo.get(org_id, camp.id, prospect.id)
+        assert saved_pri is not None
+        assert saved_pri.priority_score == 92.0
+        assert saved_pri.priority_label == "urgent"
+
+        # Update priority
+        pri.priority_score = 95.0
+        container.priority_repo.save(org_id, pri)
+        updated_pri = container.priority_repo.get(org_id, camp.id, prospect.id)
+        assert updated_pri is not None
+        assert updated_pri.priority_score == 95.0
+
+        # 6. ResearchRun active-run lookup & idempotency
+        run1 = ResearchRun(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            campaign_id=camp.id,
+            prospect_id=prospect.id,
+            run_type="full_diligence",
+            status="pending",
+        )
+        container.research_run_repo.save(org_id, run1)
+
+        active_runs = container.research_run_repo.list_by_organization(
+            org_id, prospect_id=prospect.id, limit=5
+        )
+        active_pending = [r for r in active_runs if r.status in ("pending", "running")]
+        assert len(active_pending) == 1
+        assert active_pending[0].id == run1.id
+
+        # 7. Tenant boundary isolation on Postgres
+        foreign_org_id = str(uuid.uuid4())
+        assert container.prospect_repo.get_prospect_by_id(foreign_org_id, prospect.id) is None
+        assert container.priority_repo.get(foreign_org_id, camp.id, prospect.id) is None

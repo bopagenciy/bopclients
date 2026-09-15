@@ -4,7 +4,12 @@ import uuid
 from datetime import datetime, timezone
 from typing import List, Optional
 from fastapi import APIRouter, Depends, status, Query
-from bopclients.api.schemas.campaigns import CampaignCreate, CampaignUpdate, CampaignResponse
+from bopclients.api.schemas.campaigns import (
+    CampaignCreate,
+    CampaignUpdate,
+    CampaignResponse,
+    CampaignProspectResponse,
+)
 from bopclients.api.pagination import PaginationParams, PaginatedResponse
 from bopclients.api.dependencies import require_permission, get_container
 from bopclients.domain.auth.context import TenantContext
@@ -169,3 +174,69 @@ async def delete_campaign(
     sql = f"DELETE FROM campaigns WHERE organization_id = {container.campaign_repo._placeholder()} AND id = {container.campaign_repo._placeholder()}"
     container.campaign_repo.db.execute(sql, (tenant.organization_id, campaign_id))
     container.campaign_repo.db.commit()
+
+
+@router.get(
+    "/{campaign_id}/prospects",
+    response_model=PaginatedResponse[CampaignProspectResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List prospects associated with a specific campaign",
+)
+async def list_campaign_prospects(
+    campaign_id: str,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=1, le=100),
+    tenant: TenantContext = Depends(require_permission(Permission.CAMPAIGN_READ)),
+    container: RuntimeContainer = Depends(get_container),
+) -> PaginatedResponse[CampaignProspectResponse]:
+    campaign = container.campaign_repo.get_by_id(tenant.organization_id, campaign_id)
+    if not campaign:
+        raise EntityNotFoundError(f"Campaign '{campaign_id}' not found.")
+
+    params = PaginationParams(page=page, page_size=page_size)
+    p = container.campaign_repo._placeholder()
+
+    count_sql = f"""
+        SELECT COUNT(*) as total
+        FROM campaign_prospects cp
+        JOIN prospects pr ON cp.prospect_id = pr.id AND cp.organization_id = pr.organization_id
+        WHERE cp.organization_id = {p} AND cp.campaign_id = {p}
+    """
+    count_rows = container.campaign_repo.db.fetch_dicts(count_sql, (tenant.organization_id, campaign_id))
+    total = count_rows[0]["total"] if count_rows else 0
+
+    select_sql = f"""
+        SELECT cp.id as cp_id, cp.status as cp_status, cp.relevance_score as cp_priority, cp.added_at as cp_added_at,
+               pr.id as prospect_id, pr.organization_id, pr.name, pr.website_url, pr.phone, pr.email,
+               pr.city, pr.state, pr.country, pr.industry, pr.source
+        FROM campaign_prospects cp
+        JOIN prospects pr ON cp.prospect_id = pr.id AND cp.organization_id = pr.organization_id
+        WHERE cp.organization_id = {p} AND cp.campaign_id = {p}
+        ORDER BY cp.added_at DESC
+        LIMIT {params.limit} OFFSET {params.offset}
+    """
+    rows = container.campaign_repo.db.fetch_dicts(select_sql, (tenant.organization_id, campaign_id))
+
+    items = [
+        CampaignProspectResponse(
+            id=r["cp_id"],
+            organization_id=r["organization_id"],
+            campaign_id=campaign_id,
+            prospect_id=r["prospect_id"],
+            name=r["name"],
+            website_url=r.get("website_url"),
+            phone=r.get("phone"),
+            email=r.get("email"),
+            city=r.get("city"),
+            state=r.get("state"),
+            country=r.get("country", "US"),
+            industry=r.get("industry"),
+            source=r.get("source"),
+            status=r["cp_status"],
+            priority=int(r["cp_priority"]) if r.get("cp_priority") is not None else 0,
+            added_at=r["cp_added_at"],
+        )
+        for r in rows
+    ]
+
+    return PaginatedResponse.create(items=items, total_items=total, params=params)

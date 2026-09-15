@@ -368,6 +368,10 @@ class ProspectRepository(BaseTenantRepository, IProspectRepository):
             )
         return res
 
+    def get_signals_by_prospect(self, org_id: str, prospect_id: str) -> List[Signal]:
+        """Alias for list_signals."""
+        return self.list_signals(org_id, prospect_id)
+
     def save_lead_score(self, org_id: str, score: LeadScore) -> LeadScore:
         org_id = self._validate_tenant(org_id)
         score.organization_id = org_id
@@ -430,6 +434,15 @@ class ProspectRepository(BaseTenantRepository, IProspectRepository):
             explanation=r.get("explanation"),
             created_at=r["created_at"],
         )
+
+    def get_lead_scores_by_prospect(self, org_id: str, prospect_id: str) -> List[LeadScore]:
+        """Fetch list of lead scores for a prospect (returns 0 or 1 item)."""
+        score = self.get_lead_score(org_id, prospect_id)
+        return [score] if score else []
+
+    def get_campaign_prospects_by_prospect(self, org_id: str, prospect_id: str) -> List[CampaignProspect]:
+        """Alias for list_prospect_campaigns."""
+        return self.list_prospect_campaigns(org_id, prospect_id)
 
     def add_prospect_source(self, org_id: str, source: ProspectSource) -> ProspectSource:
         org_id = self._validate_tenant(org_id)

@@ -68,3 +68,17 @@ class ProspectPriority:
             raise ValueError(f"Priority score must be between 0 and 100, got {self.priority_score}")
         if self.priority_label not in ("low", "medium", "high", "urgent"):
             raise ValueError(f"Invalid priority_label '{self.priority_label}'")
+
+    @property
+    def score(self) -> int:
+        return self.priority_score
+
+    @property
+    def tier(self) -> str:
+        return self.priority_label
+
+    @property
+    def reasons(self) -> List[str]:
+        if isinstance(self.data, dict):
+            return self.data.get("reasons", [])
+        return []
