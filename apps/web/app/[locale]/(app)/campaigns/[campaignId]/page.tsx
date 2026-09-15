@@ -237,13 +237,23 @@ export default function CampaignDetailPage() {
             )}
           </div>
 
-          <Button
-            size="sm"
-            onClick={() => router.push(`/${locale}/discovery?campaignId=${campaign.id}`)}
-          >
-            <Compass className="w-4 h-4 mr-1.5 text-brand-gold" />
-            {t('campaigns.run_discovery')}
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => router.push(`/${locale}/prospects?campaign_id=${campaign.id}`)}
+            >
+              <Users className="w-4 h-4 mr-1.5 text-brand-gold" />
+              {t('campaigns.view_in_workspace')}
+            </Button>
+            <Button
+              size="sm"
+              onClick={() => router.push(`/${locale}/discovery?campaignId=${campaign.id}`)}
+            >
+              <Compass className="w-4 h-4 mr-1.5 text-brand-gold" />
+              {t('campaigns.run_discovery')}
+            </Button>
+          </div>
         </div>
       </div>
 

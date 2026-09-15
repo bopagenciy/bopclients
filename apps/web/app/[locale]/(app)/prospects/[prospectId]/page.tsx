@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useI18n } from '@/lib/i18n/context';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -36,7 +36,9 @@ export default function ProspectDetailPage() {
   const { t, locale } = useI18n();
   const params = useParams();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const prospectId = params?.prospectId as string;
+  const returnTo = searchParams.get('return_to');
 
   const [dossier, setDossier] = useState<ProspectDetail | null>(null);
   const [signals, setSignals] = useState<Signal[]>([]);
@@ -206,7 +208,13 @@ export default function ProspectDetailPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => router.push(`/${locale}/prospects`)}
+            onClick={() => {
+              if (returnTo) {
+                router.push(returnTo);
+              } else {
+                router.push(`/${locale}/prospects`);
+              }
+            }}
             className="-ml-2 text-foreground-muted hover:text-foreground mb-1"
           >
             <ArrowLeft className="w-4 h-4 mr-1.5" />

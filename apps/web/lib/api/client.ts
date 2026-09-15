@@ -132,3 +132,94 @@ export async function apiClient<T>(
 
   return res.json();
 }
+
+/**
+ * P22 Prospect Operations & Bulk API Helpers
+ */
+import type {
+  BulkAddToCampaignRequest,
+  BulkAddToCampaignResponse,
+  BulkRecalculateScoreRequest,
+  BulkRecalculateScoreResponse,
+  BulkRecalculatePriorityRequest,
+  BulkRecalculatePriorityResponse,
+  BulkResearchRequest,
+  BulkResearchResponse,
+  BulkExportRequest,
+} from './types';
+
+export async function bulkAddToCampaign(
+  payload: BulkAddToCampaignRequest
+): Promise<BulkAddToCampaignResponse> {
+  return apiClient<BulkAddToCampaignResponse>('/api/v1/prospects/bulk/add-to-campaign', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function bulkRecalculateScore(
+  payload: BulkRecalculateScoreRequest
+): Promise<BulkRecalculateScoreResponse> {
+  return apiClient<BulkRecalculateScoreResponse>('/api/v1/prospects/bulk/recalculate-score', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function bulkRecalculatePriority(
+  payload: BulkRecalculatePriorityRequest
+): Promise<BulkRecalculatePriorityResponse> {
+  return apiClient<BulkRecalculatePriorityResponse>('/api/v1/prospects/bulk/recalculate-priority', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function bulkResearch(
+  payload: BulkResearchRequest
+): Promise<BulkResearchResponse> {
+  return apiClient<BulkResearchResponse>('/api/v1/prospects/bulk/research', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function exportProspectsCsv(
+  filters?: Record<string, string | number | boolean | undefined>
+): Promise<Blob> {
+  const searchParams = new URLSearchParams();
+  if (filters) {
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== '') {
+        searchParams.append(key, String(value));
+      }
+    }
+  }
+  const qs = searchParams.toString();
+  const url = `/api/proxy/api/v1/prospects/export${qs ? `?${qs}` : ''}`;
+  const res = await fetch(url, {
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`CSV export failed with status ${res.status}`);
+  }
+  return res.blob();
+}
+
+export async function exportSelectedProspectsCsv(
+  payload: BulkExportRequest
+): Promise<Blob> {
+  const url = '/api/proxy/api/v1/prospects/export';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+    credentials: 'include',
+  });
+  if (!res.ok) {
+    throw new Error(`CSV export failed with status ${res.status}`);
+  }
+  return res.blob();
+}

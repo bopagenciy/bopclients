@@ -1314,4 +1314,131 @@ test.describe('BopClients Web Shell E2E Smoke Flow', () => {
     expect(bodyText).not.toContain('discovery.');
     expect(bodyText).not.toContain('prospect_detail.');
   });
+
+  test('P22 Prospect Operations Workspace: multi-filter, row selection and bulk toolbar', async ({ page }) => {
+    // Setup authenticated session
+    await page.route('**/api/auth/session', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          user: { id: 'usr-p22', email: 'operator@bopclients.io', role: 'MEMBER' },
+          active_organization: {
+            id: 'org-1',
+            bop_organization_id: 'bop_org_alpha',
+            name: 'Alpha Corp',
+            role: 'MEMBER',
+          },
+          active_role: 'MEMBER',
+          organizations: [],
+        }),
+      });
+    });
+
+    // Mock campaigns endpoint
+    await page.route('**/api/proxy/api/v1/campaigns*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            { id: 'camp-1', name: 'Q3 Outbound Industrial', status: 'ACTIVE' },
+            { id: 'camp-2', name: 'Safety Fasteners Expansion', status: 'ACTIVE' },
+          ],
+          total: 2,
+        }),
+      });
+    });
+
+    // Mock prospects endpoint
+    await page.route('**/api/proxy/api/v1/prospects*', async (route) => {
+      const url = new URL(route.request().url());
+      if (url.pathname.includes('/bulk') || url.pathname.includes('/export')) {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ success: true, added_count: 2, already_present_count: 0 }),
+        });
+        return;
+      }
+
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          items: [
+            {
+              id: 'pros-101',
+              organization_id: 'org-1',
+              name: 'Alpha Manufacturing Tools',
+              email: 'procurement@alphatools.com',
+              industry: 'Manufacturing',
+              city: 'Miami',
+              state: 'FL',
+              country: 'USA',
+              lead_score: 85,
+              priority_tier: 'urgent',
+              campaign_count: 1,
+              campaign_names: ['Q3 Outbound Industrial'],
+              signals_count: 3,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+            {
+              id: 'pros-102',
+              organization_id: 'org-1',
+              name: 'Beta Safety Supply LLC',
+              email: 'sales@betasafety.com',
+              industry: 'Safety Equipment',
+              city: 'Orlando',
+              state: 'FL',
+              country: 'USA',
+              lead_score: 55,
+              priority_tier: 'medium',
+              campaign_count: 0,
+              campaign_names: [],
+              signals_count: 1,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          ],
+          total_items: 2,
+          total_pages: 1,
+          page: 1,
+          page_size: 15,
+        }),
+      });
+    });
+
+    test.setTimeout(60000);
+
+    // 1. Visit prospects page
+    await page.goto('/en/prospects');
+    await expect(page.locator('h1')).toContainText('Prospect Directory');
+
+    // 2. Verify table content & operational columns
+    await expect(page.locator('text=Alpha Manufacturing Tools')).toBeVisible();
+    await expect(page.locator('text=Beta Safety Supply LLC')).toBeVisible();
+    await expect(page.getByText('URGENT', { exact: true })).toBeVisible();
+    await expect(page.getByText('MEDIUM', { exact: true })).toBeVisible();
+    await expect(page.locator('text=85')).toBeVisible();
+    await expect(page.locator('text=55')).toBeVisible();
+
+    // 3. Test multi-select: click on first row checkbox
+    const checkboxes = page.locator('tbody tr td svg');
+    await expect(checkboxes.first()).toBeVisible();
+    await checkboxes.first().click();
+
+    // 4. Verify floating bulk actions toolbar appears
+    await expect(page.locator('text=1 selected')).toBeVisible();
+    await expect(page.locator('button:has-text("Add to Campaign")')).toBeVisible();
+    await expect(page.locator('button:has-text("Recalculate Scores")')).toBeVisible();
+    await expect(page.locator('button:has-text("Recalculate Priorities")')).toBeVisible();
+    await expect(page.locator('button:has-text("Trigger Research")')).toBeVisible();
+    await expect(page.locator('button:has-text("Export Selected CSV")')).toBeVisible();
+
+    // 5. Test Quick Clear
+    await page.locator('button:has-text("Clear selection")').click();
+    await expect(page.locator('text=1 selected')).not.toBeVisible();
+  });
 });

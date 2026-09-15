@@ -10,11 +10,16 @@ from bopclients.api.schemas.campaigns import (
     CampaignResponse,
     CampaignProspectResponse,
 )
+from bopclients.api.schemas.prospects import (
+    BulkAddToCampaignRequest,
+    BulkAddToCampaignResponse,
+)
 from bopclients.api.pagination import PaginationParams, PaginatedResponse
 from bopclients.api.dependencies import require_permission, get_container
 from bopclients.domain.auth.context import TenantContext
 from bopclients.domain.auth.policy import Permission
 from bopclients.domain.campaign import Campaign
+from bopclients.domain.campaign_prospect import CampaignProspect
 from bopclients.domain.enums import CampaignStatus
 from bopclients.domain.exceptions import EntityNotFoundError
 from bopclients.runtime.container import RuntimeContainer
@@ -240,3 +245,63 @@ async def list_campaign_prospects(
     ]
 
     return PaginatedResponse.create(items=items, total_items=total, params=params)
+
+
+@router.post(
+    "/{campaign_id}/prospects/bulk",
+    response_model=BulkAddToCampaignResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Add multiple prospects to this campaign in bulk (max 100)",
+)
+async def bulk_add_campaign_prospects(
+    campaign_id: str,
+    payload: BulkAddToCampaignRequest,
+    tenant: TenantContext = Depends(require_permission(Permission.CAMPAIGN_UPDATE)),
+    container: RuntimeContainer = Depends(get_container),
+) -> BulkAddToCampaignResponse:
+    org_id = tenant.organization_id
+    campaign = container.campaign_repo.get_by_id(org_id, campaign_id)
+    if not campaign:
+        raise EntityNotFoundError(f"Campaign '{campaign_id}' not found.")
+
+    added = 0
+    already_present = 0
+    failed = 0
+    added_ids: List[str] = []
+
+    p = container.campaign_repo._placeholder()
+
+    for pid in payload.prospect_ids:
+        try:
+            prospect = container.prospect_repo.get_prospect_by_id(org_id, pid)
+            if not prospect:
+                failed += 1
+                continue
+
+            check_sql = f"SELECT id FROM campaign_prospects WHERE organization_id = {p} AND campaign_id = {p} AND prospect_id = {p}"
+            exists = container.campaign_repo.db.fetch_dicts(check_sql, (org_id, campaign_id, pid))
+            if exists:
+                already_present += 1
+                continue
+
+            cp = CampaignProspect(
+                id=str(uuid.uuid4()),
+                organization_id=org_id,
+                campaign_id=campaign_id,
+                prospect_id=pid,
+                status="added",
+            )
+            container.prospect_repo.add_prospect_to_campaign(org_id, cp)
+            added += 1
+            added_ids.append(pid)
+        except Exception:
+            failed += 1
+
+    return BulkAddToCampaignResponse(
+        campaign_id=campaign_id,
+        requested=len(payload.prospect_ids),
+        added=added,
+        already_present=already_present,
+        failed=failed,
+        prospect_ids=added_ids,
+    )

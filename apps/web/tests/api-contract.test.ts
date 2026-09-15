@@ -38,6 +38,12 @@ describe('BopClients Frontend <-> P19 OpenAPI Contract Fidelity', () => {
     { path: '/api/v1/monitoring/overview', method: 'get', component: 'app/[locale]/(app)/monitoring/page.tsx' },
     { path: '/api/v1/monitoring/health', method: 'get', component: 'app/[locale]/(app)/monitoring/page.tsx' },
     { path: '/api/v1/integrations/destinations', method: 'get', component: 'app/[locale]/(app)/integrations/page.tsx' },
+    { path: '/api/v1/prospects/export', method: 'get', component: 'lib/api/client.ts exportProspectsCsv' },
+    { path: '/api/v1/prospects/export', method: 'post', component: 'lib/api/client.ts exportSelectedProspectsCsv' },
+    { path: '/api/v1/prospects/bulk/add-to-campaign', method: 'post', component: 'lib/api/client.ts bulkAddToCampaign' },
+    { path: '/api/v1/prospects/bulk/recalculate-score', method: 'post', component: 'lib/api/client.ts bulkRecalculateScore' },
+    { path: '/api/v1/prospects/bulk/recalculate-priority', method: 'post', component: 'lib/api/client.ts bulkRecalculatePriority' },
+    { path: '/api/v1/prospects/bulk/research', method: 'post', component: 'lib/api/client.ts bulkResearch' },
   ];
 
   it('all frontend API route templates must exist in P19 OpenAPI specification', () => {

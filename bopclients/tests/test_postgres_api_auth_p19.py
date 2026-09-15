@@ -23,8 +23,9 @@ from bopclients.runtime.settings import RuntimeSettings
 from bopclients.runtime.container import build_runtime_container
 from bopclients.domain.organization import Organization, OrganizationMember
 from bopclients.domain.campaign import Campaign
-from bopclients.domain.enums import CampaignStatus
+from bopclients.domain.enums import CampaignStatus, SignalCategory
 from bopclients.domain.prospect import Prospect
+from bopclients.domain.signal import Signal
 from bopclients.domain.campaign_prospect import CampaignProspect
 from bopclients.domain.prospect_priority import ProspectPriority
 from bopclients.domain.lead_score import LeadScore
@@ -353,3 +354,190 @@ class TestPostgresAPIAuthP19:
         foreign_org_id = str(uuid.uuid4())
         assert container.prospect_repo.get_prospect_by_id(foreign_org_id, prospect.id) is None
         assert container.priority_repo.get(foreign_org_id, camp.id, prospect.id) is None
+
+    def test_postgres_p22_operations_and_scoping(self, pg_api_context):
+        """Validates live PostgreSQL behavior for P22 operations:
+        1. Multi-dimensional server-side filtering:
+           - campaign filter
+           - lead score filter (score_min/score_max)
+           - priority filter
+           - signal presence filter (has_signals=true/false)
+        2. Batch hydration on PostgreSQL (score, priority_tier, campaign_names, signals_count)
+        3. Bulk campaign association uniqueness
+        4. Filtered export and selected-ID export tenant scoping
+        """
+        container = pg_api_context["container"]
+        client = pg_api_context["client"]
+        headers_a = pg_api_context["headers"]
+        org_a = pg_api_context["org"]
+        org_a_id = org_a.id
+
+        # Setup Tenant B in PostgreSQL
+        unique_b = str(uuid.uuid4())[:8]
+        user_b = container.auth_service.register_user(
+            email=f"pg_user_b_{unique_b}@example.com",
+            name=f"PG User B {unique_b}",
+            password="ValidPassword123!",
+            locale="en",
+        )
+        org_b_id = str(uuid.uuid4())
+        org_b = Organization(
+            id=org_b_id,
+            bop_organization_id=str(uuid.uuid4()),
+            name=f"PG Beta {unique_b}",
+            slug=f"pg-beta-{unique_b}",
+        )
+        container.org_repo.save(org_b)
+        container.org_repo.add_member(
+            OrganizationMember(
+                id=str(uuid.uuid4()),
+                organization_id=org_b_id,
+                user_id=user_b.id,
+                role="OWNER",
+            )
+        )
+        auth_b = container.auth_service.authenticate(f"pg_user_b_{unique_b}@example.com", "ValidPassword123!")
+        headers_b = {
+            "Authorization": f"Bearer {auth_b.access_token}",
+            "X-Bop-Organization-Id": org_b.bop_organization_id,
+        }
+
+        # Seed Campaign in Org A
+        camp_a = Campaign(
+            id=str(uuid.uuid4()),
+            organization_id=org_a_id,
+            name=f"PG Campaign {unique_b}",
+            status=CampaignStatus.ACTIVE,
+        )
+        container.campaign_repo.save(org_a_id, camp_a)
+
+        # Seed Prospect A1: has score 85, priority urgent, signal, in camp_a
+        p_a1 = Prospect(
+            id=str(uuid.uuid4()),
+            organization_id=org_a_id,
+            name=f"PG Alpha One {unique_b}",
+            website_url=f"https://alpha-one-{unique_b}.example.com",
+            source="test_p22_pg",
+        )
+        container.prospect_repo.save_prospect(org_a_id, p_a1)
+        container.prospect_service.assign_score(org_a_id, p_a1.id, 85, "High score ICP")
+        prio_a1 = ProspectPriority(
+            id=str(uuid.uuid4()),
+            organization_id=org_a_id,
+            campaign_id=camp_a.id,
+            prospect_id=p_a1.id,
+            priority_score=90.0,
+            priority_label="urgent",
+        )
+        container.priority_repo.save(org_a_id, prio_a1)
+        cp_a1 = CampaignProspect(
+            id=str(uuid.uuid4()),
+            organization_id=org_a_id,
+            campaign_id=camp_a.id,
+            prospect_id=p_a1.id,
+        )
+        container.prospect_repo.add_prospect_to_campaign(org_a_id, cp_a1)
+        sig_a1 = Signal(
+            id=str(uuid.uuid4()),
+            organization_id=org_a_id,
+            prospect_id=p_a1.id,
+            type="expansion",
+            category=SignalCategory.COMPANY_ACTIVITY,
+            value="Expanding in Texas",
+        )
+        container.prospect_repo.add_signal(org_a_id, sig_a1)
+
+        # Seed Prospect A2: has score 45, no priority, no signal, not in camp_a
+        p_a2 = Prospect(
+            id=str(uuid.uuid4()),
+            organization_id=org_a_id,
+            name=f"PG Alpha Two {unique_b}",
+            website_url=f"https://alpha-two-{unique_b}.example.com",
+            source="test_p22_pg",
+        )
+        container.prospect_repo.save_prospect(org_a_id, p_a2)
+        container.prospect_service.assign_score(org_a_id, p_a2.id, 45, "Moderate score ICP")
+
+        # Seed Prospect B1 in Org B
+        p_b1 = Prospect(
+            id=str(uuid.uuid4()),
+            organization_id=org_b_id,
+            name=f"PG Foreign Beta {unique_b}",
+            website_url=f"https://foreign-beta-{unique_b}.example.com",
+            source="test_p22_pg",
+        )
+        container.prospect_repo.save_prospect(org_b_id, p_b1)
+
+        # 1. Server-side prospect filtering on PostgreSQL
+        # 1a. Campaign filter
+        res_camp = client.get(f"/api/v1/prospects?campaign_id={camp_a.id}", headers=headers_a)
+        assert res_camp.status_code == 200
+        items_camp = res_camp.json()["items"]
+        assert any(i["id"] == p_a1.id for i in items_camp)
+        assert not any(i["id"] == p_a2.id for i in items_camp)
+        assert not any(i["id"] == p_b1.id for i in items_camp)
+
+        # 1b. Lead score filter (score_min / score_max)
+        res_score_min = client.get("/api/v1/prospects?score_min=80", headers=headers_a)
+        assert res_score_min.status_code == 200
+        items_score = res_score_min.json()["items"]
+        assert any(i["id"] == p_a1.id for i in items_score)
+        assert not any(i["id"] == p_a2.id for i in items_score)
+
+        res_score_max = client.get("/api/v1/prospects?score_max=50", headers=headers_a)
+        assert res_score_max.status_code == 200
+        items_score_low = res_score_max.json()["items"]
+        assert any(i["id"] == p_a2.id for i in items_score_low)
+        assert not any(i["id"] == p_a1.id for i in items_score_low)
+
+        # 1c. Priority filter
+        res_prio = client.get("/api/v1/prospects?priority=urgent", headers=headers_a)
+        assert res_prio.status_code == 200
+        items_prio = res_prio.json()["items"]
+        assert any(i["id"] == p_a1.id for i in items_prio)
+        assert not any(i["id"] == p_a2.id for i in items_prio)
+
+        # 1d. Signal presence filter (SQL EXISTS / NOT EXISTS)
+        res_sig_true = client.get("/api/v1/prospects?has_signals=true", headers=headers_a)
+        assert res_sig_true.status_code == 200
+        assert any(i["id"] == p_a1.id for i in res_sig_true.json()["items"])
+        assert not any(i["id"] == p_a2.id for i in res_sig_true.json()["items"])
+
+        res_sig_false = client.get("/api/v1/prospects?has_signals=false", headers=headers_a)
+        assert res_sig_false.status_code == 200
+        assert any(i["id"] == p_a2.id for i in res_sig_false.json()["items"])
+        assert not any(i["id"] == p_a1.id for i in res_sig_false.json()["items"])
+
+        # 2. Batch hydration on PostgreSQL
+        p_a1_item = next(i for i in res_camp.json()["items"] if i["id"] == p_a1.id)
+        assert p_a1_item["lead_score"] == 85
+        assert p_a1_item["priority_tier"] == "urgent"
+        assert camp_a.name in p_a1_item["campaign_names"]
+        assert p_a1_item["signals_count"] >= 1
+
+        # 3. Bulk campaign association uniqueness on PostgreSQL
+        res_bulk_add = client.post(
+            "/api/v1/prospects/bulk/add-to-campaign",
+            json={"campaign_id": camp_a.id, "prospect_ids": [p_a1.id]},
+            headers=headers_a,
+        )
+        assert res_bulk_add.status_code == 200
+        bulk_data = res_bulk_add.json()
+        assert bulk_data["already_present"] == 1
+        assert bulk_data["added"] == 0
+
+        # 4. Filtered export tenant scoping on PostgreSQL
+        res_exp_filt = client.get(f"/api/v1/prospects/export?campaign_id={camp_a.id}", headers=headers_a)
+        assert res_exp_filt.status_code == 200
+        assert p_a1.name in res_exp_filt.text
+        assert p_b1.name not in res_exp_filt.text
+
+        # Selected-ID export tenant scoping
+        res_exp_sel = client.post(
+            "/api/v1/prospects/export",
+            json={"prospect_ids": [p_a1.id, p_b1.id]},
+            headers=headers_a,
+        )
+        assert res_exp_sel.status_code == 200
+        assert p_a1.name in res_exp_sel.text
+        assert p_b1.name not in res_exp_sel.text

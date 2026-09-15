@@ -67,6 +67,99 @@ export interface Prospect {
   source?: string | null;
   created_at: string;
   updated_at: string;
+  // P22 hydration summary fields
+  lead_score?: number | null;
+  priority_tier?: 'low' | 'medium' | 'high' | 'urgent' | null;
+  campaign_count?: number;
+  campaign_names?: string[];
+  signals_count?: number;
+}
+
+export interface BulkAddToCampaignRequest {
+  prospect_ids: string[];
+  campaign_id: string;
+}
+
+export interface BulkAddToCampaignResponse {
+  success: boolean;
+  campaign_id: string;
+  added_count: number;
+  already_present_count: number;
+  prospect_ids_added: string[];
+  prospect_ids_skipped: string[];
+}
+
+export interface BulkRecalculateScoreRequest {
+  prospect_ids: string[];
+}
+
+export interface BulkRecalculateScoreResponse {
+  success: boolean;
+  total_requested: number;
+  processed_count: number;
+  scored_count: number;
+  failed_count: number;
+  results: {
+    prospect_id: string;
+    score: number | null;
+    status: string;
+    error?: string | null;
+  }[];
+}
+
+export interface BulkRecalculatePriorityRequest {
+  prospect_ids: string[];
+  campaign_id?: string | null;
+}
+
+export interface BulkRecalculatePriorityResponse {
+  success: boolean;
+  total_requested: number;
+  processed_count: number;
+  prioritized_count: number;
+  failed_count: number;
+  results: {
+    prospect_id: string;
+    priority_tier: string | null;
+    priority_score: number | null;
+    status: string;
+    error?: string | null;
+  }[];
+}
+
+export interface BulkResearchRequest {
+  prospect_ids: string[];
+  campaign_id?: string | null;
+  run_type?: string;
+}
+
+export interface BulkResearchResponse {
+  success: boolean;
+  total_requested: number;
+  triggered_count: number;
+  skipped_count: number;
+  runs: {
+    prospect_id: string;
+    run_id?: string | null;
+    status: string;
+    display_key?: string | null;
+    reason?: string | null;
+  }[];
+}
+
+export interface BulkExportRequest {
+  prospect_ids?: string[];
+  search?: string;
+  campaign_id?: string;
+  priority?: string;
+  score_min?: number;
+  score_max?: number;
+  unscored?: boolean;
+  has_signals?: boolean;
+  industry?: string;
+  city?: string;
+  state?: string;
+  country?: string;
 }
 
 export interface Campaign {

@@ -53,7 +53,7 @@ class ProspectUpdate(BaseModel):
 
 
 class ProspectResponse(BaseModel):
-    """Standard prospect response model."""
+    """Standard prospect response model with operational summary fields."""
 
     id: str
     organization_id: str
@@ -69,6 +69,11 @@ class ProspectResponse(BaseModel):
     postal_code: Optional[str] = None
     industry: Optional[str] = None
     source: Optional[str] = None
+    lead_score: Optional[int] = None
+    priority_tier: Optional[str] = None
+    campaign_count: Optional[int] = None
+    campaign_names: List[str] = Field(default_factory=list)
+    signals_count: Optional[int] = None
     created_at: str
     updated_at: str
 
@@ -83,3 +88,76 @@ class ProspectDetailResponse(BaseModel):
     intelligence_summary: Optional[Dict[str, Any]] = None
     recent_signals: List[Dict[str, Any]] = Field(default_factory=list)
     monitoring_schedule: Optional[Dict[str, Any]] = None
+
+
+class BulkAddToCampaignRequest(BaseModel):
+    """Payload for adding multiple prospects to a campaign."""
+
+    campaign_id: str
+    prospect_ids: List[str] = Field(..., min_length=1, max_length=100)
+
+
+class BulkAddToCampaignResponse(BaseModel):
+    """Result of bulk add to campaign."""
+
+    campaign_id: str
+    requested: int
+    added: int
+    already_present: int
+    failed: int
+    prospect_ids: List[str] = Field(default_factory=list)
+
+
+class BulkRecalculateScoreRequest(BaseModel):
+    """Payload for bulk lead score recalculation."""
+
+    prospect_ids: List[str] = Field(..., min_length=1, max_length=50)
+
+
+class BulkRecalculateScoreResponse(BaseModel):
+    """Result of bulk lead score recalculation."""
+
+    requested: int
+    succeeded: int
+    failed: int
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class BulkRecalculatePriorityRequest(BaseModel):
+    """Payload for bulk priority recalculation."""
+
+    prospect_ids: List[str] = Field(..., min_length=1, max_length=50)
+    campaign_id: Optional[str] = None
+
+
+class BulkRecalculatePriorityResponse(BaseModel):
+    """Result of bulk priority recalculation."""
+
+    requested: int
+    succeeded: int
+    failed: int
+    items: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+class BulkResearchRequest(BaseModel):
+    """Payload for bulk triggering research."""
+
+    prospect_ids: List[str] = Field(..., min_length=1, max_length=25)
+    campaign_id: Optional[str] = None
+    run_type: str = "full_diligence"
+
+
+class BulkResearchResponse(BaseModel):
+    """Result of bulk research trigger."""
+
+    requested: int
+    queued: int
+    already_active: int
+    failed: int
+    run_ids: List[str] = Field(default_factory=list)
+
+
+class BulkExportRequest(BaseModel):
+    """Payload for exporting selected prospect IDs."""
+
+    prospect_ids: Optional[List[str]] = Field(default=None, max_length=1000)
