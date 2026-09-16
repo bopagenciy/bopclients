@@ -14,6 +14,8 @@ from bopclients.domain.exceptions import (
     ValidationError as DomainValidationError,
     MemberRolePermissionError,
     TenantAccessError,
+    LastOwnerProtectionError,
+    InvalidRoleTransitionError,
 )
 from bopclients.application.auth_service import (
     AuthError,
@@ -59,6 +61,8 @@ TRANSLATION_CATALOG: Dict[str, Dict[str, str]] = {
         "errors.internal_server_error": "An unexpected internal server error occurred.",
         "errors.not_found": "Resource not found.",
         "errors.method_not_allowed": "Method not allowed.",
+        "errors.last_owner_protection": "Cannot demote or remove the last owner of the organization.",
+        "errors.invalid_role_transition": "Invalid role transition.",
     },
     "es": {
         "errors.invalid_credentials": "Credenciales inválidas. Correo o contraseña incorrectos.",
@@ -74,6 +78,8 @@ TRANSLATION_CATALOG: Dict[str, Dict[str, str]] = {
         "errors.internal_server_error": "Ocurrió un error interno del servidor.",
         "errors.not_found": "Recurso no encontrado.",
         "errors.method_not_allowed": "Método no permitido.",
+        "errors.last_owner_protection": "No se puede degradar o eliminar al último propietario de la organización.",
+        "errors.invalid_role_transition": "Transición de rol no permitida.",
     },
 }
 
@@ -153,6 +159,30 @@ def register_exception_handlers(app) -> None:
             code="FORBIDDEN",
             message=str(exc) or "User role does not possess required permission.",
             message_key="errors.forbidden",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(LastOwnerProtectionError)
+    async def last_owner_protection_handler(request: Request, exc: LastOwnerProtectionError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="LAST_OWNER_PROTECTION",
+            message=str(exc) or "Cannot demote or remove the last owner of the organization.",
+            message_key="errors.last_owner_protection",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(InvalidRoleTransitionError)
+    async def invalid_role_transition_handler(request: Request, exc: InvalidRoleTransitionError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code="INVALID_ROLE_TRANSITION",
+            message=str(exc) or "Invalid role transition.",
+            message_key="errors.invalid_role_transition",
             request_id=req_id,
             request=request,
         )

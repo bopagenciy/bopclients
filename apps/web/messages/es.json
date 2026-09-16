@@ -404,7 +404,9 @@
     "forbidden": "Acceso Restringido",
     "forbidden_desc": "Su rol actual no tiene permisos para ver o modificar este recurso.",
     "server_error": "Error Interno",
-    "server_error_desc": "El sistema encontró un error inesperado. Intente nuevamente o contacte a soporte técnico."
+    "server_error_desc": "El sistema encontró un error inesperado. Intente nuevamente o contacte a soporte técnico.",
+    "last_owner_protection": "No se puede degradar o eliminar al último propietario de la organización.",
+    "invalid_role_transition": "Transición de rol no permitida."
   },
   "roles": {
     "owner": "Propietario",
@@ -425,5 +427,74 @@
     "completed": "Completado",
     "draft": "Borrador",
     "failed": "Fallido"
+  },
+  "settings": {
+    "title": "Configuración",
+    "subtitle": "Gestione el perfil de la organización, los miembros del equipo y preferencias de seguridad",
+    "tabs": {
+      "general": "General",
+      "organization": "Organización",
+      "members": "Miembros del Equipo",
+      "security": "Seguridad"
+    },
+    "organization": {
+      "title": "Perfil de la Organización",
+      "description": "Identidad fidedigna, identificadores canónicos y configuración regional.",
+      "name_label": "Nombre de la Organización",
+      "name_placeholder": "Ingrese el nombre de la organización",
+      "slug_label": "Slug",
+      "bop_id_label": "ID Canónico Bop de Organización",
+      "bop_id_help": "Identidad global inmutable de la organización",
+      "country_label": "País",
+      "language_label": "Idioma Predeterminado",
+      "timezone_label": "Zona Horaria",
+      "member_count_label": "Total de Miembros",
+      "my_role_label": "Su Rol Asignado",
+      "save_button": "Guardar Cambios",
+      "saving_button": "Guardando...",
+      "save_success": "Organización actualizada exitosamente",
+      "save_error": "Error al actualizar la organización"
+    },
+    "team": {
+      "title": "Miembros del Equipo",
+      "subtitle": "Colaboradores con membresías activas en esta organización.",
+      "total_count": "{count} Miembros",
+      "col_member": "Miembro",
+      "col_email": "Correo Electrónico",
+      "col_role": "Rol",
+      "col_joined": "Fecha de Unión",
+      "col_actions": "Acciones",
+      "edit_role": "Cambiar Rol",
+      "remove_member": "Eliminar",
+      "cannot_modify": "No modificable",
+      "cannot_remove": "No eliminable",
+      "loading": "Cargando miembros del equipo...",
+      "empty": "No se encontraron miembros en la organización activa.",
+      "role_updated_success": "Rol actualizado con éxito",
+      "role_update_error": "Error al actualizar el rol",
+      "remove_success": "Miembro eliminado con éxito",
+      "remove_error": "Error al eliminar el miembro",
+      "role_modal_title": "Cambiar Rol de Miembro",
+      "role_modal_desc": "Seleccione el nuevo nivel de permisos para {name}.",
+      "role_label": "Rol Asignado",
+      "role_modal_save": "Actualizar Rol",
+      "role_modal_cancel": "Cancelar",
+      "remove_modal_title": "Eliminar Miembro del Equipo",
+      "remove_modal_desc": "¿Está seguro de que desea eliminar a {name} ({email}) de esta organización? Su cuenta de usuario permanecerá intacta, pero perderá el acceso a los recursos de esta organización.",
+      "remove_modal_confirm": "Confirmar Eliminación",
+      "remove_modal_cancel": "Cancelar",
+      "remove_modal_in_progress": "Eliminando...",
+      "last_owner_warning": "Este miembro es el último Propietario y no puede ser degradado ni eliminado.",
+      "admin_restriction": "Los administradores solo pueden gestionar roles de Miembro y Lector.",
+      "read_only_badge": "Acceso de Solo Lectura"
+    },
+    "security": {
+      "title": "Arquitectura de Seguridad",
+      "subtitle": "Gobernanza de identidad empresarial y ciclo de vida de tokens BFF.",
+      "cookie_title": "Garantía de Cero Almacenamiento de Tokens en Cliente",
+      "cookie_desc": "Los tokens de acceso JWT y tokens de sesión opacos se almacenan estrictamente dentro de cookies de navegador HttpOnly, SameSite=Lax. Nunca se escriben en localStorage ni sessionStorage.",
+      "hashing_title": "Habilitación Criptográfica de Contraseñas",
+      "hashing_desc": "Hash primario Argon2id con sales criptográficamente únicas. La revocación de sesión en servidor asegura la terminación instantánea de sesiones al cerrar sesión."
+    }
   }
 }

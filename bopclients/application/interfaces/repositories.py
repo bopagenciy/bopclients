@@ -54,6 +54,9 @@ class IOrganizationRepository(ABC):
     @abstractmethod
     def get_member(self, org_id: str, user_id: str) -> Optional[OrganizationMember]: ...
 
+    @abstractmethod
+    def remove_member(self, org_id: str, user_id: str) -> bool: ...
+
 
 class IServiceRepository(ABC):
     """Abstract repository for Organization Services (Tenant Isolated)."""

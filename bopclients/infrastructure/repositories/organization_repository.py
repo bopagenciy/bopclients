@@ -222,6 +222,16 @@ class OrganizationRepository(BaseTenantRepository, IOrganizationRepository):
             created_at=r["created_at"],
         )
 
+    def remove_member(self, org_id: str, user_id: str, commit: bool = True) -> bool:
+        """Remove a member from an organization. Does not delete global user."""
+        org_id = self._validate_tenant(org_id)
+        p = self._placeholder()
+        sql = f"DELETE FROM organization_members WHERE organization_id = {p} AND user_id = {p}"
+        self.db.execute(sql, (org_id, user_id))
+        if commit:
+            self._commit_if_not_in_tx()
+        return True
+
     def get_user_memberships(self, user_id: str) -> List[dict]:
         """Fetch all organizations and roles for a specific user."""
         p = self._placeholder()

@@ -370,3 +370,78 @@ class TestPostgresIntegrationContractP17:
                 outbox_repo.append(event)
         finally:
             db.close()
+
+    def test_postgres_p23_organization_member_removal(self):
+        """P23 Targeted PostgreSQL Test: verify remove_member deletes membership without deleting global user or affecting other tenants."""
+        db = create_database_connection(TEST_PG_URL)
+        try:
+            org_repo = OrganizationRepository(db)
+            now_iso = datetime.now(timezone.utc).isoformat()
+
+            # 1. Setup Tenant A
+            org_a_id = str(uuid.uuid4())
+            bop_org_a_id = str(uuid.uuid4())
+            user_a_id = str(uuid.uuid4())
+            member_a_id = str(uuid.uuid4())
+
+            db.execute(
+                "INSERT INTO users (id, email, full_name, is_active, locale, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (user_a_id, f"pg_user_a_{user_a_id[:8]}@example.com", "PG User A", True, "en", now_iso),
+            )
+            db.execute(
+                "INSERT INTO organizations (id, bop_organization_id, name, slug, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (org_a_id, bop_org_a_id, f"PG Org A {org_a_id[:8]}", f"pg-org-a-{org_a_id[:8]}", now_iso, now_iso),
+            )
+            db.execute(
+                "INSERT INTO organization_members (id, organization_id, user_id, role, created_at) VALUES (%s, %s, %s, %s, %s)",
+                (member_a_id, org_a_id, user_a_id, "member", now_iso),
+            )
+
+            # 2. Setup Tenant B (Isolation Target)
+            org_b_id = str(uuid.uuid4())
+            bop_org_b_id = str(uuid.uuid4())
+            user_b_id = str(uuid.uuid4())
+            member_b_id = str(uuid.uuid4())
+
+            db.execute(
+                "INSERT INTO users (id, email, full_name, is_active, locale, created_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (user_b_id, f"pg_user_b_{user_b_id[:8]}@example.com", "PG User B", True, "en", now_iso),
+            )
+            db.execute(
+                "INSERT INTO organizations (id, bop_organization_id, name, slug, created_at, updated_at) VALUES (%s, %s, %s, %s, %s, %s)",
+                (org_b_id, bop_org_b_id, f"PG Org B {org_b_id[:8]}", f"pg-org-b-{org_b_id[:8]}", now_iso, now_iso),
+            )
+            db.execute(
+                "INSERT INTO organization_members (id, organization_id, user_id, role, created_at) VALUES (%s, %s, %s, %s, %s)",
+                (member_b_id, org_b_id, user_b_id, "member", now_iso),
+            )
+            db.commit()
+
+            # 3. Assert memberships exist prior to removal
+            assert org_repo.get_member(org_a_id, user_a_id) is not None
+            assert org_repo.get_member(org_b_id, user_b_id) is not None
+
+            # 4. Tenant isolation check: attempting to remove user_a with org_b scope does not delete Org A membership
+            org_repo.remove_member(org_b_id, user_a_id)
+            assert org_repo.get_member(org_a_id, user_a_id) is not None
+
+            # 5. Remove member from Tenant A
+            removed = org_repo.remove_member(org_a_id, user_a_id)
+            assert removed is True
+
+            # 6. Verify Tenant A membership is deleted
+            assert org_repo.get_member(org_a_id, user_a_id) is None
+
+            # 7. CRITICAL: Verify Tenant A global user in users table remains intact
+            user_a_rows = db.fetch_dicts("SELECT * FROM users WHERE id = %s", (user_a_id,))
+            assert len(user_a_rows) == 1
+            assert user_a_rows[0]["id"] == user_a_id
+            assert user_a_rows[0]["email"] == f"pg_user_a_{user_a_id[:8]}@example.com"
+
+            # 8. CRITICAL: Verify Tenant B membership and user are completely unaffected
+            assert org_repo.get_member(org_b_id, user_b_id) is not None
+            user_b_rows = db.fetch_dicts("SELECT * FROM users WHERE id = %s", (user_b_id,))
+            assert len(user_b_rows) == 1
+            assert user_b_rows[0]["id"] == user_b_id
+        finally:
+            db.close()

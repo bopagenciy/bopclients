@@ -30,6 +30,25 @@ export interface Membership {
   is_active: boolean;
 }
 
+export interface OrganizationMember {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  role: Role | string;
+  created_at: string;
+  email?: string | null;
+  full_name?: string | null;
+}
+
+export interface OrganizationUpdateInput {
+  name?: string;
+  description?: string;
+  website?: string;
+  country?: string;
+  default_language?: string;
+  timezone?: string;
+}
+
 export interface SessionContext {
   user: User;
   active_organization: Organization;

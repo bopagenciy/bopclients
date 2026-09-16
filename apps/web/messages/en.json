@@ -404,7 +404,9 @@
     "forbidden": "Access Restricted",
     "forbidden_desc": "Your current role does not have permission to view or modify this resource.",
     "server_error": "Internal Error",
-    "server_error_desc": "The system encountered an unexpected error. Please retry or contact support."
+    "server_error_desc": "The system encountered an unexpected error. Please retry or contact support.",
+    "last_owner_protection": "Cannot demote or remove the last owner of the organization.",
+    "invalid_role_transition": "Invalid role transition."
   },
   "roles": {
     "owner": "Owner",
@@ -425,5 +427,74 @@
     "completed": "Completed",
     "draft": "Draft",
     "failed": "Failed"
+  },
+  "settings": {
+    "title": "Settings",
+    "subtitle": "Manage organization profile, team members, and security preferences",
+    "tabs": {
+      "general": "General",
+      "organization": "Organization",
+      "members": "Team Members",
+      "security": "Security"
+    },
+    "organization": {
+      "title": "Organization Profile",
+      "description": "Truthful identity, canonical identifiers, and regional configuration.",
+      "name_label": "Organization Name",
+      "name_placeholder": "Enter organization display name",
+      "slug_label": "Slug",
+      "bop_id_label": "Canonical Bop Org ID",
+      "bop_id_help": "Immutable global organization identity",
+      "country_label": "Country",
+      "language_label": "Default Language",
+      "timezone_label": "Timezone",
+      "member_count_label": "Total Members",
+      "my_role_label": "Your Assigned Role",
+      "save_button": "Save Changes",
+      "saving_button": "Saving...",
+      "save_success": "Organization updated successfully",
+      "save_error": "Failed to update organization"
+    },
+    "team": {
+      "title": "Team Members",
+      "subtitle": "Collaborators with active memberships in this organization.",
+      "total_count": "{count} Members",
+      "col_member": "Member",
+      "col_email": "Email",
+      "col_role": "Role",
+      "col_joined": "Joined",
+      "col_actions": "Actions",
+      "edit_role": "Change Role",
+      "remove_member": "Remove",
+      "cannot_modify": "Cannot modify",
+      "cannot_remove": "Cannot remove",
+      "loading": "Loading team members...",
+      "empty": "No members found in active organization.",
+      "role_updated_success": "Role updated successfully",
+      "role_update_error": "Failed to update role",
+      "remove_success": "Member removed successfully",
+      "remove_error": "Failed to remove member",
+      "role_modal_title": "Change Member Role",
+      "role_modal_desc": "Select the new permission level for {name}.",
+      "role_label": "Assigned Role",
+      "role_modal_save": "Update Role",
+      "role_modal_cancel": "Cancel",
+      "remove_modal_title": "Remove Team Member",
+      "remove_modal_desc": "Are you sure you want to remove {name} ({email}) from this organization? Their account will remain intact, but they will lose access to all resources in this organization.",
+      "remove_modal_confirm": "Confirm Removal",
+      "remove_modal_cancel": "Cancel",
+      "remove_modal_in_progress": "Removing...",
+      "last_owner_warning": "This member is the last Owner and cannot be demoted or removed.",
+      "admin_restriction": "Admins can only manage Member and Viewer roles.",
+      "read_only_badge": "Read-Only Access"
+    },
+    "security": {
+      "title": "Security Architecture",
+      "subtitle": "Enterprise identity governance & BFF token lifecycle.",
+      "cookie_title": "Zero Client Token Storage Guarantee",
+      "cookie_desc": "JWT access tokens and opaque refresh session tokens are stored strictly inside HttpOnly, SameSite=Lax browser cookies. They are never written to localStorage or sessionStorage.",
+      "hashing_title": "Cryptographic Password Hashing",
+      "hashing_desc": "Argon2id primary hashing with cryptographically unique salts. Server-side session revocation ensures instant session termination upon logout."
+    }
   }
 }

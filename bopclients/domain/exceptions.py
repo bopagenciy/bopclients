@@ -21,6 +21,14 @@ class MemberRolePermissionError(BopClientsDomainError):
     """Raised when an operation is prohibited for the user's role in the organization."""
 
 
+class LastOwnerProtectionError(BopClientsDomainError):
+    """Raised when an action would leave the organization without an owner."""
+
+
+class InvalidRoleTransitionError(BopClientsDomainError):
+    """Raised when a requested role transition is invalid."""
+
+
 class SearchIntentError(BopClientsDomainError):
     """Raised when search intent parsing fails."""
 

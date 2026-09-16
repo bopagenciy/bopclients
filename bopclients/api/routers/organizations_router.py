@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import List
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Response, status
 from bopclients.api.schemas.organizations import (
     OrganizationResponse,
     OrganizationCreate,
@@ -17,7 +17,12 @@ from bopclients.domain.auth.context import TenantContext, UserPrincipal
 from bopclients.domain.auth.policy import Permission, AuthorizationPolicy
 from bopclients.domain.organization import Organization, OrganizationMember
 from bopclients.domain.enums import MemberRole
-from bopclients.domain.exceptions import EntityNotFoundError, ValidationError
+from bopclients.domain.exceptions import (
+    EntityNotFoundError,
+    ValidationError,
+    MemberRolePermissionError,
+    LastOwnerProtectionError,
+)
 from bopclients.runtime.container import RuntimeContainer
 
 router = APIRouter(prefix="/api/v1/organizations", tags=["Organizations"])
@@ -68,7 +73,10 @@ async def update_current_organization(
         raise EntityNotFoundError("Organization not found.")
 
     if payload.name is not None:
-        org.name = payload.name
+        stripped_name = payload.name.strip()
+        if not stripped_name:
+            raise ValidationError("Organization name cannot be empty")
+        org.name = stripped_name
     if payload.description is not None:
         org.description = payload.description
     if payload.website is not None:
@@ -80,6 +88,7 @@ async def update_current_organization(
     if payload.timezone is not None:
         org.timezone = payload.timezone
 
+    org.validate()
     org.updated_at = datetime.now(timezone.utc).isoformat()
     updated = container.org_repo.save(org)
 
@@ -184,8 +193,29 @@ async def update_member_role(
     if not existing:
         raise EntityNotFoundError(f"Member '{user_id}' not found in organization.")
 
-    normalized_role = AuthorizationPolicy.normalize_role(payload.role)
-    existing.role = normalized_role
+    target_new_role = AuthorizationPolicy.normalize_role(payload.role)
+    actor_role = AuthorizationPolicy.normalize_role(tenant.role)
+
+    # Actor RBAC restrictions
+    if actor_role not in (MemberRole.OWNER, MemberRole.ADMIN):
+        raise MemberRolePermissionError("User role does not possess required permission.")
+
+    if actor_role == MemberRole.ADMIN:
+        # Admins cannot modify roles of Owners or Admins
+        if existing.role in (MemberRole.OWNER, MemberRole.ADMIN):
+            raise MemberRolePermissionError("Admins cannot modify roles of Owners or other Admins.")
+        # Admins can only assign Member or Viewer roles
+        if target_new_role in (MemberRole.OWNER, MemberRole.ADMIN):
+            raise MemberRolePermissionError("Admins can only assign Member or Viewer roles.")
+
+    # Last Owner Protection: Cannot demote the last remaining Owner
+    if existing.role == MemberRole.OWNER and target_new_role != MemberRole.OWNER:
+        all_members = container.org_repo.get_members(tenant.organization_id)
+        owners = [m for m in all_members if m.role == MemberRole.OWNER]
+        if len(owners) <= 1:
+            raise LastOwnerProtectionError("Cannot demote the last owner of the organization.")
+
+    existing.role = target_new_role
     saved = container.org_repo.add_member(existing)
 
     user = container.user_repo.get_by_id(user_id)
@@ -199,6 +229,46 @@ async def update_member_role(
         email=user.email if user else None,
         full_name=user.full_name if user else None,
     )
+
+
+@router.delete(
+    "/current/members/{user_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove member from active organization",
+)
+async def remove_organization_member(
+    user_id: str,
+    tenant: TenantContext = Depends(require_permission(Permission.MEMBERS_MANAGE)),
+    current_user: UserPrincipal = Depends(get_current_user),
+    container: RuntimeContainer = Depends(get_container),
+):
+    existing = container.org_repo.get_member(tenant.organization_id, user_id)
+    if not existing:
+        raise EntityNotFoundError(f"Member '{user_id}' not found in organization.")
+
+    actor_role = AuthorizationPolicy.normalize_role(tenant.role)
+
+    # Actor RBAC restrictions
+    if actor_role not in (MemberRole.OWNER, MemberRole.ADMIN):
+        raise MemberRolePermissionError("User role does not possess required permission.")
+
+    if actor_role == MemberRole.ADMIN:
+        # Admins cannot remove Owners
+        if existing.role == MemberRole.OWNER:
+            raise MemberRolePermissionError("Admins cannot remove Owners.")
+        # Admins cannot remove other Admins (unless self-removal)
+        if existing.role == MemberRole.ADMIN and user_id != current_user.user_id:
+            raise MemberRolePermissionError("Admins cannot remove other Admins.")
+
+    # Last Owner Protection: Cannot remove the last remaining Owner
+    if existing.role == MemberRole.OWNER:
+        all_members = container.org_repo.get_members(tenant.organization_id)
+        owners = [m for m in all_members if m.role == MemberRole.OWNER]
+        if len(owners) <= 1:
+            raise LastOwnerProtectionError("Cannot remove the last owner of the organization.")
+
+    container.org_repo.remove_member(tenant.organization_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

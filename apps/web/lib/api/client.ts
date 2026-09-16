@@ -146,6 +146,9 @@ import type {
   BulkResearchRequest,
   BulkResearchResponse,
   BulkExportRequest,
+  Organization,
+  OrganizationMember,
+  OrganizationUpdateInput,
 } from './types';
 
 export async function bulkAddToCampaign(
@@ -222,4 +225,44 @@ export async function exportSelectedProspectsCsv(
     throw new Error(`CSV export failed with status ${res.status}`);
   }
   return res.blob();
+}
+
+/**
+ * P23 Organization & Team Member Management API Helpers
+ */
+export async function getCurrentOrganization(): Promise<Organization> {
+  return apiClient<Organization>('/api/v1/organizations/current', {
+    method: 'GET',
+  });
+}
+
+export async function updateOrganizationProfile(
+  payload: OrganizationUpdateInput
+): Promise<Organization> {
+  return apiClient<Organization>('/api/v1/organizations/current', {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getOrganizationMembers(): Promise<OrganizationMember[]> {
+  return apiClient<OrganizationMember[]>('/api/v1/organizations/current/members', {
+    method: 'GET',
+  });
+}
+
+export async function updateMemberRole(
+  userId: string,
+  role: string
+): Promise<OrganizationMember> {
+  return apiClient<OrganizationMember>(`/api/v1/organizations/current/members/${userId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role: role.toLowerCase() }),
+  });
+}
+
+export async function removeOrganizationMember(userId: string): Promise<void> {
+  return apiClient<void>(`/api/v1/organizations/current/members/${userId}`, {
+    method: 'DELETE',
+  });
 }
