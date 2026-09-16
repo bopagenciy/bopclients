@@ -170,6 +170,59 @@ class EventPayloadValidator:
         if not isinstance(payload.get("human_review_required"), bool):
             raise InvalidIntegrationEvent("prospect.ready_for_crm v1 requires boolean 'human_review_required'")
 
+    # 5. prospect.ready_for_crm v2 (Bop CRM cross-app handoff foundation)
+    ALLOWED_KEYS_PROSPECT_READY_FOR_CRM_V2 = {
+        "prospect_id",
+        "company_name",
+        "website",
+        "industry",
+        "location",
+        "lead_score",
+        "priority",
+        "campaign_id",
+        "signal_summary",
+        "source",
+        "prospect_url",
+        "handoff_requested_by",
+        "handoff_requested_at",
+        "recommended_action",
+        "human_review_required",
+    }
+
+    @classmethod
+    def validate_prospect_ready_for_crm_v2(cls, payload: Dict[str, Any]) -> None:
+        extra_keys = set(payload.keys()) - cls.ALLOWED_KEYS_PROSPECT_READY_FOR_CRM_V2
+        if extra_keys:
+            raise InvalidIntegrationEvent(
+                f"prospect.ready_for_crm v2 contains unauthorized field(s): {sorted(extra_keys)}. "
+                f"Sensitive credentials and direct transport routing fields are prohibited."
+            )
+
+        if not isinstance(payload.get("prospect_id"), str) or not payload["prospect_id"].strip():
+            raise InvalidIntegrationEvent("prospect.ready_for_crm v2 requires non-empty string 'prospect_id'")
+        if not isinstance(payload.get("company_name"), str) or not payload["company_name"].strip():
+            raise InvalidIntegrationEvent("prospect.ready_for_crm v2 requires non-empty string 'company_name'")
+
+        lead_score = payload.get("lead_score")
+        if lead_score is not None:
+            if not isinstance(lead_score, (int, float)) or isinstance(lead_score, bool):
+                raise InvalidIntegrationEvent("prospect.ready_for_crm v2 'lead_score' must be numeric if provided")
+            if lead_score < 0 or lead_score > 100:
+                raise InvalidIntegrationEvent(f"prospect.ready_for_crm v2 'lead_score' must be between 0 and 100, got {lead_score}")
+
+        priority = payload.get("priority")
+        if priority is not None and (not isinstance(priority, str) or not priority.strip()):
+            raise InvalidIntegrationEvent("prospect.ready_for_crm v2 'priority' must be non-empty string if provided")
+
+        for str_field in ("website", "industry", "location", "campaign_id", "source", "prospect_url", "handoff_requested_by", "handoff_requested_at", "recommended_action"):
+            val = payload.get(str_field)
+            if val is not None and not isinstance(val, str):
+                raise InvalidIntegrationEvent(f"prospect.ready_for_crm v2 '{str_field}' must be a string if provided")
+
+        hr = payload.get("human_review_required")
+        if hr is not None and not isinstance(hr, bool):
+            raise InvalidIntegrationEvent("prospect.ready_for_crm v2 'human_review_required' must be boolean if provided")
+
 
 class BopEventRegistry:
     """Registry managing supported Bop Platform event types and their versioned payload schemas.
@@ -194,6 +247,7 @@ class BopEventRegistry:
         },
         EVENT_PROSPECT_READY_FOR_CRM: {
             1: EventPayloadValidator.validate_prospect_ready_for_crm_v1,
+            2: EventPayloadValidator.validate_prospect_ready_for_crm_v2,
         },
     }
 

@@ -23,6 +23,7 @@ from bopclients.domain.exceptions import (
     AlreadyOrganizationMemberError,
     DuplicateInvitationError,
     InvitationEmailMismatchError,
+    CrmDestinationNotConfiguredError,
 )
 from bopclients.application.auth_service import (
     AuthError,
@@ -81,6 +82,7 @@ TRANSLATION_CATALOG: Dict[str, Dict[str, str]] = {
         "errors.invitation_email_mismatch": "The authenticated user email does not match this invitation.",
         "errors.invalid_token": "Invalid or expired token.",
         "errors.password_validation_failed": "Password does not meet the security requirements.",
+        "errors.crm_destination_not_configured": "No active destination is configured for Bop CRM handoff.",
     },
     "es": {
         "errors.invalid_credentials": "Credenciales inválidas. Correo o contraseña incorrectos.",
@@ -107,6 +109,7 @@ TRANSLATION_CATALOG: Dict[str, Dict[str, str]] = {
         "errors.invitation_email_mismatch": "El correo del usuario autenticado no coincide con esta invitación.",
         "errors.invalid_token": "Token inválido o expirado.",
         "errors.password_validation_failed": "La contraseña no cumple con los requisitos de seguridad.",
+        "errors.crm_destination_not_configured": "No hay ningún destino activo configurado para la transferencia a Bop CRM.",
     },
 }
 
@@ -294,6 +297,18 @@ def register_exception_handlers(app) -> None:
             code="INVITATION_EMAIL_MISMATCH",
             message=str(exc) or "The authenticated user email does not match this invitation.",
             message_key="errors.invitation_email_mismatch",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(CrmDestinationNotConfiguredError)
+    async def crm_destination_not_configured_handler(request: Request, exc: CrmDestinationNotConfiguredError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="CRM_DESTINATION_NOT_CONFIGURED",
+            message=str(exc) or "No active destination configured for Bop CRM handoff.",
+            message_key="errors.crm_destination_not_configured",
             request_id=req_id,
             request=request,
         )

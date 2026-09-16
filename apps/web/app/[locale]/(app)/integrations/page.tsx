@@ -9,11 +9,12 @@ import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/states/EmptyState';
 import { PermissionGate } from '@/components/navigation/PermissionGate';
 import { hasPermission } from '@/lib/permissions';
-import { Boxes, Plus, Lock, Webhook } from 'lucide-react';
+import { Boxes, Plus, Lock, Webhook, Share2 } from 'lucide-react';
 
 interface DestinationItem {
   id: string;
   destination_name: string;
+  target_app_id?: string;
   transport_type: string;
   endpoint_url?: string;
   secret_key_ref?: string;
@@ -82,6 +83,33 @@ export default function IntegrationsPage() {
           <span>{t('integrations.restricted_notice')}</span>
         </div>
       )}
+
+      {/* Bop CRM Integration Status Card */}
+      {(() => {
+        const hasCrmConfigured = destinations.some(
+          (d) => d.is_active && (d.target_app_id === 'bopcrm' || d.destination_name.toLowerCase().includes('crm'))
+        );
+        return (
+          <div className="p-4 rounded-lg border border-border bg-surface flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-3">
+              <div className="w-9 h-9 rounded-lg bg-brand-gold/10 flex items-center justify-center shrink-0 mt-0.5">
+                <Share2 className="w-5 h-5 text-brand-gold" />
+              </div>
+              <div>
+                <h2 className="text-sm font-semibold text-foreground">Bop CRM Integration (Cross-App Handoff)</h2>
+                <p className="text-xs text-foreground-muted mt-0.5">
+                  {hasCrmConfigured
+                    ? 'Active destination configured for prospect.ready_for_crm. Sales reps can hand off dossiers directly from prospect detail pages.'
+                    : 'No active destination configured for prospect.ready_for_crm. Configure an active destination below to enable dossier handoff.'}
+                </p>
+              </div>
+            </div>
+            <Badge size="sm" variant={hasCrmConfigured ? 'success' : 'default'} className="self-start sm:self-center">
+              {hasCrmConfigured ? 'Configured' : 'Not Configured'}
+            </Badge>
+          </div>
+        );
+      })()}
 
       {/* Real Destination Grid (NO hardcoded fake destinations) */}
       {destinations.length === 0 && !loading ? (

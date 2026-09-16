@@ -348,7 +348,20 @@
     "research_campaign_select": "Campaign Context:",
     "research_campaign_none": "General (No Campaign)",
     "score_recalculated": "Lead score updated successfully.",
-    "priority_recalculated": "Priority tier updated successfully."
+    "priority_recalculated": "Priority tier updated successfully.",
+    "send_to_crm": "Send to Bop CRM",
+    "sending_to_crm": "Sending to CRM...",
+    "crm_status_not_sent": "Not Sent",
+    "crm_status_queued": "Queued for CRM",
+    "crm_status_delivering": "Delivering to CRM...",
+    "crm_status_delivered": "Sent to Bop CRM",
+    "crm_status_failed": "CRM Delivery Failed",
+    "crm_handoff_success": "Prospect handoff successfully queued for Bop CRM delivery.",
+    "crm_already_sent": "Prospect has already been sent or queued for Bop CRM.",
+    "crm_handoff_failed": "Failed to hand off prospect to Bop CRM.",
+    "crm_destination_not_configured": "No active Bop CRM destination configured. Please configure an outbound destination under Settings > Integrations.",
+    "crm_handoff_info": "Canonical prospect data is dispatched securely via the transactional outbox to subscribed CRM destinations.",
+    "crm_retry_button": "Retry Delivery"
   },
   "research": {
     "title": "Autonomous Research & Discovery",

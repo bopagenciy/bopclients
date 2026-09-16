@@ -103,3 +103,7 @@ class DuplicateInvitationError(BopClientsDomainError):
 
 class InvitationEmailMismatchError(BopClientsDomainError):
     """Raised when accepting user's email does not match the invitation email."""
+
+
+class CrmDestinationNotConfiguredError(BopClientsDomainError):
+    """Raised when an action requires Bop CRM integration but no active destination is subscribed."""

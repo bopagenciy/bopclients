@@ -55,6 +55,7 @@ from bopclients.application.search_service import SearchService
 from bopclients.application.prospect_service import ProspectService
 from bopclients.application.opportunity_scorer import RuleBasedOpportunityScorer
 from bopclients.application.priority_scorer import RuleBasedPriorityScorer
+from bopclients.application.crm_handoff_service import CrmHandoffService
 
 from bopclients.application.provider_rate_limit_service import ProviderRateLimitService
 from bopclients.application.provider_execution_guard import ProviderExecutionGuard
@@ -119,6 +120,7 @@ class RuntimeContainer:
     prospect_service: Optional[ProspectService] = None
     opportunity_scorer: Optional[RuleBasedOpportunityScorer] = None
     priority_scorer: Optional[RuleBasedPriorityScorer] = None
+    crm_handoff_service: Optional[CrmHandoffService] = None
 
     @classmethod
     def initialize(cls, settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> "RuntimeContainer":
@@ -325,6 +327,16 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
     )
     opportunity_scorer = RuleBasedOpportunityScorer()
     priority_scorer = RuleBasedPriorityScorer()
+    crm_handoff_service = CrmHandoffService(
+        prospect_repo=prospect_repo,
+        outbox_repo=outbox_repo,
+        destination_repo=destination_repo,
+        delivery_repo=delivery_repo,
+        priority_repo=priority_repo,
+        campaign_repo=campaign_repo,
+        signal_repo=observation_repo,
+        dispatcher=integration_dispatcher,
+    )
 
     return RuntimeContainer(
         settings=settings,
@@ -369,6 +381,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         prospect_service=prospect_service,
         opportunity_scorer=opportunity_scorer,
         priority_scorer=priority_scorer,
+        crm_handoff_service=crm_handoff_service,
     )
 
 

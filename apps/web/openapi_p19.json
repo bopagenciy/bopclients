@@ -4620,6 +4620,242 @@
         }
       }
     },
+    "/api/v1/prospects/bulk/crm-handoff": {
+      "post": {
+        "tags": [
+          "Prospects"
+        ],
+        "summary": "Trigger bulk handoff of prospects to Bop CRM",
+        "operationId": "bulk_prospect_crm_handoff_api_v1_prospects_bulk_crm_handoff_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Bop-Organization-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Bop-Organization-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BulkCrmHandoffRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BulkCrmHandoffResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/prospects/{prospect_id}/crm-handoff": {
+      "post": {
+        "tags": [
+          "Prospects"
+        ],
+        "summary": "Trigger handoff of a prospect to Bop CRM",
+        "operationId": "handoff_prospect_to_crm_api_v1_prospects__prospect_id__crm_handoff_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "prospect_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prospect Id"
+            }
+          },
+          {
+            "name": "X-Bop-Organization-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Bop-Organization-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrmHandoffResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Prospects"
+        ],
+        "summary": "Get Bop CRM handoff status for a prospect",
+        "operationId": "get_prospect_crm_handoff_status_api_v1_prospects__prospect_id__crm_handoff_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "prospect_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Prospect Id"
+            }
+          },
+          {
+            "name": "X-Bop-Organization-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Bop-Organization-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CrmHandoffStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/discovery/intents": {
       "post": {
         "tags": [
@@ -6419,6 +6655,61 @@
         "title": "BulkAddToCampaignResponse",
         "description": "Result of bulk add to campaign."
       },
+      "BulkCrmHandoffRequest": {
+        "properties": {
+          "prospect_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Prospect Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prospect_ids"
+        ],
+        "title": "BulkCrmHandoffRequest",
+        "description": "Payload for triggering CRM handoff for multiple prospects."
+      },
+      "BulkCrmHandoffResponse": {
+        "properties": {
+          "requested": {
+            "type": "integer",
+            "title": "Requested"
+          },
+          "queued": {
+            "type": "integer",
+            "title": "Queued"
+          },
+          "already_queued_or_delivered": {
+            "type": "integer",
+            "title": "Already Queued Or Delivered"
+          },
+          "failed": {
+            "type": "integer",
+            "title": "Failed"
+          },
+          "errors": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "requested",
+          "queued",
+          "already_queued_or_delivered",
+          "failed"
+        ],
+        "title": "BulkCrmHandoffResponse",
+        "description": "Result of bulk CRM handoff trigger."
+      },
       "BulkExportRequest": {
         "properties": {
           "prospect_ids": {
@@ -6937,6 +7228,146 @@
         "type": "object",
         "title": "CampaignUpdate",
         "description": "Campaign update payload."
+      },
+      "CrmHandoffResponse": {
+        "properties": {
+          "prospect_id": {
+            "type": "string",
+            "title": "Prospect Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "event_id": {
+            "type": "string",
+            "title": "Event Id"
+          },
+          "correlation_id": {
+            "type": "string",
+            "title": "Correlation Id"
+          },
+          "requested_at": {
+            "type": "string",
+            "title": "Requested At"
+          },
+          "destination_count": {
+            "type": "integer",
+            "title": "Destination Count"
+          },
+          "is_idempotent_replay": {
+            "type": "boolean",
+            "title": "Is Idempotent Replay"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prospect_id",
+          "status",
+          "event_id",
+          "correlation_id",
+          "requested_at",
+          "destination_count",
+          "is_idempotent_replay",
+          "message"
+        ],
+        "title": "CrmHandoffResponse",
+        "description": "Result of triggering prospect handoff to Bop CRM."
+      },
+      "CrmHandoffStatusResponse": {
+        "properties": {
+          "prospect_id": {
+            "type": "string",
+            "title": "Prospect Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "event_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Event Id"
+          },
+          "correlation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Correlation Id"
+          },
+          "requested_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested At"
+          },
+          "delivered_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivered At"
+          },
+          "attempt_count": {
+            "type": "integer",
+            "title": "Attempt Count",
+            "default": 0
+          },
+          "last_error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Error Message"
+          },
+          "destination_count": {
+            "type": "integer",
+            "title": "Destination Count",
+            "default": 0
+          },
+          "destinations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Destinations"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prospect_id",
+          "status"
+        ],
+        "title": "CrmHandoffStatusResponse",
+        "description": "Current CRM handoff delivery and synchronization status."
       },
       "DeliveryResponse": {
         "properties": {

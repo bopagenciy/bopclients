@@ -161,3 +161,47 @@ class BulkExportRequest(BaseModel):
     """Payload for exporting selected prospect IDs."""
 
     prospect_ids: Optional[List[str]] = Field(default=None, max_length=1000)
+
+
+class CrmHandoffResponse(BaseModel):
+    """Result of triggering prospect handoff to Bop CRM."""
+
+    prospect_id: str
+    status: str
+    event_id: str
+    correlation_id: str
+    requested_at: str
+    destination_count: int
+    is_idempotent_replay: bool
+    message: str
+
+
+class CrmHandoffStatusResponse(BaseModel):
+    """Current CRM handoff delivery and synchronization status."""
+
+    prospect_id: str
+    status: str
+    event_id: Optional[str] = None
+    correlation_id: Optional[str] = None
+    requested_at: Optional[str] = None
+    delivered_at: Optional[str] = None
+    attempt_count: int = 0
+    last_error_message: Optional[str] = None
+    destination_count: int = 0
+    destinations: List[str] = Field(default_factory=list)
+
+
+class BulkCrmHandoffRequest(BaseModel):
+    """Payload for triggering CRM handoff for multiple prospects."""
+
+    prospect_ids: List[str] = Field(..., min_length=1, max_length=50)
+
+
+class BulkCrmHandoffResponse(BaseModel):
+    """Result of bulk CRM handoff trigger."""
+
+    requested: int
+    queued: int
+    already_queued_or_delivered: int
+    failed: int
+    errors: Dict[str, str] = Field(default_factory=dict)

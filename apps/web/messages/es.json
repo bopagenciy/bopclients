@@ -348,7 +348,20 @@
     "research_campaign_select": "Contexto de Campaña:",
     "research_campaign_none": "General (Sin Campaña)",
     "score_recalculated": "Puntuación de prospecto actualizada exitosamente.",
-    "priority_recalculated": "Nivel de prioridad actualizado exitosamente."
+    "priority_recalculated": "Nivel de prioridad actualizado exitosamente.",
+    "send_to_crm": "Enviar a Bop CRM",
+    "sending_to_crm": "Enviando a CRM...",
+    "crm_status_not_sent": "No enviado",
+    "crm_status_queued": "En cola para CRM",
+    "crm_status_delivering": "Entregando a CRM...",
+    "crm_status_delivered": "Enviado a Bop CRM",
+    "crm_status_failed": "Fallo en entrega CRM",
+    "crm_handoff_success": "Prospecto encolado exitosamente para entrega a Bop CRM.",
+    "crm_already_sent": "El prospecto ya fue enviado o está en cola para Bop CRM.",
+    "crm_handoff_failed": "Error al transferir prospecto a Bop CRM.",
+    "crm_destination_not_configured": "No hay ningún destino activo de Bop CRM configurado. Por favor configure un destino de salida en Configuración > Integraciones.",
+    "crm_handoff_info": "Los datos canónicos del prospecto se envían de forma segura mediante el outbox transaccional a los destinos de CRM suscritos.",
+    "crm_retry_button": "Reintentar entrega"
   },
   "research": {
     "title": "Investigación y Descubrimiento Autónomo",

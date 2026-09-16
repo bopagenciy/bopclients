@@ -522,3 +522,41 @@ export interface EmailVerificationResendResponse {
   success: boolean;
   message: string;
 }
+
+export type CrmHandoffState = 'NOT_SENT' | 'QUEUED' | 'DELIVERING' | 'DELIVERED' | 'FAILED';
+
+export interface CrmHandoffResponse {
+  prospect_id: string;
+  status: CrmHandoffState;
+  event_id: string;
+  correlation_id: string;
+  requested_at: string;
+  destination_count: number;
+  is_idempotent_replay: boolean;
+  message: string;
+}
+
+export interface CrmHandoffStatusResponse {
+  prospect_id: string;
+  status: CrmHandoffState;
+  event_id?: string | null;
+  correlation_id?: string | null;
+  requested_at?: string | null;
+  delivered_at?: string | null;
+  attempt_count: number;
+  last_error_message?: string | null;
+  destination_count: number;
+  destinations: string[];
+}
+
+export interface BulkCrmHandoffRequest {
+  prospect_ids: string[];
+}
+
+export interface BulkCrmHandoffResponse {
+  requested: number;
+  queued: number;
+  already_queued_or_delivered: number;
+  failed: number;
+  errors: Record<string, string>;
+}

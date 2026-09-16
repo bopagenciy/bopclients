@@ -2,7 +2,7 @@ import io
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, status, Query, HTTPException, Response
+from fastapi import APIRouter, Depends, status, Query, HTTPException, Response, Request
 from fastapi.responses import StreamingResponse
 from bopclients.api.schemas.prospects import (
     ProspectFilterParams,
@@ -19,6 +19,10 @@ from bopclients.api.schemas.prospects import (
     BulkResearchRequest,
     BulkResearchResponse,
     BulkExportRequest,
+    CrmHandoffResponse,
+    CrmHandoffStatusResponse,
+    BulkCrmHandoffRequest,
+    BulkCrmHandoffResponse,
 )
 from bopclients.api.pagination import PaginationParams, PaginatedResponse, validate_sort_field
 from bopclients.api.dependencies import require_permission, get_container
@@ -1306,3 +1310,80 @@ async def bulk_research(
         failed=failed,
         run_ids=run_ids,
     )
+
+
+# ------------------------------------------------------------------------------
+# BOP CRM Handoff Endpoints (P27)
+# ------------------------------------------------------------------------------
+
+@router.post(
+    "/bulk/crm-handoff",
+    response_model=BulkCrmHandoffResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Trigger bulk handoff of prospects to Bop CRM",
+)
+@router.post(
+    "/bulk-crm-handoff",
+    response_model=BulkCrmHandoffResponse,
+    status_code=status.HTTP_200_OK,
+    include_in_schema=False,
+)
+async def bulk_prospect_crm_handoff(
+    payload: BulkCrmHandoffRequest,
+    request: Request,
+    tenant: TenantContext = Depends(require_permission(Permission.PROSPECT_UPDATE)),
+    container: RuntimeContainer = Depends(get_container),
+) -> BulkCrmHandoffResponse:
+    user_id = getattr(request.state, "user_id", "system")
+    base_url = str(request.base_url).rstrip("/")
+    res = container.crm_handoff_service.bulk_handoff(
+        bop_organization_id=tenant.bop_organization_id,
+        organization_id=tenant.organization_id,
+        prospect_ids=payload.prospect_ids,
+        requested_by_user_id=user_id,
+        base_url=base_url,
+    )
+    return BulkCrmHandoffResponse(**res)
+
+
+@router.post(
+    "/{prospect_id}/crm-handoff",
+    response_model=CrmHandoffResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Trigger handoff of a prospect to Bop CRM",
+)
+async def handoff_prospect_to_crm(
+    prospect_id: str,
+    request: Request,
+    tenant: TenantContext = Depends(require_permission(Permission.PROSPECT_UPDATE)),
+    container: RuntimeContainer = Depends(get_container),
+) -> CrmHandoffResponse:
+    user_id = getattr(request.state, "user_id", "system")
+    base_url = str(request.base_url).rstrip("/")
+    res = container.crm_handoff_service.trigger_handoff(
+        bop_organization_id=tenant.bop_organization_id,
+        organization_id=tenant.organization_id,
+        prospect_id=prospect_id,
+        requested_by_user_id=user_id,
+        base_url=base_url,
+    )
+    return CrmHandoffResponse(**res)
+
+
+@router.get(
+    "/{prospect_id}/crm-handoff",
+    response_model=CrmHandoffStatusResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get Bop CRM handoff status for a prospect",
+)
+async def get_prospect_crm_handoff_status(
+    prospect_id: str,
+    tenant: TenantContext = Depends(require_permission(Permission.PROSPECT_READ)),
+    container: RuntimeContainer = Depends(get_container),
+) -> CrmHandoffStatusResponse:
+    res = container.crm_handoff_service.get_handoff_status(
+        bop_organization_id=tenant.bop_organization_id,
+        organization_id=tenant.organization_id,
+        prospect_id=prospect_id,
+    )
+    return CrmHandoffStatusResponse(**res)

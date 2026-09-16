@@ -35,6 +35,10 @@ import type {
   EmailVerificationResponse,
   EmailVerificationResendInput,
   EmailVerificationResendResponse,
+  CrmHandoffResponse,
+  CrmHandoffStatusResponse,
+  BulkCrmHandoffRequest,
+  BulkCrmHandoffResponse,
 } from './types';
 
 export interface FetchOptions extends RequestInit {
@@ -372,5 +376,33 @@ export async function resendEmailVerification(
   return apiClient<EmailVerificationResendResponse>('/api/v1/auth/email-verification/resend', {
     method: 'POST',
     body: JSON.stringify(payload || {}),
+  });
+}
+
+/**
+ * P27 BOP CRM Handoff API Helpers
+ */
+export async function handoffProspectToCrm(
+  prospectId: string
+): Promise<CrmHandoffResponse> {
+  return apiClient<CrmHandoffResponse>(`/api/v1/prospects/${prospectId}/crm-handoff`, {
+    method: 'POST',
+  });
+}
+
+export async function getProspectCrmHandoffStatus(
+  prospectId: string
+): Promise<CrmHandoffStatusResponse> {
+  return apiClient<CrmHandoffStatusResponse>(`/api/v1/prospects/${prospectId}/crm-handoff`, {
+    method: 'GET',
+  });
+}
+
+export async function bulkProspectCrmHandoff(
+  payload: BulkCrmHandoffRequest
+): Promise<BulkCrmHandoffResponse> {
+  return apiClient<BulkCrmHandoffResponse>('/api/v1/prospects/bulk/crm-handoff', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }

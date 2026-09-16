@@ -24,12 +24,15 @@ import {
   ExternalLink,
   HelpCircle,
   RefreshCw,
+  Send,
+  AlertCircle,
 } from 'lucide-react';
 import {
   ProspectDetail,
   Signal,
   LeadScoreDetail,
   PriorityDetail,
+  CrmHandoffStatusResponse,
 } from '@/lib/api/types';
 
 export default function ProspectDetailPage() {
@@ -44,6 +47,7 @@ export default function ProspectDetailPage() {
   const [signals, setSignals] = useState<Signal[]>([]);
   const [leadScore, setLeadScore] = useState<LeadScoreDetail | null>(null);
   const [priority, setPriority] = useState<PriorityDetail | null>(null);
+  const [crmStatus, setCrmStatus] = useState<CrmHandoffStatusResponse | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -52,6 +56,8 @@ export default function ProspectDetailPage() {
   const [scoring, setScoring] = useState(false);
   const [prioritizing, setPrioritizing] = useState(false);
   const [researching, setResearching] = useState(false);
+  const [sendingToCrm, setSendingToCrm] = useState(false);
+  const [crmError, setCrmError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>('');
 
@@ -71,11 +77,12 @@ export default function ProspectDetailPage() {
       const data: ProspectDetail = await res.json();
       setDossier(data);
 
-      // 2. Parallel fetch of signals, score, priority
-      const [resSignals, resScore, resPriority] = await Promise.all([
+      // 2. Parallel fetch of signals, score, priority, and CRM handoff status
+      const [resSignals, resScore, resPriority, resCrm] = await Promise.all([
         fetch(`/api/proxy/api/v1/prospects/${prospectId}/signals`, { credentials: 'include' }),
         fetch(`/api/proxy/api/v1/prospects/${prospectId}/score`, { credentials: 'include' }),
         fetch(`/api/proxy/api/v1/prospects/${prospectId}/priority`, { credentials: 'include' }),
+        fetch(`/api/proxy/api/v1/prospects/${prospectId}/crm-handoff`, { credentials: 'include' }),
       ]);
 
       if (resSignals.ok) {
@@ -89,6 +96,10 @@ export default function ProspectDetailPage() {
       if (resPriority.ok) {
         const priData = await resPriority.json();
         setPriority(priData);
+      }
+      if (resCrm.ok) {
+        const crmData = await resCrm.json();
+        setCrmStatus(crmData);
       }
     } catch (err: any) {
       setError(err.message || 'Error loading prospect dossier');
@@ -174,6 +185,35 @@ export default function ProspectDetailPage() {
       // Handled silently
     } finally {
       setResearching(false);
+    }
+  };
+
+  // Send to Bop CRM
+  const handleSendToCrm = async () => {
+    if (!prospectId) return;
+    setSendingToCrm(true);
+    setCrmError(null);
+    try {
+      const res = await fetch(`/api/proxy/api/v1/prospects/${prospectId}/crm-handoff`, {
+        method: 'POST',
+        credentials: 'include',
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setActionSuccess(data.is_idempotent_replay ? t('prospect_detail.crm_already_sent') : t('prospect_detail.crm_handoff_success'));
+        const sRes = await fetch(`/api/proxy/api/v1/prospects/${prospectId}/crm-handoff`, { credentials: 'include' });
+        if (sRes.ok) {
+          setCrmStatus(await sRes.json());
+        }
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        const msg = errData?.error?.message || (res.status === 409 ? t('prospect_detail.crm_destination_not_configured') : t('prospect_detail.crm_handoff_failed'));
+        setCrmError(msg);
+      }
+    } catch (err: any) {
+      setCrmError(err.message || t('prospect_detail.crm_handoff_failed'));
+    } finally {
+      setSendingToCrm(false);
     }
   };
 
@@ -275,6 +315,52 @@ export default function ProspectDetailPage() {
               {researching ? t('prospect_detail.researching') : t('prospect_detail.research_button')}
             </Button>
           </PermissionGate>
+
+          {/* BOP CRM Handoff Action & Status */}
+          <div className="flex items-center gap-2">
+            {crmStatus && crmStatus.status !== 'NOT_SENT' && (
+              <Badge
+                size="sm"
+                variant={
+                  crmStatus.status === 'DELIVERED'
+                    ? 'success'
+                    : crmStatus.status === 'FAILED'
+                    ? 'danger'
+                    : 'warning'
+                }
+                className="flex items-center gap-1.5 py-1 px-2.5"
+              >
+                {crmStatus.status === 'DELIVERED' && <CheckCircle2 className="w-3 h-3 text-success" />}
+                {crmStatus.status === 'QUEUED' && <RefreshCw className="w-3 h-3 animate-spin text-warning" />}
+                {crmStatus.status === 'DELIVERING' && <RefreshCw className="w-3 h-3 animate-spin text-warning" />}
+                {crmStatus.status === 'FAILED' && <AlertCircle className="w-3 h-3 text-danger" />}
+                <span>
+                  {crmStatus.status === 'DELIVERED' && t('prospect_detail.crm_status_delivered')}
+                  {crmStatus.status === 'QUEUED' && t('prospect_detail.crm_status_queued')}
+                  {crmStatus.status === 'DELIVERING' && t('prospect_detail.crm_status_delivering')}
+                  {crmStatus.status === 'FAILED' && t('prospect_detail.crm_status_failed')}
+                </span>
+              </Badge>
+            )}
+
+            <PermissionGate permission="prospect.update">
+              {(!crmStatus || crmStatus.status === 'NOT_SENT' || crmStatus.status === 'FAILED') && (
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={handleSendToCrm}
+                  disabled={sendingToCrm}
+                >
+                  <Send className="w-3.5 h-3.5 mr-1.5" />
+                  {sendingToCrm
+                    ? t('prospect_detail.sending_to_crm')
+                    : crmStatus?.status === 'FAILED'
+                    ? t('prospect_detail.crm_retry_button')
+                    : t('prospect_detail.send_to_crm')}
+                </Button>
+              )}
+            </PermissionGate>
+          </div>
         </div>
       </div>
 
@@ -282,6 +368,23 @@ export default function ProspectDetailPage() {
         <div className="p-3 bg-success/10 border border-success/30 rounded-md text-xs text-success flex items-center gap-2">
           <CheckCircle2 className="w-4 h-4 shrink-0" />
           <span>{actionSuccess}</span>
+        </div>
+      )}
+
+      {crmError && (
+        <div className="p-3 bg-danger/10 border border-danger/30 rounded-md text-xs text-danger flex items-start gap-2">
+          <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+          <div className="flex-1">
+            <p className="font-semibold">{crmError}</p>
+            {crmError.toLowerCase().includes('destination') && (
+              <Link
+                href={`/${locale}/integrations`}
+                className="underline font-medium hover:text-danger-hover mt-1 inline-block"
+              >
+                Go to Integrations settings &rarr;
+              </Link>
+            )}
+          </div>
         </div>
       )}
 
