@@ -51,7 +51,9 @@ class InvitationRepository(BaseTenantRepository, IInvitationRepository):
         ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
         ON CONFLICT(id) DO UPDATE SET
             role = EXCLUDED.role,
+            token_hash = EXCLUDED.token_hash,
             status = EXCLUDED.status,
+            expires_at = EXCLUDED.expires_at,
             accepted_at = EXCLUDED.accepted_at,
             revoked_at = EXCLUDED.revoked_at,
             updated_at = EXCLUDED.updated_at

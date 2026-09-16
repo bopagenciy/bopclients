@@ -25,6 +25,7 @@ import type {
   BulkRecalculatePriorityResponse,
   OrganizationInvitation,
   InvitationCreateInput,
+  InvitationResendInput,
   InvitationPublicMetadata,
   InvitationAcceptResult,
 } from './types';
@@ -293,6 +294,16 @@ export async function createOrganizationInvitation(
 export async function revokeOrganizationInvitation(invitationId: string): Promise<void> {
   return apiClient<void>(`/api/v1/organizations/current/invitations/${invitationId}`, {
     method: 'DELETE',
+  });
+}
+
+export async function resendOrganizationInvitation(
+  invitationId: string,
+  locale?: string
+): Promise<OrganizationInvitation> {
+  return apiClient<OrganizationInvitation>(`/api/v1/organizations/current/invitations/${invitationId}/resend`, {
+    method: 'POST',
+    body: JSON.stringify({ locale: locale || 'en' }),
   });
 }
 

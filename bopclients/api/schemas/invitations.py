@@ -9,6 +9,13 @@ class InvitationCreateRequest(BaseModel):
 
     email: str = Field(description="Invited user email address")
     role: str = Field(default="member", description="Assigned role: admin, member, or viewer")
+    locale: Optional[str] = Field(default="en", description="Preferred invitation email locale ('en' or 'es')")
+
+
+class InvitationResendRequest(BaseModel):
+    """Payload for resending an existing team invitation."""
+
+    locale: Optional[str] = Field(default="en", description="Preferred invitation email locale ('en' or 'es')")
 
 
 class InvitationResponse(BaseModel):
@@ -26,7 +33,11 @@ class InvitationResponse(BaseModel):
     revoked_at: Optional[str] = None
     delivery_status: str = Field(
         default="not_configured",
-        description="Delivery status of the invitation email (e.g. not_configured, pending, delivered, failed).",
+        description="Delivery status of the invitation email (sent, failed, not_configured).",
+    )
+    delivery_error: Optional[str] = Field(
+        default=None,
+        description="Sanitized delivery error if delivery failed.",
     )
     raw_token: Optional[str] = Field(
         default=None,

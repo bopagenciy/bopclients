@@ -52,6 +52,7 @@ describe('BopClients Frontend <-> P19 OpenAPI Contract Fidelity', () => {
     { path: '/api/v1/organizations/current/invitations', method: 'get', component: 'lib/api/client.ts getOrganizationInvitations' },
     { path: '/api/v1/organizations/current/invitations', method: 'post', component: 'lib/api/client.ts createOrganizationInvitation' },
     { path: '/api/v1/organizations/current/invitations/{invitation_id}', method: 'delete', component: 'lib/api/client.ts revokeOrganizationInvitation' },
+    { path: '/api/v1/organizations/current/invitations/{invitation_id}/resend', method: 'post', component: 'lib/api/client.ts resendOrganizationInvitation' },
     { path: '/api/v1/invitations/{token}', method: 'get', component: 'lib/api/client.ts getPublicInvitation' },
     { path: '/api/v1/invitations/accept', method: 'post', component: 'lib/api/client.ts acceptInvitation' },
     { path: '/api/v1/invitations/register-and-accept', method: 'post', component: 'lib/api/client.ts registerAndAcceptInvitation' },

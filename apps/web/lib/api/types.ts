@@ -446,7 +446,8 @@ export interface OrganizationInvitation {
   created_at: string;
   accepted_at?: string | null;
   revoked_at?: string | null;
-  delivery_status?: string;
+  delivery_status?: 'sent' | 'failed' | 'not_configured' | string;
+  delivery_error?: string | null;
   raw_token?: string | null;
   invite_url?: string | null;
 }
@@ -454,6 +455,11 @@ export interface OrganizationInvitation {
 export interface InvitationCreateInput {
   email: string;
   role?: string;
+  locale?: string;
+}
+
+export interface InvitationResendInput {
+  locale?: string;
 }
 
 export interface InvitationPublicMetadata {

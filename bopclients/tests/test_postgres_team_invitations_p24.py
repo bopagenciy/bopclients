@@ -185,3 +185,78 @@ def test_postgres_invitation_lifecycle_and_acceptance(pg_invitations_context):
     )
     assert len(members) == 1
     assert members[0]["role"] == "admin"
+
+
+def test_postgres_resend_token_rotation_and_hash_persistence(pg_invitations_context):
+    """Verify resend rotates token_hash and persists new hash on live PostgreSQL."""
+    ctx = pg_invitations_context
+    client = ctx["client"]
+    org = ctx["org"]
+    owner_token = ctx["owner_token"]
+    db = ctx["db"]
+
+    headers = {
+        "Authorization": f"Bearer {owner_token}",
+        "X-Bop-Organization-Id": org.bop_organization_id,
+    }
+
+    invite_email = f"resend_{uuid.uuid4().hex[:6]}@example.com"
+
+    # 1. Invitation has hash A
+    create_res = client.post(
+        "/api/v1/organizations/current/invitations",
+        json={"email": invite_email, "role": "member"},
+        headers=headers,
+    )
+    assert create_res.status_code == 201
+    create_data = create_res.json()
+    inv_id = create_data["id"]
+    token_a = create_data["raw_token"]
+    assert token_a is not None
+
+    pg_row_a = db.fetch_dicts(
+        "SELECT * FROM organization_invitations WHERE id = %s",
+        (inv_id,),
+    )[0]
+    hash_a = pg_row_a["token_hash"]
+    expected_hash_a = hashlib.sha256(token_a.encode("utf-8")).hexdigest()
+    assert hash_a == expected_hash_a
+
+    # 2. Resend executes
+    resend_res = client.post(
+        f"/api/v1/organizations/current/invitations/{inv_id}/resend",
+        json={"locale": "es"},
+        headers=headers,
+    )
+    assert resend_res.status_code == 200
+    resend_data = resend_res.json()
+    token_b = resend_data["raw_token"]
+    assert token_b is not None
+
+    # 3. DB now contains hash B
+    pg_row_b = db.fetch_dicts(
+        "SELECT * FROM organization_invitations WHERE id = %s",
+        (inv_id,),
+    )[0]
+    hash_b = pg_row_b["token_hash"]
+    expected_hash_b = hashlib.sha256(token_b.encode("utf-8")).hexdigest()
+    assert hash_b == expected_hash_b
+
+    # 4. hash A != hash B
+    assert hash_a != hash_b
+    assert token_a != token_b
+
+    # 5. Old token rejected
+    old_inspect = client.get(f"/api/v1/invitations/{token_a}")
+    assert old_inspect.status_code == 404
+
+    # 6. New token accepted / valid
+    new_inspect = client.get(f"/api/v1/invitations/{token_b}")
+    assert new_inspect.status_code == 200
+    assert new_inspect.json()["organization_name"] == org.name
+    assert new_inspect.json()["email"] == invite_email
+
+    # 7. No raw token persisted in database
+    for col, val in pg_row_b.items():
+        assert val != token_a
+        assert val != token_b

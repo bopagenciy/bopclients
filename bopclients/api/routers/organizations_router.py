@@ -14,6 +14,7 @@ from bopclients.api.schemas.organizations import (
 )
 from bopclients.api.schemas.invitations import (
     InvitationCreateRequest,
+    InvitationResendRequest,
     InvitationResponse,
 )
 from bopclients.api.dependencies import get_tenant_context, get_container, require_permission, get_current_user
@@ -287,11 +288,12 @@ async def create_organization_invitation(
     current_user: UserPrincipal = Depends(get_current_user),
     container: RuntimeContainer = Depends(get_container),
 ) -> InvitationResponse:
-    invitation, raw_token = container.invitation_service.create_invitation(
+    invitation, raw_token, delivery_result = container.invitation_service.create_invitation(
         inviter_user_id=current_user.user_id,
         org_id=tenant.organization_id,
         email=str(payload.email),
         role=payload.role,
+        locale=payload.locale or "en",
     )
     # Zero raw token exposure in production responses.
     # Expose raw_token/invite_url ONLY if explicitly enabled for dev/test via settings.
@@ -310,7 +312,61 @@ async def create_organization_invitation(
         created_at=invitation.created_at,
         accepted_at=invitation.accepted_at,
         revoked_at=invitation.revoked_at,
-        delivery_status="not_configured",
+        delivery_status=delivery_result.status.value,
+        delivery_error=delivery_result.error,
+        raw_token=exposed_raw_token,
+        invite_url=exposed_invite_url,
+    )
+
+
+@router.post(
+    "/current/invitations/{invitation_id}/resend",
+    response_model=InvitationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resend organization invitation with token rotation (Owner/Admin only)",
+)
+async def resend_organization_invitation(
+    invitation_id: str,
+    payload: Optional[InvitationResendRequest] = None,
+    locale: Optional[str] = None,
+    tenant: TenantContext = Depends(require_permission(Permission.MEMBERS_MANAGE)),
+    current_user: UserPrincipal = Depends(get_current_user),
+    container: RuntimeContainer = Depends(get_container),
+) -> InvitationResponse:
+    effective_locale = "en"
+    if payload and payload.locale:
+        effective_locale = payload.locale
+    elif locale:
+        effective_locale = locale
+
+    invitation, raw_token, delivery_result = container.invitation_service.resend_invitation(
+        actor_user_id=current_user.user_id,
+        org_id=tenant.organization_id,
+        invitation_id=invitation_id,
+        locale=effective_locale,
+    )
+    is_dev_exposure = getattr(container.settings, "invitation_dev_token_exposure", False)
+    exposed_raw_token = raw_token if is_dev_exposure else None
+    locale_prefix = f"/{effective_locale.strip().lower()}" if effective_locale.strip().lower().startswith("es") else ""
+    exposed_invite_url = (
+        f"{container.settings.app_url.rstrip('/')}{locale_prefix}/invite/{raw_token}"
+        if is_dev_exposure
+        else None
+    )
+
+    return InvitationResponse(
+        id=invitation.id,
+        organization_id=invitation.organization_id,
+        email=invitation.email_normalized,
+        role=invitation.role.value if isinstance(invitation.role, MemberRole) else str(invitation.role),
+        status=invitation.status.value,
+        invited_by_user_id=invitation.invited_by_user_id,
+        expires_at=invitation.expires_at,
+        created_at=invitation.created_at,
+        accepted_at=invitation.accepted_at,
+        revoked_at=invitation.revoked_at,
+        delivery_status=delivery_result.status.value,
+        delivery_error=delivery_result.error,
         raw_token=exposed_raw_token,
         invite_url=exposed_invite_url,
     )

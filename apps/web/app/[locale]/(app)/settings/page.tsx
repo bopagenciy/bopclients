@@ -17,6 +17,7 @@ import {
   getOrganizationInvitations,
   createOrganizationInvitation,
   revokeOrganizationInvitation,
+  resendOrganizationInvitation,
 } from '@/lib/api/client';
 import { OrganizationMember, Role, OrganizationInvitation } from '@/lib/api/types';
 import {
@@ -35,10 +36,11 @@ import {
   Copy,
   Check,
   Mail,
+  RefreshCw,
 } from 'lucide-react';
 
 export default function SettingsPage() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { user, activeOrg, activeRole } = useAuth();
   const [activeTab, setActiveTab] = useState<'organization' | 'members' | 'security'>('organization');
 
@@ -74,6 +76,7 @@ export default function SettingsPage() {
   const [hasCopiedLink, setHasCopiedLink] = useState(false);
   const [revokeInviteTarget, setRevokeInviteTarget] = useState<OrganizationInvitation | null>(null);
   const [isRevokingInvite, setIsRevokingInvite] = useState(false);
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
 
   const canManageOrg = hasPermission(activeRole, 'organization.manage');
   const canManageMembers = hasPermission(activeRole, 'members.manage');
@@ -136,6 +139,7 @@ export default function SettingsPage() {
       const res = await createOrganizationInvitation({
         email: inviteEmail.trim(),
         role: inviteRole.toLowerCase(),
+        locale: locale,
       });
       setIsInviteModalOpen(false);
       setInviteEmail('');
@@ -151,6 +155,21 @@ export default function SettingsPage() {
       setInviteError(err?.message || t('settings.invitations.create_error'));
     } finally {
       setIsCreatingInvite(false);
+    }
+  };
+
+  const handleResendInvite = async (inv: OrganizationInvitation) => {
+    setResendingInviteId(inv.id);
+    setMemberActionError(null);
+    setMemberActionSuccess(null);
+    try {
+      const updated = await resendOrganizationInvitation(inv.id, locale);
+      setInvitations((prev) => prev.map((item) => (item.id === inv.id ? updated : item)));
+      setMemberActionSuccess(t('settings.invitations.resend_success'));
+    } catch (err: any) {
+      setMemberActionError(err?.message || t('settings.invitations.resend_error'));
+    } finally {
+      setResendingInviteId(null);
     }
   };
 
@@ -311,6 +330,23 @@ export default function SettingsPage() {
       case 'VIEWER':
       default:
         return <Badge variant="outline">{t('roles.viewer')}</Badge>;
+    }
+  };
+
+  // Delivery Badge Formatter
+  const renderDeliveryBadge = (status?: string, error?: string | null) => {
+    switch (status) {
+      case 'sent':
+        return <Badge variant="success" size="sm">{t('settings.invitations.delivery_sent')}</Badge>;
+      case 'failed':
+        return (
+          <Badge variant="danger" size="sm" title={error || undefined}>
+            {t('settings.invitations.delivery_failed')}
+          </Badge>
+        );
+      case 'not_configured':
+      default:
+        return <Badge variant="outline" size="sm">{t('settings.invitations.delivery_not_configured')}</Badge>;
     }
   };
 
@@ -742,6 +778,7 @@ export default function SettingsPage() {
                         <tr>
                           <th className="py-2.5 px-4">{t('settings.invitations.col_email')}</th>
                           <th className="py-2.5 px-4">{t('settings.invitations.col_role')}</th>
+                          <th className="py-2.5 px-4">{t('settings.invitations.col_delivery')}</th>
                           <th className="py-2.5 px-4">{t('settings.invitations.col_invited')}</th>
                           <th className="py-2.5 px-4">{t('settings.invitations.col_expires')}</th>
                           <th className="py-2.5 px-4 text-right">{t('settings.invitations.col_actions')}</th>
@@ -756,6 +793,9 @@ export default function SettingsPage() {
                             <td className="py-2.5 px-4">
                               {renderRoleBadge(inv.role as string)}
                             </td>
+                            <td className="py-2.5 px-4">
+                              {renderDeliveryBadge(inv.delivery_status, inv.delivery_error)}
+                            </td>
                             <td className="py-2.5 px-4 text-foreground-muted">
                               {inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—'}
                             </td>
@@ -763,15 +803,32 @@ export default function SettingsPage() {
                               {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : '—'}
                             </td>
                             <td className="py-2.5 px-4 text-right">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => setRevokeInviteTarget(inv)}
-                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 text-[11px] h-7 px-2.5"
-                              >
-                                <Trash2 className="w-3 h-3 mr-1" />
-                                {t('settings.invitations.revoke_button')}
-                              </Button>
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={resendingInviteId === inv.id}
+                                  onClick={() => handleResendInvite(inv)}
+                                  className="text-[11px] h-7 px-2.5"
+                                  title={t('settings.invitations.resend_button')}
+                                >
+                                  {resendingInviteId === inv.id ? (
+                                    <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                                  ) : (
+                                    <RefreshCw className="w-3 h-3 mr-1" />
+                                  )}
+                                  {t('settings.invitations.resend_button')}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setRevokeInviteTarget(inv)}
+                                  className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 text-[11px] h-7 px-2.5"
+                                >
+                                  <Trash2 className="w-3 h-3 mr-1" />
+                                  {t('settings.invitations.revoke_button')}
+                                </Button>
+                              </div>
                             </td>
                           </tr>
                         ))}

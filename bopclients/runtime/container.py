@@ -15,6 +15,10 @@ from bopclients.domain.auth.password import PasswordHasher
 from bopclients.domain.auth.token import TokenService
 from bopclients.application.auth_service import AuthService
 from bopclients.application.invitation_service import InvitationService
+from bopclients.application.interfaces.email_sender import ITransactionalEmailSender
+from bopclients.infrastructure.email.in_memory_sender import InMemoryEmailSender
+from bopclients.infrastructure.email.null_sender import NullEmailSender
+from bopclients.infrastructure.email.resend_sender import ResendEmailSender
 from bopclients.infrastructure.repositories.campaign_repository import CampaignRepository
 from bopclients.infrastructure.repositories.prospect_repository import ProspectRepository
 from bopclients.infrastructure.repositories.prospect_priority_repository import ProspectPriorityRepository
@@ -108,6 +112,7 @@ class RuntimeContainer:
     auth_service: AuthService
     invitation_repo: Optional[InvitationRepository] = None
     invitation_service: Optional[InvitationService] = None
+    email_sender: Optional[ITransactionalEmailSender] = None
     search_service: Optional[SearchService] = None
     prospect_service: Optional[ProspectService] = None
     opportunity_scorer: Optional[RuleBasedOpportunityScorer] = None
@@ -171,13 +176,30 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         session_expire_days=settings.auth_session_expire_days,
     )
 
-    # Secure Team Invitations (P24)
+    # Transactional Email Delivery (P25)
+    email_sender: ITransactionalEmailSender
+    if settings.email_provider == "resend":
+        email_sender = ResendEmailSender(
+            api_key=settings.email_api_key or "",
+            default_from=settings.email_from,
+        )
+    elif settings.email_provider == "in_memory":
+        email_sender = InMemoryEmailSender(
+            default_from=settings.email_from,
+        )
+    else:
+        email_sender = NullEmailSender()
+
+    # Secure Team Invitations (P24 / P25)
     invitation_repo = InvitationRepository(db)
     invitation_service = InvitationService(
         inv_repo=invitation_repo,
         org_repo=org_repo,
         user_repo=user_repo,
         auth_service=auth_service,
+        email_sender=email_sender,
+        app_url=settings.app_url,
+        default_from=settings.email_from,
     )
 
     # Integration Outbox Dispatcher & Publisher Worker (P18 / P18.1)
@@ -332,6 +354,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         auth_service=auth_service,
         invitation_repo=invitation_repo,
         invitation_service=invitation_service,
+        email_sender=email_sender,
         search_service=search_service,
         prospect_service=prospect_service,
         opportunity_scorer=opportunity_scorer,

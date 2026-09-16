@@ -284,7 +284,7 @@ def test_member_cannot_invite(client_and_context):
 def test_token_hash_stored_in_db_raw_not_stored(client_and_context):
     """Verify raw token is NOT in database, only SHA-256 token_hash."""
     ctx = client_and_context
-    invitation, raw_token = ctx["container"].invitation_service.create_invitation(
+    invitation, raw_token, *_ = ctx["container"].invitation_service.create_invitation(
         inviter_user_id=ctx["owner_user"].id,
         org_id=ctx["org_a"].id,
         email="hashcheck@example.com",
@@ -392,7 +392,7 @@ def test_revocation_by_owner_and_rejection_of_revoked(client_and_context):
     }
 
     # Create invitation via service safely
-    invitation, raw_token = ctx["container"].invitation_service.create_invitation(
+    invitation, raw_token, *_ = ctx["container"].invitation_service.create_invitation(
         inviter_user_id=ctx["owner_user"].id,
         org_id=ctx["org_a"].id,
         email="revokeme@example.com",
@@ -429,7 +429,7 @@ def test_atomic_acceptance_for_existing_authenticated_user(client_and_context):
     dave_tokens, _ = container.auth_service.authenticate("dave@example.com", "Password123!")
 
     # Owner invites Dave via service safely
-    invitation, raw_token = container.invitation_service.create_invitation(
+    invitation, raw_token, *_ = container.invitation_service.create_invitation(
         inviter_user_id=ctx["owner_user"].id,
         org_id=ctx["org_a"].id,
         email="dave@example.com",
@@ -475,7 +475,7 @@ def test_acceptance_email_mismatch_rejected(client_and_context):
     client = ctx["client"]
 
     # Invite target@example.com via service safely
-    invitation, raw_token = ctx["container"].invitation_service.create_invitation(
+    invitation, raw_token, *_ = ctx["container"].invitation_service.create_invitation(
         inviter_user_id=ctx["owner_user"].id,
         org_id=ctx["org_a"].id,
         email="target@example.com",
@@ -503,7 +503,7 @@ def test_register_and_accept_new_user(client_and_context):
     client = ctx["client"]
 
     # Owner invites new person safely via service
-    invitation, raw_token = ctx["container"].invitation_service.create_invitation(
+    invitation, raw_token, *_ = ctx["container"].invitation_service.create_invitation(
         inviter_user_id=ctx["owner_user"].id,
         org_id=ctx["org_a"].id,
         email="newuser@example.com",

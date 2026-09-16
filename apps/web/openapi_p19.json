@@ -1229,6 +1229,111 @@
         }
       }
     },
+    "/api/v1/organizations/current/invitations/{invitation_id}/resend": {
+      "post": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Resend organization invitation with token rotation (Owner/Admin only)",
+        "operationId": "resend_organization_invitation_api_v1_organizations_current_invitations__invitation_id__resend_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Invitation Id"
+            }
+          },
+          {
+            "name": "locale",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Locale"
+            }
+          },
+          {
+            "name": "X-Bop-Organization-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Bop-Organization-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationResendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/organizations": {
       "get": {
         "tags": [
@@ -7723,6 +7828,26 @@
         "title": "InvitationRegisterAcceptRequest",
         "description": "Payload for registering and accepting an invitation simultaneously."
       },
+      "InvitationResendRequest": {
+        "properties": {
+          "locale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locale",
+            "description": "Preferred invitation email locale ('en' or 'es')",
+            "default": "en"
+          }
+        },
+        "type": "object",
+        "title": "InvitationResendRequest",
+        "description": "Payload for resending an existing team invitation."
+      },
       "InvitationResponse": {
         "properties": {
           "id": {
@@ -7784,6 +7909,18 @@
             "title": "Delivery Status",
             "description": "Delivery status of the invitation email (e.g. not_configured, pending, delivered, failed).",
             "default": "not_configured"
+          },
+          "delivery_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delivery Error",
+            "description": "Sanitized delivery error if delivery failed."
           },
           "raw_token": {
             "anyOf": [

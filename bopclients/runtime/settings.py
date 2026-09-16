@@ -101,6 +101,12 @@ class RuntimeSettings:
     # Team Invitations configuration (P24.1)
     invitation_dev_token_exposure: bool = False
 
+    # Transactional Email configuration (P25)
+    email_provider: str = "none"
+    email_from: str = "BopClients <invites@bopclients.com>"
+    email_api_key: str = ""
+    app_url: str = "http://localhost:3000"
+
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
         """Factory instantiating RuntimeSettings from environment variables."""
@@ -156,6 +162,11 @@ class RuntimeSettings:
         if env == AppEnvironment.PRODUCTION:
             inv_dev_exposure = False
 
+        email_prov = os.environ.get("BOP_EMAIL_PROVIDER", "none").strip().lower()
+        email_sender_from = os.environ.get("BOP_EMAIL_FROM", "BopClients <invites@bopclients.com>").strip()
+        email_key = os.environ.get("BOP_EMAIL_API_KEY", os.environ.get("RESEND_API_KEY", "")).strip()
+        app_url_val = os.environ.get("BOPCLIENTS_APP_URL", "http://localhost:3000").strip()
+
         return cls(
             environment=env,
             database_url=db_url,
@@ -192,6 +203,10 @@ class RuntimeSettings:
             api_port=api_p,
             api_host=api_h,
             invitation_dev_token_exposure=inv_dev_exposure,
+            email_provider=email_prov,
+            email_from=email_sender_from,
+            email_api_key=email_key,
+            app_url=app_url_val,
         )
 
     def validate(self):
@@ -286,4 +301,8 @@ class RuntimeSettings:
             "api_port": self.api_port,
             "api_host": self.api_host,
             "invitation_dev_token_exposure": self.invitation_dev_token_exposure,
+            "email_provider": self.email_provider,
+            "email_from": self.email_from,
+            "email_configured": bool(self.email_api_key),
+            "app_url": self.app_url,
         }
