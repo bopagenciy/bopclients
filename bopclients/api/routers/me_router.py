@@ -45,6 +45,8 @@ async def get_my_profile(
         name=user.full_name,
         locale=user.locale,
         is_active=user.is_active,
+        email_verified_at=user.email_verified_at,
+        is_verified=user.is_verified,
         created_at=user.created_at,
         organizations=org_list,
     )

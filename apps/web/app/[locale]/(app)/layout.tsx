@@ -6,6 +6,7 @@ import { useAuth } from '../../../lib/auth/context';
 import { useI18n } from '../../../lib/i18n/context';
 import { AppSidebar } from '../../../components/navigation/AppSidebar';
 import { TopBar } from '../../../components/navigation/TopBar';
+import { UnverifiedEmailBanner } from '../../../components/auth/UnverifiedEmailBanner';
 
 export default function AppLayout({
   children,
@@ -45,6 +46,7 @@ export default function AppLayout({
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <TopBar />
+        <UnverifiedEmailBanner />
         <main className="flex-1 overflow-y-auto p-6 sm:p-8 bg-background">
           <div className="max-w-7xl mx-auto space-y-6">{children}</div>
         </main>

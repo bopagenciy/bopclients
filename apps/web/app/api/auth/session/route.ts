@@ -64,6 +64,8 @@ export async function GET(request: NextRequest) {
       email: userData.email,
       full_name: userData.full_name || userData.name,
       locale: userData.locale,
+      is_verified: userData.is_verified,
+      email_verified_at: userData.email_verified_at,
     },
     active_organization: activeOrg
       ? {

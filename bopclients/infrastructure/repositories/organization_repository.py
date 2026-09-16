@@ -21,6 +21,7 @@ class UserRepository(BaseTenantRepository, IUserRepository):
             password_hash=r.get("password_hash"),
             is_active=bool(r.get("is_active", True)),
             locale=r.get("locale") or "en",
+            email_verified_at=r.get("email_verified_at"),
             created_at=r["created_at"],
         )
 
@@ -29,17 +30,18 @@ class UserRepository(BaseTenantRepository, IUserRepository):
         user.email = user.email.strip().lower()
         user.validate()
         sql = f"""
-        INSERT INTO users (id, email, full_name, password_hash, is_active, locale, created_at)
-        VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p})
+        INSERT INTO users (id, email, full_name, password_hash, is_active, locale, email_verified_at, created_at)
+        VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
         ON CONFLICT(email) DO UPDATE SET
             full_name = EXCLUDED.full_name,
             password_hash = COALESCE(EXCLUDED.password_hash, users.password_hash),
             is_active = EXCLUDED.is_active,
-            locale = EXCLUDED.locale
+            locale = EXCLUDED.locale,
+            email_verified_at = COALESCE(EXCLUDED.email_verified_at, users.email_verified_at)
         """
         self.db.execute(
             sql,
-            (user.id, user.email, user.full_name, user.password_hash, user.is_active, user.locale, user.created_at),
+            (user.id, user.email, user.full_name, user.password_hash, user.is_active, user.locale, user.email_verified_at, user.created_at),
         )
         if commit:
             self._commit_if_not_in_tx()
@@ -47,7 +49,7 @@ class UserRepository(BaseTenantRepository, IUserRepository):
 
     def get_by_id(self, user_id: str) -> Optional[User]:
         p = self._placeholder()
-        sql = f"SELECT id, email, full_name, password_hash, is_active, locale, created_at FROM users WHERE id = {p}"
+        sql = f"SELECT id, email, full_name, password_hash, is_active, locale, email_verified_at, created_at FROM users WHERE id = {p}"
         rows = self.db.fetch_dicts(sql, (user_id,))
         if not rows:
             return None
@@ -56,7 +58,7 @@ class UserRepository(BaseTenantRepository, IUserRepository):
     def get_by_email(self, email: str) -> Optional[User]:
         p = self._placeholder()
         normalized = email.strip().lower()
-        sql = f"SELECT id, email, full_name, password_hash, is_active, locale, created_at FROM users WHERE LOWER(email) = {p}"
+        sql = f"SELECT id, email, full_name, password_hash, is_active, locale, email_verified_at, created_at FROM users WHERE LOWER(email) = {p}"
         rows = self.db.fetch_dicts(sql, (normalized,))
         if not rows:
             return None

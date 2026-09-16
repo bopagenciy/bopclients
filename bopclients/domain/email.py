@@ -10,6 +10,8 @@ class EmailCategory(str, Enum):
     """Canonical transactional email categories."""
 
     TEAM_INVITATION = "team_invitation"
+    PASSWORD_RESET = "password_reset"
+    EMAIL_VERIFICATION = "email_verification"
 
 
 class EmailDeliveryStatus(str, Enum):

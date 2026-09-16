@@ -16,6 +16,7 @@ class UserPrincipal:
     locale: str
     is_active: bool
     session_id: Optional[str]
+    email_verified_at: Optional[str]
 
     def __init__(
         self,
@@ -26,6 +27,7 @@ class UserPrincipal:
         locale: str = "en",
         is_active: bool = True,
         session_id: Optional[str] = None,
+        email_verified_at: Optional[str] = None,
     ):
         object.__setattr__(self, "user_id", user_id)
         object.__setattr__(self, "email", email)
@@ -33,6 +35,11 @@ class UserPrincipal:
         object.__setattr__(self, "locale", locale)
         object.__setattr__(self, "is_active", is_active)
         object.__setattr__(self, "session_id", session_id)
+        object.__setattr__(self, "email_verified_at", email_verified_at)
+
+    @property
+    def is_verified(self) -> bool:
+        return self.email_verified_at is not None
 
     @property
     def name(self) -> str:

@@ -61,6 +61,8 @@ export async function POST(request: NextRequest) {
         email: data.email,
         full_name: data.full_name,
         locale: data.locale,
+        is_verified: data.user?.is_verified ?? data.is_verified,
+        email_verified_at: data.user?.email_verified_at ?? data.email_verified_at,
       },
       active_organization: activeOrg
         ? {

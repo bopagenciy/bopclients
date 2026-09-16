@@ -241,3 +241,343 @@ If you did not expect this invitation, you can safely ignore this email.
 """
 
     return subject, html_body, text_body
+
+
+def render_password_reset_email(
+    user_name: str,
+    reset_url: str,
+    locale: str = "en",
+    expires_minutes: int = 60,
+) -> Tuple[str, str, str]:
+    """Render subject, HTML body, and plain-text body for password reset requests."""
+    clean_name = user_name.strip() or "User"
+    escaped_name = html.escape(clean_name)
+    escaped_url = html.escape(reset_url)
+
+    norm_locale = (locale or "en").strip().lower()
+    is_es = norm_locale.startswith("es")
+
+    if is_es:
+        subject = "Restablecer su contraseña en BopClients"
+        html_body = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{html.escape(subject)}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
+    <tr>
+      <td align="center" style="padding: 40px 16px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+          <tr>
+            <td style="background-color: #0d121f; padding: 28px 32px; border-bottom: 2px solid #d4af37;">
+              <span style="color: #ffffff; font-weight: 800; font-size: 18px; letter-spacing: 1.5px;">BOP</span>
+              <span style="color: #d4af37; font-weight: 300; font-size: 18px; margin: 0 4px;">|</span>
+              <span style="color: #9ca3af; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">CLIENTS</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 32px 28px;">
+              <h1 style="margin: 0 0 16px; color: #111827; font-size: 22px; font-weight: 700; line-height: 28px;">
+                Restablecimiento de contraseña
+              </h1>
+              <p style="margin: 0 0 16px; color: #374151; font-size: 15px; line-height: 24px;">
+                Hola <strong>{escaped_name}</strong>, recibimos una solicitud para restablecer la contraseña de su cuenta.
+              </p>
+              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 24px 0;">
+                <p style="margin: 0 0 4px; font-size: 14px; color: #1f2937;"><strong>Seguridad:</strong> Este enlace expira en {expires_minutes} minutos y solo puede usarse una vez.</p>
+              </div>
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 32px 0 20px;">
+                <tr>
+                  <td align="center">
+                    <a href="{escaped_url}" target="_blank" style="display: inline-block; background-color: #d4af37; color: #0b0f19; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 6px; letter-spacing: 0.5px;">
+                      Restablecer Contraseña
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 24px 0 0; color: #9ca3af; font-size: 12px; line-height: 18px; text-align: center;">
+                Si el botón no funciona, copie y pegue el siguiente enlace en su navegador:<br>
+                <a href="{escaped_url}" style="color: #6b7280; word-break: break-all;">{escaped_url}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f3f4f6; padding: 20px 32px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #6b7280; font-size: 12px; line-height: 18px; text-align: center;">
+                Si no solicitó restablecer su contraseña, ignore este mensaje. Su cuenta permanece segura.<br>
+                &copy; BopClients. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+        text_body = f"""BOP | CLIENTS
+========================================
+Restablecimiento de contraseña
+
+Hola {clean_name}, recibimos una solicitud para restablecer la contraseña de su cuenta.
+
+Para crear una nueva contraseña, visite el siguiente enlace:
+{reset_url}
+
+Este enlace expira en {expires_minutes} minutos y solo puede usarse una vez.
+
+Si no solicitó restablecer su contraseña, puede ignorar este mensaje de forma segura.
+========================================
+© BopClients. Autonomous Client Acquisition Platform.
+"""
+    else:
+        subject = "Reset your BopClients password"
+        html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{html.escape(subject)}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
+    <tr>
+      <td align="center" style="padding: 40px 16px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+          <tr>
+            <td style="background-color: #0d121f; padding: 28px 32px; border-bottom: 2px solid #d4af37;">
+              <span style="color: #ffffff; font-weight: 800; font-size: 18px; letter-spacing: 1.5px;">BOP</span>
+              <span style="color: #d4af37; font-weight: 300; font-size: 18px; margin: 0 4px;">|</span>
+              <span style="color: #9ca3af; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">CLIENTS</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 32px 28px;">
+              <h1 style="margin: 0 0 16px; color: #111827; font-size: 22px; font-weight: 700; line-height: 28px;">
+                Password Reset Request
+              </h1>
+              <p style="margin: 0 0 16px; color: #374151; font-size: 15px; line-height: 24px;">
+                Hello <strong>{escaped_name}</strong>, we received a request to reset the password for your account.
+              </p>
+              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 24px 0;">
+                <p style="margin: 0 0 4px; font-size: 14px; color: #1f2937;"><strong>Security:</strong> This link expires in {expires_minutes} minutes and can only be used once.</p>
+              </div>
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 32px 0 20px;">
+                <tr>
+                  <td align="center">
+                    <a href="{escaped_url}" target="_blank" style="display: inline-block; background-color: #d4af37; color: #0b0f19; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 6px; letter-spacing: 0.5px;">
+                      Reset Password
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 24px 0 0; color: #9ca3af; font-size: 12px; line-height: 18px; text-align: center;">
+                If the button above does not work, copy and paste this link into your browser:<br>
+                <a href="{escaped_url}" style="color: #6b7280; word-break: break-all;">{escaped_url}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f3f4f6; padding: 20px 32px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #6b7280; font-size: 12px; line-height: 18px; text-align: center;">
+                If you did not request a password reset, you can safely ignore this email.<br>
+                &copy; BopClients. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+        text_body = f"""BOP | CLIENTS
+========================================
+Password Reset Request
+
+Hello {clean_name}, we received a request to reset the password for your account.
+
+To create a new password, please visit:
+{reset_url}
+
+This link expires in {expires_minutes} minutes and can only be used once.
+
+If you did not request a password reset, you can safely ignore this email.
+========================================
+© BopClients. Autonomous Client Acquisition Platform.
+"""
+
+    return subject, html_body, text_body
+
+
+def render_email_verification_email(
+    user_name: str,
+    verify_url: str,
+    locale: str = "en",
+    expires_hours: int = 24,
+) -> Tuple[str, str, str]:
+    """Render subject, HTML body, and plain-text body for email verification."""
+    clean_name = user_name.strip() or "User"
+    escaped_name = html.escape(clean_name)
+    escaped_url = html.escape(verify_url)
+
+    norm_locale = (locale or "en").strip().lower()
+    is_es = norm_locale.startswith("es")
+
+    if is_es:
+        subject = "Verifique su dirección de correo electrónico en BopClients"
+        html_body = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{html.escape(subject)}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
+    <tr>
+      <td align="center" style="padding: 40px 16px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+          <tr>
+            <td style="background-color: #0d121f; padding: 28px 32px; border-bottom: 2px solid #d4af37;">
+              <span style="color: #ffffff; font-weight: 800; font-size: 18px; letter-spacing: 1.5px;">BOP</span>
+              <span style="color: #d4af37; font-weight: 300; font-size: 18px; margin: 0 4px;">|</span>
+              <span style="color: #9ca3af; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">CLIENTS</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 32px 28px;">
+              <h1 style="margin: 0 0 16px; color: #111827; font-size: 22px; font-weight: 700; line-height: 28px;">
+                Verificación de correo electrónico
+              </h1>
+              <p style="margin: 0 0 16px; color: #374151; font-size: 15px; line-height: 24px;">
+                Hola <strong>{escaped_name}</strong>, por favor verifique su dirección de correo electrónico para confirmar su cuenta.
+              </p>
+              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 24px 0;">
+                <p style="margin: 0 0 4px; font-size: 14px; color: #1f2937;"><strong>Validez:</strong> Este enlace expira en {expires_hours} horas.</p>
+              </div>
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 32px 0 20px;">
+                <tr>
+                  <td align="center">
+                    <a href="{escaped_url}" target="_blank" style="display: inline-block; background-color: #d4af37; color: #0b0f19; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 6px; letter-spacing: 0.5px;">
+                      Verificar Correo Electrónico
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 24px 0 0; color: #9ca3af; font-size: 12px; line-height: 18px; text-align: center;">
+                Si el botón no funciona, copie y pegue el siguiente enlace en su navegador:<br>
+                <a href="{escaped_url}" style="color: #6b7280; word-break: break-all;">{escaped_url}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f3f4f6; padding: 20px 32px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #6b7280; font-size: 12px; line-height: 18px; text-align: center;">
+                Si no creó una cuenta en BopClients, ignore este mensaje.<br>
+                &copy; BopClients. Todos los derechos reservados.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+        text_body = f"""BOP | CLIENTS
+========================================
+Verificación de correo electrónico
+
+Hola {clean_name}, por favor verifique su dirección de correo electrónico para su cuenta en BopClients.
+
+Para verificar su correo, visite el siguiente enlace:
+{verify_url}
+
+Este enlace expira en {expires_hours} horas.
+
+Si no creó una cuenta en BopClients, ignore este mensaje.
+========================================
+© BopClients. Autonomous Client Acquisition Platform.
+"""
+    else:
+        subject = "Verify your email address for BopClients"
+        html_body = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{html.escape(subject)}</title>
+</head>
+<body style="margin: 0; padding: 0; background-color: #0b0f19; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827;">
+  <table border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
+    <tr>
+      <td align="center" style="padding: 40px 16px;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 560px; background-color: #ffffff; border-radius: 12px; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+          <tr>
+            <td style="background-color: #0d121f; padding: 28px 32px; border-bottom: 2px solid #d4af37;">
+              <span style="color: #ffffff; font-weight: 800; font-size: 18px; letter-spacing: 1.5px;">BOP</span>
+              <span style="color: #d4af37; font-weight: 300; font-size: 18px; margin: 0 4px;">|</span>
+              <span style="color: #9ca3af; font-size: 13px; letter-spacing: 1px; text-transform: uppercase;">CLIENTS</span>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 36px 32px 28px;">
+              <h1 style="margin: 0 0 16px; color: #111827; font-size: 22px; font-weight: 700; line-height: 28px;">
+                Verify Your Email Address
+              </h1>
+              <p style="margin: 0 0 16px; color: #374151; font-size: 15px; line-height: 24px;">
+                Hello <strong>{escaped_name}</strong>, please verify your email address to confirm your account on BopClients.
+              </p>
+              <div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px 20px; margin: 24px 0;">
+                <p style="margin: 0 0 4px; font-size: 14px; color: #1f2937;"><strong>Validity:</strong> This link expires in {expires_hours} hours.</p>
+              </div>
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin: 32px 0 20px;">
+                <tr>
+                  <td align="center">
+                    <a href="{escaped_url}" target="_blank" style="display: inline-block; background-color: #d4af37; color: #0b0f19; font-size: 15px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 6px; letter-spacing: 0.5px;">
+                      Verify Email Address
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 24px 0 0; color: #9ca3af; font-size: 12px; line-height: 18px; text-align: center;">
+                If the button above does not work, copy and paste this link into your browser:<br>
+                <a href="{escaped_url}" style="color: #6b7280; word-break: break-all;">{escaped_url}</a>
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f3f4f6; padding: 20px 32px; border-top: 1px solid #e5e7eb;">
+              <p style="margin: 0; color: #6b7280; font-size: 12px; line-height: 18px; text-align: center;">
+                If you did not create an account on BopClients, you can safely ignore this email.<br>
+                &copy; BopClients. All rights reserved.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>"""
+        text_body = f"""BOP | CLIENTS
+========================================
+Verify Your Email Address
+
+Hello {clean_name}, please verify your email address to confirm your account on BopClients.
+
+To verify your email, please visit:
+{verify_url}
+
+This link expires in {expires_hours} hours.
+
+If you did not create an account on BopClients, you can safely ignore this email.
+========================================
+© BopClients. Autonomous Client Acquisition Platform.
+"""
+
+    return subject, html_body, text_body

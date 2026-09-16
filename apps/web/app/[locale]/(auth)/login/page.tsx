@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/auth/context';
 import { useI18n } from '@/lib/i18n/context';
@@ -89,8 +90,18 @@ export default function LoginPage() {
             </div>
 
             <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-semibold text-foreground">
+                  {t('auth.password_label')}
+                </label>
+                <Link
+                  href={`/${locale}/forgot-password`}
+                  className="text-xs text-brand-gold hover:underline font-medium"
+                >
+                  {t('auth.forgot_password_link')}
+                </Link>
+              </div>
               <Input
-                label={t('auth.password_label')}
                 type="password"
                 placeholder={t('auth.password_placeholder')}
                 value={password}

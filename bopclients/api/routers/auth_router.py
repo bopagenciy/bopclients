@@ -1,6 +1,19 @@
 from typing import Optional
 from fastapi import APIRouter, Depends, Request, status
-from bopclients.api.schemas.auth import LoginRequest, LoginResponse, LogoutResponse, UserProfileItem, RefreshTokenRequest
+from bopclients.api.schemas.auth import (
+    LoginRequest,
+    LoginResponse,
+    LogoutResponse,
+    UserProfileItem,
+    RefreshTokenRequest,
+    PasswordResetRequest,
+    PasswordResetConfirmRequest,
+    PasswordResetResponse,
+    EmailVerificationConfirmRequest,
+    EmailVerificationResponse,
+    EmailVerificationResendRequest,
+    EmailVerificationResendResponse,
+)
 from bopclients.api.dependencies import get_auth_service, get_current_user
 from bopclients.application.auth_service import (
     AuthService,
@@ -48,6 +61,8 @@ async def login(
             email=user.email,
             name=user.full_name,
             locale=user.locale,
+            email_verified_at=user.email_verified_at,
+            is_verified=user.is_verified,
         ),
     )
 
@@ -92,6 +107,8 @@ async def refresh_token(
             email=user.email,
             name=user.full_name,
             locale=user.locale,
+            email_verified_at=user.email_verified_at,
+            is_verified=user.is_verified,
         ),
     )
 
@@ -117,3 +134,80 @@ async def logout(
             auth_service.logout(session_id)
 
     return LogoutResponse(success=True, message="Session successfully terminated.")
+
+
+@router.post(
+    "/password-reset/request",
+    response_model=PasswordResetResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Request password reset instructions",
+    description="Initiates password recovery. Neutral response prevents email enumeration.",
+)
+async def request_password_reset(
+    payload: PasswordResetRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> PasswordResetResponse:
+    auth_service.request_password_reset(email=payload.email, locale=payload.locale)
+    return PasswordResetResponse(
+        success=True,
+        message="If the email is registered, password reset instructions have been sent.",
+    )
+
+
+@router.post(
+    "/password-reset/confirm",
+    response_model=PasswordResetResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Confirm password reset",
+    description="Validates single-use reset token and updates account password, revoking existing sessions.",
+)
+async def confirm_password_reset(
+    payload: PasswordResetConfirmRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> PasswordResetResponse:
+    auth_service.confirm_password_reset(
+        raw_token=payload.token,
+        new_password=payload.new_password,
+    )
+    return PasswordResetResponse(
+        success=True,
+        message="Password has been reset successfully. Please sign in with your new password.",
+    )
+
+
+@router.post(
+    "/email-verification/confirm",
+    response_model=EmailVerificationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Confirm email verification",
+    description="Validates single-use verification token and marks user email as verified.",
+)
+async def confirm_email_verification(
+    payload: EmailVerificationConfirmRequest,
+    auth_service: AuthService = Depends(get_auth_service),
+) -> EmailVerificationResponse:
+    auth_service.confirm_email_verification(raw_token=payload.token)
+    return EmailVerificationResponse(
+        success=True,
+        message="Email verified successfully.",
+    )
+
+
+@router.post(
+    "/email-verification/resend",
+    response_model=EmailVerificationResendResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Resend email verification",
+    description="Sends a new verification email to the currently authenticated user.",
+)
+async def resend_email_verification(
+    payload: Optional[EmailVerificationResendRequest] = None,
+    current_user: UserPrincipal = Depends(get_current_user),
+    auth_service: AuthService = Depends(get_auth_service),
+) -> EmailVerificationResendResponse:
+    locale = (payload.locale if payload else None) or current_user.locale
+    auth_service.send_verification_email(user_id=current_user.user_id, locale=locale)
+    return EmailVerificationResendResponse(
+        success=True,
+        message="Verification email sent.",
+    )

@@ -437,12 +437,13 @@ class InvitationService:
         if existing_user:
             raise ValidationError("An account with this email already exists. Please log in to accept the invitation.")
 
-        # Register user
+        # Register user (invitation acceptance verifies email ownership)
         user = self.auth_service.register_user(
             email=invitation.email_normalized,
             name=name,
             password=password,
             locale=locale,
+            email_verified=True,
         )
 
         try:

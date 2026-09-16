@@ -16,6 +16,7 @@ from bopclients.domain.prospect_source import ProspectSource
 from bopclients.domain.research_run import ResearchRun
 from bopclients.domain.enrichment_result import EnrichmentResult
 from bopclients.domain.invitation import OrganizationInvitation
+from bopclients.domain.auth_token import AuthToken, AuthTokenType
 from bopclients.domain.enums import InvitationStatus
 
 
@@ -243,3 +244,19 @@ class IProspectIntelligenceRepository(ABC):
     def get_latest(
         self, org_id: str, prospect_id: str, provider: str = "deterministic"
     ) -> Optional[Any]: ...
+
+
+class IAuthTokenRepository(ABC):
+    """Abstract repository for single-use authentication tokens (password reset, email verification)."""
+
+    @abstractmethod
+    def save(self, token: AuthToken, commit: bool = True) -> AuthToken: ...
+
+    @abstractmethod
+    def get_by_token_hash(self, token_hash: str) -> Optional[AuthToken]: ...
+
+    @abstractmethod
+    def consume_token(self, token_id: str, consumed_at: Optional[str] = None, commit: bool = True) -> bool: ...
+
+    @abstractmethod
+    def revoke_active_tokens_for_user(self, user_id: str, token_type: AuthTokenType, commit: bool = True) -> int: ...

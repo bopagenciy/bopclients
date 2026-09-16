@@ -7,6 +7,8 @@ export interface User {
   locale?: string | null;
   is_active: boolean;
   is_superuser: boolean;
+  email_verified_at?: string | null;
+  is_verified?: boolean;
   created_at: string;
 }
 
@@ -485,4 +487,38 @@ export interface InvitationAcceptResult {
   refresh_token?: string | null;
   token_type?: string | null;
   expires_in?: number | null;
+}
+
+export interface PasswordResetRequestInput {
+  email: string;
+  locale?: string;
+}
+
+export interface PasswordResetConfirmInput {
+  token: string;
+  new_password: string;
+}
+
+export interface PasswordResetResponse {
+  success: boolean;
+  message: string;
+}
+
+export interface EmailVerificationConfirmInput {
+  token: string;
+}
+
+export interface EmailVerificationResponse {
+  success: boolean;
+  message: string;
+  user?: User;
+}
+
+export interface EmailVerificationResendInput {
+  locale?: string;
+}
+
+export interface EmailVerificationResendResponse {
+  success: boolean;
+  message: string;
 }

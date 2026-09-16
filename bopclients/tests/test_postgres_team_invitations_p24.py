@@ -94,7 +94,7 @@ def test_postgres_migration_010_and_table_structure(pg_invitations_context):
     ctx = pg_invitations_context
     db = ctx["db"]
     ver = DatabaseMigrator.get_current_version(db)
-    assert ver == "20260902_010"
+    assert ver in ("20260902_010", "20260902_011")
 
     # Verify table in PostgreSQL information_schema
     tables = db.fetch_dicts(

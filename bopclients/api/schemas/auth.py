@@ -17,6 +17,8 @@ class UserProfileItem(BaseModel):
     email: str
     name: str
     locale: str = "en"
+    email_verified_at: Optional[str] = None
+    is_verified: bool = False
 
 
 class LoginResponse(BaseModel):
@@ -55,6 +57,8 @@ class UserResponse(BaseModel):
     name: Optional[str] = None
     locale: str
     is_active: bool
+    email_verified_at: Optional[str] = None
+    is_verified: bool = False
     created_at: str
     organizations: Optional[List[Any]] = None
 
@@ -84,3 +88,43 @@ class UserOrganizationsResponse(BaseModel):
     """List of organizations accessible to the current user."""
 
     items: List[UserOrganizationItem]
+
+
+class PasswordResetRequest(BaseModel):
+    """Password recovery request body."""
+    email: str = Field(description="User account email address")
+    locale: Optional[str] = Field(default=None, description="Preferred language code for the reset email (en, es)")
+
+
+class PasswordResetConfirmRequest(BaseModel):
+    """Password reset confirmation request body."""
+    token: str = Field(description="Raw password reset token from email")
+    new_password: str = Field(description="New password adhering to security policy")
+
+
+class PasswordResetResponse(BaseModel):
+    """Password reset confirmation response."""
+    success: bool = True
+    message: str = "If the email is registered, password reset instructions have been sent."
+
+
+class EmailVerificationConfirmRequest(BaseModel):
+    """Email verification confirmation request body."""
+    token: str = Field(description="Raw email verification token from email")
+
+
+class EmailVerificationResponse(BaseModel):
+    """Email verification confirmation response."""
+    success: bool = True
+    message: str = "Email verified successfully."
+
+
+class EmailVerificationResendRequest(BaseModel):
+    """Email verification resend request body."""
+    locale: Optional[str] = Field(default=None, description="Preferred language code for the verification email (en, es)")
+
+
+class EmailVerificationResendResponse(BaseModel):
+    """Email verification resend response."""
+    success: bool = True
+    message: str = "Verification email sent."

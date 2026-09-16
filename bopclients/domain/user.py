@@ -18,6 +18,7 @@ class User:
     password_hash: Optional[str]
     is_active: bool
     locale: str
+    email_verified_at: Optional[str]
     created_at: str
 
     def __init__(
@@ -29,6 +30,7 @@ class User:
         password_hash: Optional[str] = None,
         is_active: bool = True,
         locale: str = "en",
+        email_verified_at: Optional[str] = None,
         created_at: Optional[str] = None,
     ):
         self.id = id if id is not None else str(uuid.uuid4())
@@ -37,7 +39,12 @@ class User:
         self.password_hash = password_hash
         self.is_active = is_active
         self.locale = locale
+        self.email_verified_at = email_verified_at
         self.created_at = created_at if created_at is not None else datetime.now(timezone.utc).isoformat()
+
+    @property
+    def is_verified(self) -> bool:
+        return self.email_verified_at is not None
 
     @property
     def name(self) -> str:
@@ -61,5 +68,6 @@ class User:
         return (
             f"User(id={self.id!r}, email={self.email!r}, full_name={self.full_name!r}, "
             f"password_hash=***REDACTED***, "
-            f"is_active={self.is_active}, locale={self.locale!r}, created_at={self.created_at!r})"
+            f"is_active={self.is_active}, locale={self.locale!r}, "
+            f"email_verified_at={self.email_verified_at!r}, created_at={self.created_at!r})"
         )

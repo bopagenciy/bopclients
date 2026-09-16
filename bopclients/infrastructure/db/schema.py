@@ -16,6 +16,7 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         password_hash VARCHAR(255),
         is_active BOOLEAN NOT NULL DEFAULT true,
         locale VARCHAR(10) NOT NULL DEFAULT 'en',
+        email_verified_at VARCHAR(50),
         created_at VARCHAR(50) NOT NULL
     );
     """,
@@ -572,6 +573,19 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         FOREIGN KEY (invited_by_user_id) REFERENCES users(id) ON DELETE CASCADE
     );
     """,
+    # 34. auth_tokens (Password reset and email verification tokens)
+    """
+    CREATE TABLE IF NOT EXISTS auth_tokens (
+        id VARCHAR(36) PRIMARY KEY,
+        user_id VARCHAR(36) NOT NULL,
+        token_hash VARCHAR(64) UNIQUE NOT NULL,
+        token_type VARCHAR(32) NOT NULL,
+        expires_at VARCHAR(50) NOT NULL,
+        consumed_at VARCHAR(50),
+        created_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -626,4 +640,6 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_invitations_org ON organization_invitations(organization_id);",
     "CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON organization_invitations(token_hash);",
     "CREATE INDEX IF NOT EXISTS idx_invitations_pending ON organization_invitations(organization_id, email_normalized, status);",
+    "CREATE INDEX IF NOT EXISTS idx_auth_tokens_token_hash ON auth_tokens(token_hash);",
+    "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_type ON auth_tokens(user_id, token_type);",
 ]

@@ -107,6 +107,10 @@ class RuntimeSettings:
     email_api_key: str = ""
     app_url: str = "http://localhost:3000"
 
+    # Account Recovery & Verification configuration (P26)
+    password_reset_token_expire_minutes: int = 60
+    email_verification_token_expire_hours: int = 24
+
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
         """Factory instantiating RuntimeSettings from environment variables."""
@@ -166,6 +170,8 @@ class RuntimeSettings:
         email_sender_from = os.environ.get("BOP_EMAIL_FROM", "BopClients <invites@bopclients.com>").strip()
         email_key = os.environ.get("BOP_EMAIL_API_KEY", os.environ.get("RESEND_API_KEY", "")).strip()
         app_url_val = os.environ.get("BOPCLIENTS_APP_URL", "http://localhost:3000").strip()
+        pwd_reset_expire = int(os.environ.get("BOP_PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "60"))
+        email_verify_expire = int(os.environ.get("BOP_EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS", "24"))
 
         return cls(
             environment=env,
@@ -207,6 +213,8 @@ class RuntimeSettings:
             email_from=email_sender_from,
             email_api_key=email_key,
             app_url=app_url_val,
+            password_reset_token_expire_minutes=pwd_reset_expire,
+            email_verification_token_expire_hours=email_verify_expire,
         )
 
     def validate(self):

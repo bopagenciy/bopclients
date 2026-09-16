@@ -11,6 +11,7 @@ from bopclients.infrastructure.repositories.organization_repository import Organ
 from bopclients.infrastructure.repositories.invitation_repository import InvitationRepository
 from bopclients.infrastructure.repositories.icp_repository import ICPRepository
 from bopclients.infrastructure.repositories.auth_repository import AuthSessionRepository, LoginAttemptRepository
+from bopclients.infrastructure.repositories.auth_token_repository import AuthTokenRepository
 from bopclients.domain.auth.password import PasswordHasher
 from bopclients.domain.auth.token import TokenService
 from bopclients.application.auth_service import AuthService
@@ -110,6 +111,7 @@ class RuntimeContainer:
     token_service: TokenService
     password_hasher: PasswordHasher
     auth_service: AuthService
+    auth_token_repo: Optional[AuthTokenRepository] = None
     invitation_repo: Optional[InvitationRepository] = None
     invitation_service: Optional[InvitationService] = None
     email_sender: Optional[ITransactionalEmailSender] = None
@@ -160,22 +162,6 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
     auth_session_repo = AuthSessionRepository(db)
     login_attempt_repo = LoginAttemptRepository(db)
 
-    # Auth & Security Foundation (P19)
-    password_hasher = PasswordHasher()
-    token_service = TokenService(
-        signing_key=settings.auth_signing_key,
-        access_token_expire_seconds=settings.auth_token_expire_seconds,
-    )
-    auth_service = AuthService(
-        user_repo=user_repo,
-        org_repo=org_repo,
-        session_repo=auth_session_repo,
-        attempt_repo=login_attempt_repo,
-        token_service=token_service,
-        password_hasher=password_hasher,
-        session_expire_days=settings.auth_session_expire_days,
-    )
-
     # Transactional Email Delivery (P25)
     email_sender: ITransactionalEmailSender
     if settings.email_provider == "resend":
@@ -189,6 +175,29 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         )
     else:
         email_sender = NullEmailSender()
+
+    # Auth & Security Foundation (P19 / P26)
+    password_hasher = PasswordHasher()
+    token_service = TokenService(
+        signing_key=settings.auth_signing_key,
+        access_token_expire_seconds=settings.auth_token_expire_seconds,
+    )
+    auth_token_repo = AuthTokenRepository(db)
+    auth_service = AuthService(
+        user_repo=user_repo,
+        org_repo=org_repo,
+        session_repo=auth_session_repo,
+        attempt_repo=login_attempt_repo,
+        token_service=token_service,
+        password_hasher=password_hasher,
+        auth_token_repo=auth_token_repo,
+        email_sender=email_sender,
+        app_url=settings.app_url,
+        default_from=settings.email_from,
+        session_expire_days=settings.auth_session_expire_days,
+        password_reset_token_expire_minutes=settings.password_reset_token_expire_minutes,
+        email_verification_token_expire_hours=settings.email_verification_token_expire_hours,
+    )
 
     # Secure Team Invitations (P24 / P25)
     invitation_repo = InvitationRepository(db)
@@ -352,6 +361,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         token_service=token_service,
         password_hasher=password_hasher,
         auth_service=auth_service,
+        auth_token_repo=auth_token_repo,
         invitation_repo=invitation_repo,
         invitation_service=invitation_service,
         email_sender=email_sender,

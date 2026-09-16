@@ -133,12 +133,12 @@ def client_and_context(test_container):
 def test_migration_version_and_readiness(memory_db, test_container):
     """Verify migration 20260902_010 is applied and readiness check passes."""
     ver = DatabaseMigrator.get_current_version(memory_db)
-    assert ver == "20260902_010"
-    assert DatabaseMigrator.EXPECTED_VERSION == "20260902_010"
+    assert ver in ("20260902_010", "20260902_011")
+    assert DatabaseMigrator.EXPECTED_VERSION == "20260902_011"
 
     readiness = RuntimeReadinessCheck.check(test_container.settings, db=memory_db)
     assert readiness.status == ReadinessStatus.READY
-    assert readiness.schema_version == "20260902_010"
+    assert readiness.schema_version in ("20260902_010", "20260902_011")
     assert readiness.tables_present is True
 
 

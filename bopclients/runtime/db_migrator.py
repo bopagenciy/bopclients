@@ -15,7 +15,7 @@ logger = logging.getLogger("bopclients.runtime.migrator")
 class DatabaseMigrator:
     """Manager handling database schema versioning and migration execution."""
 
-    EXPECTED_VERSION = "20260902_010"
+    EXPECTED_VERSION = "20260902_011"
 
     @classmethod
     def ensure_version_table(cls, db: Union[ForgeDB, BopDBConnection]):
@@ -633,6 +633,45 @@ class DatabaseMigrator:
         db.commit()
 
     @classmethod
+    def _apply_011_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool):
+        """Apply migration 20260902_011: email_verified_at column on users, and auth_tokens table."""
+        # 1. Add email_verified_at to users
+        if is_pg:
+            db.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at VARCHAR(50);")
+            db.commit()
+        else:
+            pragma_sql = "PRAGMA table_info(users)"
+            user_cols = {r["name"] for r in db.fetch_dicts(pragma_sql)}
+            if "email_verified_at" not in user_cols:
+                db.execute("ALTER TABLE users ADD COLUMN email_verified_at VARCHAR(50);")
+                db.commit()
+
+        # 2. Create auth_tokens table
+        tokens_sql = """
+            CREATE TABLE IF NOT EXISTS auth_tokens (
+                id VARCHAR(36) PRIMARY KEY,
+                user_id VARCHAR(36) NOT NULL,
+                token_hash VARCHAR(64) UNIQUE NOT NULL,
+                token_type VARCHAR(32) NOT NULL,
+                expires_at VARCHAR(50) NOT NULL,
+                consumed_at VARCHAR(50),
+                created_at VARCHAR(50) NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        """
+        db.execute(tokens_sql)
+
+        # 3. Create indexes
+        idx_stmts = [
+            "CREATE INDEX IF NOT EXISTS idx_auth_tokens_token_hash ON auth_tokens(token_hash);",
+            "CREATE INDEX IF NOT EXISTS idx_auth_tokens_user_type ON auth_tokens(user_id, token_type);",
+        ]
+        for idx in idx_stmts:
+            db.execute(idx)
+
+        db.commit()
+
+    @classmethod
     def migrate(cls, db: Union[ForgeDB, BopDBConnection]) -> str:
         """Run idempotent schema migration and record schema version.
         
@@ -679,7 +718,10 @@ class DatabaseMigrator:
         # 9. Apply 010 upgrades (organization_invitations)
         cls._apply_010_upgrades(db, is_pg)
 
-        # 10. Ensure version table and insert expected version idempotently
+        # 10. Apply 011 upgrades (email_verified_at, auth_tokens)
+        cls._apply_011_upgrades(db, is_pg)
+
+        # 11. Ensure version table and insert expected version idempotently
         cls.ensure_version_table(db)
         now_iso = datetime.now(timezone.utc).isoformat()
         p = "%s" if is_pg else "?"

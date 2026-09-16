@@ -28,6 +28,13 @@ import type {
   InvitationResendInput,
   InvitationPublicMetadata,
   InvitationAcceptResult,
+  PasswordResetRequestInput,
+  PasswordResetConfirmInput,
+  PasswordResetResponse,
+  EmailVerificationConfirmInput,
+  EmailVerificationResponse,
+  EmailVerificationResendInput,
+  EmailVerificationResendResponse,
 } from './types';
 
 export interface FetchOptions extends RequestInit {
@@ -326,5 +333,44 @@ export async function registerAndAcceptInvitation(
   return apiClient<InvitationAcceptResult>('/api/v1/invitations/register-and-accept', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * P26 Account Recovery & Email Verification API Helpers
+ */
+export async function requestPasswordReset(
+  payload: PasswordResetRequestInput
+): Promise<PasswordResetResponse> {
+  return apiClient<PasswordResetResponse>('/api/v1/auth/password-reset/request', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function confirmPasswordReset(
+  payload: PasswordResetConfirmInput
+): Promise<PasswordResetResponse> {
+  return apiClient<PasswordResetResponse>('/api/v1/auth/password-reset/confirm', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function confirmEmailVerification(
+  payload: EmailVerificationConfirmInput
+): Promise<EmailVerificationResponse> {
+  return apiClient<EmailVerificationResponse>('/api/v1/auth/email-verification/confirm', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function resendEmailVerification(
+  payload?: EmailVerificationResendInput
+): Promise<EmailVerificationResendResponse> {
+  return apiClient<EmailVerificationResendResponse>('/api/v1/auth/email-verification/resend', {
+    method: 'POST',
+    body: JSON.stringify(payload || {}),
   });
 }

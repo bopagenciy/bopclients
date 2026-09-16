@@ -31,6 +31,8 @@ from bopclients.application.auth_service import (
     AccountLockedError,
     SessionExpiredOrRevokedError,
     NoOrganizationMembershipError,
+    InvalidTokenError,
+    PasswordValidationError,
 )
 from bopclients.domain.auth.token import TokenSecurityError, TokenExpiredError, TokenInvalidError
 
@@ -77,6 +79,8 @@ TRANSLATION_CATALOG: Dict[str, Dict[str, str]] = {
         "errors.already_organization_member": "User is already a member of this organization.",
         "errors.duplicate_invitation": "A pending invitation already exists for this email.",
         "errors.invitation_email_mismatch": "The authenticated user email does not match this invitation.",
+        "errors.invalid_token": "Invalid or expired token.",
+        "errors.password_validation_failed": "Password does not meet the security requirements.",
     },
     "es": {
         "errors.invalid_credentials": "Credenciales inválidas. Correo o contraseña incorrectos.",
@@ -101,6 +105,8 @@ TRANSLATION_CATALOG: Dict[str, Dict[str, str]] = {
         "errors.already_organization_member": "El usuario ya es miembro de esta organización.",
         "errors.duplicate_invitation": "Ya existe una invitación pendiente para este correo.",
         "errors.invitation_email_mismatch": "El correo del usuario autenticado no coincide con esta invitación.",
+        "errors.invalid_token": "Token inválido o expirado.",
+        "errors.password_validation_failed": "La contraseña no cumple con los requisitos de seguridad.",
     },
 }
 
@@ -357,6 +363,30 @@ def register_exception_handlers(app) -> None:
         req_id = getattr(request.state, "request_id", "unknown")
         return create_error_response(
             status_code=status.HTTP_401_UNAUTHORIZED,
+            code=exc.code,
+            message=str(exc),
+            message_key=exc.message_key,
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(InvalidTokenError)
+    async def invalid_token_handler(request: Request, exc: InvalidTokenError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            code=exc.code,
+            message=str(exc),
+            message_key=exc.message_key,
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(PasswordValidationError)
+    async def password_validation_handler(request: Request, exc: PasswordValidationError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             code=exc.code,
             message=str(exc),
             message_key=exc.message_key,

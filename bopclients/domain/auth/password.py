@@ -126,6 +126,14 @@ class PasswordHasher:
         """Run constant-time dummy verification for timing attack mitigation."""
         self.verify("dummy_password", _DUMMY_ARGON2_HASH)
 
+    @staticmethod
+    def validate_password(password: str, min_length: int = 8) -> None:
+        """Validate password meets minimum length requirements."""
+        if not password or not isinstance(password, str):
+            raise ValueError("Password must be a non-empty string.")
+        if len(password) < min_length:
+            raise ValueError(f"Password must be at least {min_length} characters long.")
+
     # Convenience aliases
     verify_password = verify
     hash_password = hash
