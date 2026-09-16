@@ -49,6 +49,12 @@ describe('BopClients Frontend <-> P19 OpenAPI Contract Fidelity', () => {
     { path: '/api/v1/organizations/current/members', method: 'get', component: 'lib/api/client.ts getOrganizationMembers' },
     { path: '/api/v1/organizations/current/members/{user_id}', method: 'patch', component: 'lib/api/client.ts updateMemberRole' },
     { path: '/api/v1/organizations/current/members/{user_id}', method: 'delete', component: 'lib/api/client.ts removeOrganizationMember' },
+    { path: '/api/v1/organizations/current/invitations', method: 'get', component: 'lib/api/client.ts getOrganizationInvitations' },
+    { path: '/api/v1/organizations/current/invitations', method: 'post', component: 'lib/api/client.ts createOrganizationInvitation' },
+    { path: '/api/v1/organizations/current/invitations/{invitation_id}', method: 'delete', component: 'lib/api/client.ts revokeOrganizationInvitation' },
+    { path: '/api/v1/invitations/{token}', method: 'get', component: 'lib/api/client.ts getPublicInvitation' },
+    { path: '/api/v1/invitations/accept', method: 'post', component: 'lib/api/client.ts acceptInvitation' },
+    { path: '/api/v1/invitations/register-and-accept', method: 'post', component: 'lib/api/client.ts registerAndAcceptInvitation' },
   ];
 
   it('all frontend API route templates must exist in P19 OpenAPI specification', () => {

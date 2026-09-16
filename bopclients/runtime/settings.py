@@ -98,6 +98,9 @@ class RuntimeSettings:
     api_port: int = 8100
     api_host: str = "127.0.0.1"
 
+    # Team Invitations configuration (P24.1)
+    invitation_dev_token_exposure: bool = False
+
     @classmethod
     def from_env(cls) -> "RuntimeSettings":
         """Factory instantiating RuntimeSettings from environment variables."""
@@ -149,6 +152,10 @@ class RuntimeSettings:
         api_p = int(os.environ.get("BOP_API_PORT", "8100"))
         api_h = os.environ.get("BOP_API_HOST", "127.0.0.1").strip()
 
+        inv_dev_exposure = os.environ.get("BOP_INVITATION_DEV_TOKEN_EXPOSURE", "false").strip().lower() in ("true", "1", "yes")
+        if env == AppEnvironment.PRODUCTION:
+            inv_dev_exposure = False
+
         return cls(
             environment=env,
             database_url=db_url,
@@ -184,6 +191,7 @@ class RuntimeSettings:
             cors_allowed_origins=cors_origins,
             api_port=api_p,
             api_host=api_h,
+            invitation_dev_token_exposure=inv_dev_exposure,
         )
 
     def validate(self):
@@ -277,4 +285,5 @@ class RuntimeSettings:
             "cors_allowed_origins": self.cors_allowed_origins,
             "api_port": self.api_port,
             "api_host": self.api_host,
+            "invitation_dev_token_exposure": self.invitation_dev_token_exposure,
         }

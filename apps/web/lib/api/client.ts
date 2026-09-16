@@ -10,6 +10,24 @@
 
 import { translate } from '@/lib/i18n';
 import { Locale } from '@/lib/i18n/types';
+import type {
+  Organization,
+  OrganizationMember,
+  OrganizationUpdateInput,
+  BulkExportRequest,
+  BulkResearchRequest,
+  BulkResearchResponse,
+  BulkAddToCampaignRequest,
+  BulkAddToCampaignResponse,
+  BulkRecalculateScoreRequest,
+  BulkRecalculateScoreResponse,
+  BulkRecalculatePriorityRequest,
+  BulkRecalculatePriorityResponse,
+  OrganizationInvitation,
+  InvitationCreateInput,
+  InvitationPublicMetadata,
+  InvitationAcceptResult,
+} from './types';
 
 export interface FetchOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>;
@@ -136,20 +154,6 @@ export async function apiClient<T>(
 /**
  * P22 Prospect Operations & Bulk API Helpers
  */
-import type {
-  BulkAddToCampaignRequest,
-  BulkAddToCampaignResponse,
-  BulkRecalculateScoreRequest,
-  BulkRecalculateScoreResponse,
-  BulkRecalculatePriorityRequest,
-  BulkRecalculatePriorityResponse,
-  BulkResearchRequest,
-  BulkResearchResponse,
-  BulkExportRequest,
-  Organization,
-  OrganizationMember,
-  OrganizationUpdateInput,
-} from './types';
 
 export async function bulkAddToCampaign(
   payload: BulkAddToCampaignRequest
@@ -264,5 +268,52 @@ export async function updateMemberRole(
 export async function removeOrganizationMember(userId: string): Promise<void> {
   return apiClient<void>(`/api/v1/organizations/current/members/${userId}`, {
     method: 'DELETE',
+  });
+}
+
+/**
+ * P24 Team Invitations API Helpers
+ */
+export async function getOrganizationInvitations(status?: string): Promise<OrganizationInvitation[]> {
+  return apiClient<OrganizationInvitation[]>('/api/v1/organizations/current/invitations', {
+    method: 'GET',
+    params: status ? { status_filter: status } : undefined,
+  });
+}
+
+export async function createOrganizationInvitation(
+  payload: InvitationCreateInput
+): Promise<OrganizationInvitation> {
+  return apiClient<OrganizationInvitation>('/api/v1/organizations/current/invitations', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function revokeOrganizationInvitation(invitationId: string): Promise<void> {
+  return apiClient<void>(`/api/v1/organizations/current/invitations/${invitationId}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getPublicInvitation(token: string): Promise<InvitationPublicMetadata> {
+  return apiClient<InvitationPublicMetadata>(`/api/v1/invitations/${token}`, {
+    method: 'GET',
+  });
+}
+
+export async function acceptInvitation(token: string): Promise<InvitationAcceptResult> {
+  return apiClient<InvitationAcceptResult>('/api/v1/invitations/accept', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function registerAndAcceptInvitation(
+  payload: { token: string; name: string; password: string; locale?: string }
+): Promise<InvitationAcceptResult> {
+  return apiClient<InvitationAcceptResult>('/api/v1/invitations/register-and-accept', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }

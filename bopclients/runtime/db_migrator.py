@@ -15,7 +15,7 @@ logger = logging.getLogger("bopclients.runtime.migrator")
 class DatabaseMigrator:
     """Manager handling database schema versioning and migration execution."""
 
-    EXPECTED_VERSION = "20260902_009"
+    EXPECTED_VERSION = "20260902_010"
 
     @classmethod
     def ensure_version_table(cls, db: Union[ForgeDB, BopDBConnection]):
@@ -600,6 +600,39 @@ class DatabaseMigrator:
         db.commit()
 
     @classmethod
+    def _apply_010_upgrades(cls, db: Union[ForgeDB, BopDBConnection], is_pg: bool):
+        """Apply migration 20260902_010: organization_invitations table and indexes."""
+        invitations_sql = """
+            CREATE TABLE IF NOT EXISTS organization_invitations (
+                id VARCHAR(36) PRIMARY KEY,
+                organization_id VARCHAR(36) NOT NULL,
+                email_normalized VARCHAR(255) NOT NULL,
+                role VARCHAR(20) NOT NULL,
+                token_hash VARCHAR(64) UNIQUE NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'pending',
+                invited_by_user_id VARCHAR(36) NOT NULL,
+                expires_at VARCHAR(50) NOT NULL,
+                accepted_at VARCHAR(50),
+                revoked_at VARCHAR(50),
+                created_at VARCHAR(50) NOT NULL,
+                updated_at VARCHAR(50) NOT NULL,
+                FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+                FOREIGN KEY (invited_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+        """
+        db.execute(invitations_sql)
+
+        idx_stmts = [
+            "CREATE INDEX IF NOT EXISTS idx_invitations_org ON organization_invitations(organization_id);",
+            "CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON organization_invitations(token_hash);",
+            "CREATE INDEX IF NOT EXISTS idx_invitations_pending ON organization_invitations(organization_id, email_normalized, status);",
+        ]
+        for idx in idx_stmts:
+            db.execute(idx)
+
+        db.commit()
+
+    @classmethod
     def migrate(cls, db: Union[ForgeDB, BopDBConnection]) -> str:
         """Run idempotent schema migration and record schema version.
         
@@ -643,7 +676,10 @@ class DatabaseMigrator:
         # 8. Apply 009 upgrades (auth fields, auth sessions, login attempts)
         cls._apply_009_upgrades(db, is_pg)
 
-        # 9. Ensure version table and insert expected version idempotently
+        # 9. Apply 010 upgrades (organization_invitations)
+        cls._apply_010_upgrades(db, is_pg)
+
+        # 10. Ensure version table and insert expected version idempotently
         cls.ensure_version_table(db)
         now_iso = datetime.now(timezone.utc).isoformat()
         p = "%s" if is_pg else "?"

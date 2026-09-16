@@ -15,6 +15,8 @@ from bopclients.domain.lead_score import LeadScore
 from bopclients.domain.prospect_source import ProspectSource
 from bopclients.domain.research_run import ResearchRun
 from bopclients.domain.enrichment_result import EnrichmentResult
+from bopclients.domain.invitation import OrganizationInvitation
+from bopclients.domain.enums import InvitationStatus
 
 
 class IUserRepository(ABC):
@@ -56,6 +58,39 @@ class IOrganizationRepository(ABC):
 
     @abstractmethod
     def remove_member(self, org_id: str, user_id: str) -> bool: ...
+
+
+class IInvitationRepository(ABC):
+    """Abstract repository for Organization Invitations (Tenant Isolated)."""
+
+    @abstractmethod
+    def save(self, invitation: OrganizationInvitation, commit: bool = True) -> OrganizationInvitation: ...
+
+    @abstractmethod
+    def get_by_id(self, org_id: str, invitation_id: str) -> Optional[OrganizationInvitation]: ...
+
+    @abstractmethod
+    def get_by_token_hash(self, token_hash: str) -> Optional[OrganizationInvitation]: ...
+
+    @abstractmethod
+    def list_by_organization(
+        self, org_id: str, status: Optional[InvitationStatus] = None
+    ) -> List[OrganizationInvitation]: ...
+
+    @abstractmethod
+    def get_pending_by_email(
+        self, org_id: str, email_normalized: str
+    ) -> Optional[OrganizationInvitation]: ...
+
+    @abstractmethod
+    def update_status(
+        self,
+        invitation_id: str,
+        status: InvitationStatus,
+        accepted_at: Optional[str] = None,
+        revoked_at: Optional[str] = None,
+        commit: bool = True,
+    ) -> bool: ...
 
 
 class IServiceRepository(ABC):

@@ -14,8 +14,11 @@ import {
   updateMemberRole,
   removeOrganizationMember,
   updateOrganizationProfile,
+  getOrganizationInvitations,
+  createOrganizationInvitation,
+  revokeOrganizationInvitation,
 } from '@/lib/api/client';
-import { OrganizationMember, Role } from '@/lib/api/types';
+import { OrganizationMember, Role, OrganizationInvitation } from '@/lib/api/types';
 import {
   Building2,
   Users,
@@ -28,6 +31,10 @@ import {
   CheckCircle2,
   Loader2,
   Info,
+  UserPlus,
+  Copy,
+  Check,
+  Mail,
 } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -55,6 +62,19 @@ export default function SettingsPage() {
   const [removeModalTarget, setRemoveModalTarget] = useState<OrganizationMember | null>(null);
   const [isRemovingMember, setIsRemovingMember] = useState(false);
 
+  // Invitations state
+  const [invitations, setInvitations] = useState<OrganizationInvitation[]>([]);
+  const [isLoadingInvitations, setIsLoadingInvitations] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<string>('member');
+  const [isCreatingInvite, setIsCreatingInvite] = useState(false);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
+  const [hasCopiedLink, setHasCopiedLink] = useState(false);
+  const [revokeInviteTarget, setRevokeInviteTarget] = useState<OrganizationInvitation | null>(null);
+  const [isRevokingInvite, setIsRevokingInvite] = useState(false);
+
   const canManageOrg = hasPermission(activeRole, 'organization.manage');
   const canManageMembers = hasPermission(activeRole, 'members.manage');
 
@@ -79,11 +99,82 @@ export default function SettingsPage() {
     }
   }, [t]);
 
+  // Load invitations
+  const fetchInvitations = useCallback(async () => {
+    if (!canManageMembers) return;
+    setIsLoadingInvitations(true);
+    try {
+      const data = await getOrganizationInvitations('pending');
+      setInvitations(data);
+    } catch {
+      // Ignored non-critical
+    } finally {
+      setIsLoadingInvitations(false);
+    }
+  }, [canManageMembers]);
+
   useEffect(() => {
     if (activeTab === 'members') {
       fetchMembers();
+      fetchInvitations();
     }
-  }, [activeTab, fetchMembers]);
+  }, [activeTab, fetchMembers, fetchInvitations]);
+
+  const handleOpenInviteModal = () => {
+    setInviteEmail('');
+    setInviteRole('member');
+    setInviteError(null);
+    setIsInviteModalOpen(true);
+  };
+
+  const handleCreateInvite = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inviteEmail.trim()) return;
+    setIsCreatingInvite(true);
+    setInviteError(null);
+    try {
+      const res = await createOrganizationInvitation({
+        email: inviteEmail.trim(),
+        role: inviteRole.toLowerCase(),
+      });
+      setIsInviteModalOpen(false);
+      setInviteEmail('');
+      if (res.raw_token) {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const link = `${origin}/invite/${res.raw_token}`;
+        setCreatedInviteUrl(link);
+        setHasCopiedLink(false);
+      }
+      setMemberActionSuccess(t('settings.invitations.create_success'));
+      await fetchInvitations();
+    } catch (err: any) {
+      setInviteError(err?.message || t('settings.invitations.create_error'));
+    } finally {
+      setIsCreatingInvite(false);
+    }
+  };
+
+  const handleCopyInviteLink = () => {
+    if (createdInviteUrl && typeof navigator !== 'undefined') {
+      navigator.clipboard.writeText(createdInviteUrl);
+      setHasCopiedLink(true);
+    }
+  };
+
+  const handleRevokeInvite = async () => {
+    if (!revokeInviteTarget) return;
+    setIsRevokingInvite(true);
+    try {
+      await revokeOrganizationInvitation(revokeInviteTarget.id);
+      setMemberActionSuccess(t('settings.invitations.revoke_success'));
+      setRevokeInviteTarget(null);
+      await fetchInvitations();
+    } catch (err: any) {
+      setMemberActionError(err?.message || t('settings.invitations.revoke_error'));
+    } finally {
+      setIsRevokingInvite(false);
+    }
+  };
 
   // Save Organization Name
   const handleSaveOrganization = async (e: React.FormEvent) => {
@@ -419,6 +510,12 @@ export default function SettingsPage() {
                   {t('settings.team.read_only_badge')}
                 </Badge>
               )}
+              {canManageMembers && (
+                <Button size="sm" onClick={handleOpenInviteModal} className="gap-1.5">
+                  <UserPlus className="w-3.5 h-3.5" />
+                  {t('settings.invitations.invite_button')}
+                </Button>
+              )}
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -607,6 +704,83 @@ export default function SettingsPage() {
                 })}
               </div>
             )}
+
+            {/* Pending Invitations Section */}
+            {canManageMembers && (
+              <div className="pt-6 border-t border-border/60 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">
+                      {t('settings.invitations.title')}
+                    </h3>
+                    <p className="text-xs text-foreground-muted">
+                      {t('settings.invitations.subtitle')}
+                    </p>
+                  </div>
+                  <Badge variant="outline" size="sm">
+                    {invitations.length}
+                  </Badge>
+                </div>
+
+                {isLoadingInvitations && (
+                  <div className="py-6 flex items-center justify-center text-foreground-muted gap-2 text-xs">
+                    <Loader2 className="w-4 h-4 animate-spin text-brand-gold" />
+                    <span>{t('settings.team.loading')}</span>
+                  </div>
+                )}
+
+                {!isLoadingInvitations && invitations.length === 0 && (
+                  <div className="py-6 text-center text-xs text-foreground-muted bg-surface-subtle/30 rounded-lg border border-border/40">
+                    {t('settings.invitations.empty')}
+                  </div>
+                )}
+
+                {!isLoadingInvitations && invitations.length > 0 && (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead className="border-b border-border text-foreground-muted uppercase text-[10px] tracking-wider">
+                        <tr>
+                          <th className="py-2.5 px-4">{t('settings.invitations.col_email')}</th>
+                          <th className="py-2.5 px-4">{t('settings.invitations.col_role')}</th>
+                          <th className="py-2.5 px-4">{t('settings.invitations.col_invited')}</th>
+                          <th className="py-2.5 px-4">{t('settings.invitations.col_expires')}</th>
+                          <th className="py-2.5 px-4 text-right">{t('settings.invitations.col_actions')}</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {invitations.map((inv) => (
+                          <tr key={inv.id} className="hover:bg-surface-subtle/50 transition-colors">
+                            <td className="py-2.5 px-4 font-mono font-medium text-foreground">
+                              {inv.email}
+                            </td>
+                            <td className="py-2.5 px-4">
+                              {renderRoleBadge(inv.role as string)}
+                            </td>
+                            <td className="py-2.5 px-4 text-foreground-muted">
+                              {inv.created_at ? new Date(inv.created_at).toLocaleDateString() : '—'}
+                            </td>
+                            <td className="py-2.5 px-4 text-foreground-muted">
+                              {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : '—'}
+                            </td>
+                            <td className="py-2.5 px-4 text-right">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setRevokeInviteTarget(inv)}
+                                className="text-rose-600 hover:text-rose-700 hover:bg-rose-50 border-rose-200 text-[11px] h-7 px-2.5"
+                              >
+                                <Trash2 className="w-3 h-3 mr-1" />
+                                {t('settings.invitations.revoke_button')}
+                              </Button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -734,6 +908,163 @@ export default function SettingsPage() {
                 </>
               ) : (
                 t('settings.team.remove_modal_confirm')
+              )}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Invite Member Modal */}
+      <Modal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        title={t('settings.invitations.modal_title')}
+        description={t('settings.invitations.modal_desc')}
+      >
+        <form onSubmit={handleCreateInvite} className="space-y-4">
+          {inviteError && (
+            <div className="flex items-center gap-2 p-3 rounded-lg text-xs bg-rose-50 text-rose-800 border border-rose-200">
+              <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+              <span>{inviteError}</span>
+            </div>
+          )}
+
+          <div>
+            <label htmlFor="invite-email" className="text-xs font-semibold text-foreground">
+              {t('settings.invitations.email_label')}
+            </label>
+            <Input
+              id="invite-email"
+              type="email"
+              required
+              value={inviteEmail}
+              onChange={(e) => setInviteEmail(e.target.value)}
+              placeholder={t('settings.invitations.email_placeholder')}
+              className="mt-1"
+            />
+          </div>
+
+          <div>
+            <label htmlFor="invite-role" className="text-xs font-semibold text-foreground">
+              {t('settings.invitations.role_label')}
+            </label>
+            <select
+              id="invite-role"
+              value={inviteRole}
+              onChange={(e) => setInviteRole(e.target.value)}
+              className="mt-1 block w-full rounded-md border border-border bg-surface px-3 py-2 text-xs text-foreground shadow-sm focus:border-brand-gold focus:outline-none focus:ring-1 focus:ring-brand-gold"
+            >
+              {activeRole?.toUpperCase() === 'OWNER' && (
+                <option value="admin">{t('settings.invitations.role_admin')}</option>
+              )}
+              <option value="member">{t('settings.invitations.role_member')}</option>
+              <option value="viewer">{t('settings.invitations.role_viewer')}</option>
+            </select>
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setIsInviteModalOpen(false)}
+              disabled={isCreatingInvite}
+            >
+              {t('settings.invitations.modal_cancel')}
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isCreatingInvite || !inviteEmail.trim()}
+            >
+              {isCreatingInvite ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  {t('settings.invitations.modal_submitting')}
+                </>
+              ) : (
+                t('settings.invitations.modal_submit')
+              )}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Invitation Link Modal */}
+      <Modal
+        isOpen={!!createdInviteUrl}
+        onClose={() => setCreatedInviteUrl(null)}
+        title={t('settings.invitations.link_modal_title')}
+        description={t('settings.invitations.link_modal_desc')}
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-2 p-2.5 rounded-lg border border-border bg-surface-subtle/50 font-mono text-xs break-all">
+            <span className="flex-1">{createdInviteUrl}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleCopyInviteLink}
+              className="shrink-0 gap-1 text-xs"
+            >
+              {hasCopiedLink ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                  {t('settings.invitations.link_copied')}
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  {t('settings.invitations.copy_button')}
+                </>
+              )}
+            </Button>
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button size="sm" onClick={() => setCreatedInviteUrl(null)}>
+              {t('settings.invitations.close_button')}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Revoke Invitation Modal */}
+      <Modal
+        isOpen={!!revokeInviteTarget}
+        onClose={() => setRevokeInviteTarget(null)}
+        title={t('settings.invitations.revoke_confirm_title')}
+      >
+        <div className="space-y-4">
+          <p className="text-xs text-foreground-muted leading-relaxed">
+            {t('settings.invitations.revoke_confirm_desc', {
+              email: revokeInviteTarget?.email || '',
+            })}
+          </p>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-border">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setRevokeInviteTarget(null)}
+              disabled={isRevokingInvite}
+            >
+              {t('settings.invitations.revoke_cancel')}
+            </Button>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={handleRevokeInvite}
+              disabled={isRevokingInvite}
+              className="bg-rose-600 hover:bg-rose-700 text-white"
+            >
+              {isRevokingInvite ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                  {t('common.loading')}
+                </>
+              ) : (
+                t('settings.invitations.revoke_confirm_button')
               )}
             </Button>
           </div>

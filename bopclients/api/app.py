@@ -17,6 +17,7 @@ from bopclients.api.middleware import (
 from bopclients.api.routers.auth_router import router as auth_router
 from bopclients.api.routers.me_router import router as me_router
 from bopclients.api.routers.organizations_router import router as organizations_router
+from bopclients.api.routers.invitations_router import router as invitations_router
 from bopclients.api.routers.campaigns_router import router as campaigns_router
 from bopclients.api.routers.icps_router import router as icps_router
 from bopclients.api.routers.target_markets_router import router as target_markets_router
@@ -97,6 +98,7 @@ def create_bopclients_api_app(
     app.include_router(research_router)
     app.include_router(monitoring_router)
     app.include_router(integrations_router)
+    app.include_router(invitations_router)
 
     return app
 

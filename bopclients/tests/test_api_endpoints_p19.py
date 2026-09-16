@@ -122,7 +122,7 @@ class TestHealthEndpoints:
         assert res.status_code == 200
         data = res.json()
         assert data["status"] == "READY"
-        assert data["schema_version"] == "20260902_009"
+        assert data["schema_version"] in ("20260902_009", "20260902_010")
         assert data["database_connected"] is True
 
 

@@ -16,6 +16,13 @@ from bopclients.domain.exceptions import (
     TenantAccessError,
     LastOwnerProtectionError,
     InvalidRoleTransitionError,
+    InvitationNotFoundError,
+    InvitationExpiredError,
+    InvitationAlreadyAcceptedError,
+    InvitationRevokedError,
+    AlreadyOrganizationMemberError,
+    DuplicateInvitationError,
+    InvitationEmailMismatchError,
 )
 from bopclients.application.auth_service import (
     AuthError,
@@ -63,6 +70,13 @@ TRANSLATION_CATALOG: Dict[str, Dict[str, str]] = {
         "errors.method_not_allowed": "Method not allowed.",
         "errors.last_owner_protection": "Cannot demote or remove the last owner of the organization.",
         "errors.invalid_role_transition": "Invalid role transition.",
+        "errors.invitation_not_found": "Invitation not found.",
+        "errors.invitation_expired": "This invitation has expired.",
+        "errors.invitation_already_accepted": "This invitation has already been accepted.",
+        "errors.invitation_revoked": "This invitation has been revoked.",
+        "errors.already_organization_member": "User is already a member of this organization.",
+        "errors.duplicate_invitation": "A pending invitation already exists for this email.",
+        "errors.invitation_email_mismatch": "The authenticated user email does not match this invitation.",
     },
     "es": {
         "errors.invalid_credentials": "Credenciales inválidas. Correo o contraseña incorrectos.",
@@ -80,6 +94,13 @@ TRANSLATION_CATALOG: Dict[str, Dict[str, str]] = {
         "errors.method_not_allowed": "Método no permitido.",
         "errors.last_owner_protection": "No se puede degradar o eliminar al último propietario de la organización.",
         "errors.invalid_role_transition": "Transición de rol no permitida.",
+        "errors.invitation_not_found": "Invitación no encontrada.",
+        "errors.invitation_expired": "Esta invitación ha expirado.",
+        "errors.invitation_already_accepted": "Esta invitación ya ha sido aceptada.",
+        "errors.invitation_revoked": "Esta invitación ha sido revocada.",
+        "errors.already_organization_member": "El usuario ya es miembro de esta organización.",
+        "errors.duplicate_invitation": "Ya existe una invitación pendiente para este correo.",
+        "errors.invitation_email_mismatch": "El correo del usuario autenticado no coincide con esta invitación.",
     },
 }
 
@@ -183,6 +204,90 @@ def register_exception_handlers(app) -> None:
             code="INVALID_ROLE_TRANSITION",
             message=str(exc) or "Invalid role transition.",
             message_key="errors.invalid_role_transition",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(InvitationNotFoundError)
+    async def invitation_not_found_handler(request: Request, exc: InvitationNotFoundError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_404_NOT_FOUND,
+            code="INVITATION_NOT_FOUND",
+            message=str(exc) or "Invitation not found.",
+            message_key="errors.invitation_not_found",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(InvitationExpiredError)
+    async def invitation_expired_handler(request: Request, exc: InvitationExpiredError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_410_GONE,
+            code="INVITATION_EXPIRED",
+            message=str(exc) or "This invitation has expired.",
+            message_key="errors.invitation_expired",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(InvitationAlreadyAcceptedError)
+    async def invitation_already_accepted_handler(request: Request, exc: InvitationAlreadyAcceptedError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="INVITATION_ALREADY_ACCEPTED",
+            message=str(exc) or "This invitation has already been accepted.",
+            message_key="errors.invitation_already_accepted",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(InvitationRevokedError)
+    async def invitation_revoked_handler(request: Request, exc: InvitationRevokedError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_410_GONE,
+            code="INVITATION_REVOKED",
+            message=str(exc) or "This invitation has been revoked.",
+            message_key="errors.invitation_revoked",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(AlreadyOrganizationMemberError)
+    async def already_organization_member_handler(request: Request, exc: AlreadyOrganizationMemberError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="ALREADY_ORGANIZATION_MEMBER",
+            message=str(exc) or "User is already a member of this organization.",
+            message_key="errors.already_organization_member",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(DuplicateInvitationError)
+    async def duplicate_invitation_handler(request: Request, exc: DuplicateInvitationError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_409_CONFLICT,
+            code="DUPLICATE_INVITATION",
+            message=str(exc) or "A pending invitation already exists for this email.",
+            message_key="errors.duplicate_invitation",
+            request_id=req_id,
+            request=request,
+        )
+
+    @app.exception_handler(InvitationEmailMismatchError)
+    async def invitation_email_mismatch_handler(request: Request, exc: InvitationEmailMismatchError):
+        req_id = getattr(request.state, "request_id", "unknown")
+        return create_error_response(
+            status_code=status.HTTP_403_FORBIDDEN,
+            code="INVITATION_EMAIL_MISMATCH",
+            message=str(exc) or "The authenticated user email does not match this invitation.",
+            message_key="errors.invitation_email_mismatch",
             request_id=req_id,
             request=request,
         )

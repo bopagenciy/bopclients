@@ -2,7 +2,7 @@
 
 import uuid
 from datetime import datetime, timezone
-from typing import List
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Response, status
 from bopclients.api.schemas.organizations import (
     OrganizationResponse,
@@ -11,6 +11,10 @@ from bopclients.api.schemas.organizations import (
     MemberResponse,
     MemberCreateRequest,
     MemberRoleUpdate,
+)
+from bopclients.api.schemas.invitations import (
+    InvitationCreateRequest,
+    InvitationResponse,
 )
 from bopclients.api.dependencies import get_tenant_context, get_container, require_permission, get_current_user
 from bopclients.domain.auth.context import TenantContext, UserPrincipal
@@ -268,6 +272,101 @@ async def remove_organization_member(
             raise LastOwnerProtectionError("Cannot remove the last owner of the organization.")
 
     container.org_repo.remove_member(tenant.organization_id, user_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/current/invitations",
+    response_model=InvitationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create organization invitation (Owner/Admin only)",
+)
+async def create_organization_invitation(
+    payload: InvitationCreateRequest,
+    tenant: TenantContext = Depends(require_permission(Permission.MEMBERS_MANAGE)),
+    current_user: UserPrincipal = Depends(get_current_user),
+    container: RuntimeContainer = Depends(get_container),
+) -> InvitationResponse:
+    invitation, raw_token = container.invitation_service.create_invitation(
+        inviter_user_id=current_user.user_id,
+        org_id=tenant.organization_id,
+        email=str(payload.email),
+        role=payload.role,
+    )
+    # Zero raw token exposure in production responses.
+    # Expose raw_token/invite_url ONLY if explicitly enabled for dev/test via settings.
+    is_dev_exposure = getattr(container.settings, "invitation_dev_token_exposure", False)
+    exposed_raw_token = raw_token if is_dev_exposure else None
+    exposed_invite_url = f"/invite/{raw_token}" if is_dev_exposure else None
+
+    return InvitationResponse(
+        id=invitation.id,
+        organization_id=invitation.organization_id,
+        email=invitation.email_normalized,
+        role=invitation.role.value if isinstance(invitation.role, MemberRole) else str(invitation.role),
+        status=invitation.status.value,
+        invited_by_user_id=invitation.invited_by_user_id,
+        expires_at=invitation.expires_at,
+        created_at=invitation.created_at,
+        accepted_at=invitation.accepted_at,
+        revoked_at=invitation.revoked_at,
+        delivery_status="not_configured",
+        raw_token=exposed_raw_token,
+        invite_url=exposed_invite_url,
+    )
+
+
+@router.get(
+    "/current/invitations",
+    response_model=List[InvitationResponse],
+    status_code=status.HTTP_200_OK,
+    summary="List organization invitations (Owner/Admin only)",
+)
+async def list_organization_invitations(
+    status_filter: Optional[str] = None,
+    tenant: TenantContext = Depends(require_permission(Permission.MEMBERS_READ)),
+    container: RuntimeContainer = Depends(get_container),
+) -> List[InvitationResponse]:
+    invitations = container.invitation_service.list_invitations(
+        org_id=tenant.organization_id,
+        status=status_filter,
+    )
+    return [
+        InvitationResponse(
+            id=inv.id,
+            organization_id=inv.organization_id,
+            email=inv.email_normalized,
+            role=inv.role.value if isinstance(inv.role, MemberRole) else str(inv.role),
+            status=inv.status.value,
+            invited_by_user_id=inv.invited_by_user_id,
+            expires_at=inv.expires_at,
+            created_at=inv.created_at,
+            accepted_at=inv.accepted_at,
+            revoked_at=inv.revoked_at,
+            delivery_status="not_configured",
+            raw_token=None,
+            invite_url=None,
+        )
+        for inv in invitations
+    ]
+
+
+@router.delete(
+    "/current/invitations/{invitation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Revoke organization invitation (Owner/Admin only)",
+)
+async def revoke_organization_invitation(
+    invitation_id: str,
+    tenant: TenantContext = Depends(require_permission(Permission.MEMBERS_MANAGE)),
+    current_user: UserPrincipal = Depends(get_current_user),
+    container: RuntimeContainer = Depends(get_container),
+):
+    container.invitation_service.revoke_invitation(
+        actor_user_id=current_user.user_id,
+        org_id=tenant.organization_id,
+        invitation_id=invitation_id,
+    )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 

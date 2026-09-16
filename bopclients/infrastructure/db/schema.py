@@ -553,6 +553,25 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         is_successful BOOLEAN NOT NULL
     );
     """,
+    # 33. organization_invitations (Pending and historical tenant invitations)
+    """
+    CREATE TABLE IF NOT EXISTS organization_invitations (
+        id VARCHAR(36) PRIMARY KEY,
+        organization_id VARCHAR(36) NOT NULL,
+        email_normalized VARCHAR(255) NOT NULL,
+        role VARCHAR(20) NOT NULL,
+        token_hash VARCHAR(64) UNIQUE NOT NULL,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        invited_by_user_id VARCHAR(36) NOT NULL,
+        expires_at VARCHAR(50) NOT NULL,
+        accepted_at VARCHAR(50),
+        revoked_at VARCHAR(50),
+        created_at VARCHAR(50) NOT NULL,
+        updated_at VARCHAR(50) NOT NULL,
+        FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+        FOREIGN KEY (invited_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+    );
+    """,
 ]
 
 # Indexes for multi-tenant isolation and performance
@@ -604,4 +623,7 @@ BOPCLIENTS_DDL_INDEXES: List[str] = [
     "CREATE INDEX IF NOT EXISTS idx_auth_sessions_token_hash ON bop_auth_sessions(token_hash);",
     "CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON bop_auth_sessions(user_id, expires_at);",
     "CREATE INDEX IF NOT EXISTS idx_login_attempts_lookup ON bop_auth_login_attempts(identifier_hash, attempt_time);",
+    "CREATE INDEX IF NOT EXISTS idx_invitations_org ON organization_invitations(organization_id);",
+    "CREATE INDEX IF NOT EXISTS idx_invitations_token_hash ON organization_invitations(token_hash);",
+    "CREATE INDEX IF NOT EXISTS idx_invitations_pending ON organization_invitations(organization_id, email_normalized, status);",
 ]

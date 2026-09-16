@@ -989,6 +989,246 @@
         }
       }
     },
+    "/api/v1/organizations/current/invitations": {
+      "post": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Create organization invitation (Owner/Admin only)",
+        "operationId": "create_organization_invitation_api_v1_organizations_current_invitations_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "X-Bop-Organization-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Bop-Organization-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "List organization invitations (Owner/Admin only)",
+        "operationId": "list_organization_invitations_api_v1_organizations_current_invitations_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "status_filter",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Filter"
+            }
+          },
+          {
+            "name": "X-Bop-Organization-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Bop-Organization-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/InvitationResponse"
+                  },
+                  "title": "Response List Organization Invitations Api V1 Organizations Current Invitations Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/organizations/current/invitations/{invitation_id}": {
+      "delete": {
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Revoke organization invitation (Owner/Admin only)",
+        "operationId": "revoke_organization_invitation_api_v1_organizations_current_invitations__invitation_id__delete",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "invitation_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Invitation Id"
+            }
+          },
+          {
+            "name": "X-Bop-Organization-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Bop-Organization-Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/organizations": {
       "get": {
         "tags": [
@@ -5650,6 +5890,156 @@
           }
         }
       }
+    },
+    "/api/v1/invitations/{token}": {
+      "get": {
+        "tags": [
+          "Invitations"
+        ],
+        "summary": "Inspect invitation metadata by raw token (Public)",
+        "description": "Inspect invitation details prior to accepting. Does not leak sensitive tokens or internal IDs.",
+        "operationId": "get_invitation_by_token_api_v1_invitations__token__get",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationPublicResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations/accept": {
+      "post": {
+        "tags": [
+          "Invitations"
+        ],
+        "summary": "Accept team invitation for authenticated user",
+        "description": "Atomically accept an invitation for the logged-in user.\n\nValidates that current user's email matches the invitation email.",
+        "operationId": "accept_invitation_api_v1_invitations_accept_post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationAcceptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationAcceptResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/invitations/register-and-accept": {
+      "post": {
+        "tags": [
+          "Invitations"
+        ],
+        "summary": "Register account and accept team invitation (Public)",
+        "description": "Create a new user account with invitation email and atomically accept the invitation.",
+        "operationId": "register_and_accept_invitation_api_v1_invitations_register_and_accept_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InvitationRegisterAcceptRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationAcceptResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7123,6 +7513,316 @@
         "type": "object",
         "title": "ICPUpdate",
         "description": "Ideal Customer Profile update schema."
+      },
+      "InvitationAcceptRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "description": "Raw invitation token"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "InvitationAcceptRequest",
+        "description": "Payload for accepting an invitation by authenticated user."
+      },
+      "InvitationAcceptResponse": {
+        "properties": {
+          "membership_id": {
+            "type": "string",
+            "title": "Membership Id"
+          },
+          "organization_id": {
+            "type": "string",
+            "title": "Organization Id"
+          },
+          "organization_name": {
+            "type": "string",
+            "title": "Organization Name"
+          },
+          "organization_slug": {
+            "type": "string",
+            "title": "Organization Slug"
+          },
+          "user_id": {
+            "type": "string",
+            "title": "User Id"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "accepted_at": {
+            "type": "string",
+            "title": "Accepted At"
+          },
+          "access_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Access Token"
+          },
+          "refresh_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Refresh Token"
+          },
+          "token_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token Type"
+          },
+          "expires_in": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires In"
+          }
+        },
+        "type": "object",
+        "required": [
+          "membership_id",
+          "organization_id",
+          "organization_name",
+          "organization_slug",
+          "user_id",
+          "role",
+          "accepted_at"
+        ],
+        "title": "InvitationAcceptResponse",
+        "description": "Response returned upon successful invitation acceptance."
+      },
+      "InvitationCreateRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email",
+            "description": "Invited user email address"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role",
+            "description": "Assigned role: admin, member, or viewer",
+            "default": "member"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "InvitationCreateRequest",
+        "description": "Payload for creating a new team invitation."
+      },
+      "InvitationPublicResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "organization_name": {
+            "type": "string",
+            "title": "Organization Name"
+          },
+          "organization_slug": {
+            "type": "string",
+            "title": "Organization Slug"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "is_expired": {
+            "type": "boolean",
+            "title": "Is Expired"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "organization_name",
+          "organization_slug",
+          "email",
+          "role",
+          "status",
+          "expires_at",
+          "is_expired"
+        ],
+        "title": "InvitationPublicResponse",
+        "description": "Sanitized invitation metadata for public acceptance page."
+      },
+      "InvitationRegisterAcceptRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token",
+            "description": "Raw invitation token"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Full name of user"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password",
+            "description": "User password (min 8 chars)"
+          },
+          "locale": {
+            "type": "string",
+            "title": "Locale",
+            "description": "Preferred locale ('en' or 'es')",
+            "default": "en"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "name",
+          "password"
+        ],
+        "title": "InvitationRegisterAcceptRequest",
+        "description": "Payload for registering and accepting an invitation simultaneously."
+      },
+      "InvitationResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "organization_id": {
+            "type": "string",
+            "title": "Organization Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "invited_by_user_id": {
+            "type": "string",
+            "title": "Invited By User Id"
+          },
+          "expires_at": {
+            "type": "string",
+            "title": "Expires At"
+          },
+          "created_at": {
+            "type": "string",
+            "title": "Created At"
+          },
+          "accepted_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accepted At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "delivery_status": {
+            "type": "string",
+            "title": "Delivery Status",
+            "description": "Delivery status of the invitation email (e.g. not_configured, pending, delivered, failed).",
+            "default": "not_configured"
+          },
+          "raw_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Token",
+            "description": "Dev/test only raw token. Never exposed in production (None by default)."
+          },
+          "invite_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Invite Url",
+            "description": "Dev/test only invite URL. Never exposed in production (None by default)."
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "organization_id",
+          "email",
+          "role",
+          "status",
+          "invited_by_user_id",
+          "expires_at",
+          "created_at"
+        ],
+        "title": "InvitationResponse",
+        "description": "Detailed invitation envelope returned to tenant administrators."
       },
       "LoginRequest": {
         "properties": {

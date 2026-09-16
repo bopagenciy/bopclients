@@ -434,3 +434,49 @@ export interface ProspectDetail {
     recommended_interval_days?: number;
   } | null;
 }
+
+export interface OrganizationInvitation {
+  id: string;
+  organization_id: string;
+  email: string;
+  role: Role | string;
+  status: 'pending' | 'accepted' | 'revoked' | 'expired' | string;
+  invited_by_user_id: string;
+  expires_at: string;
+  created_at: string;
+  accepted_at?: string | null;
+  revoked_at?: string | null;
+  delivery_status?: string;
+  raw_token?: string | null;
+  invite_url?: string | null;
+}
+
+export interface InvitationCreateInput {
+  email: string;
+  role?: string;
+}
+
+export interface InvitationPublicMetadata {
+  id: string;
+  organization_name: string;
+  organization_slug: string;
+  email: string;
+  role: string;
+  status: string;
+  expires_at: string;
+  is_expired: boolean;
+}
+
+export interface InvitationAcceptResult {
+  membership_id: string;
+  organization_id: string;
+  organization_name: string;
+  organization_slug: string;
+  user_id: string;
+  role: string;
+  accepted_at: string;
+  access_token?: string | null;
+  refresh_token?: string | null;
+  token_type?: string | null;
+  expires_in?: number | null;
+}

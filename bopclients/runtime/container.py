@@ -8,11 +8,13 @@ from bopclients.runtime.settings import RuntimeSettings
 from bopclients.runtime.readiness import RuntimeReadinessCheck, ReadinessStatus
 
 from bopclients.infrastructure.repositories.organization_repository import OrganizationRepository, UserRepository
+from bopclients.infrastructure.repositories.invitation_repository import InvitationRepository
 from bopclients.infrastructure.repositories.icp_repository import ICPRepository
 from bopclients.infrastructure.repositories.auth_repository import AuthSessionRepository, LoginAttemptRepository
 from bopclients.domain.auth.password import PasswordHasher
 from bopclients.domain.auth.token import TokenService
 from bopclients.application.auth_service import AuthService
+from bopclients.application.invitation_service import InvitationService
 from bopclients.infrastructure.repositories.campaign_repository import CampaignRepository
 from bopclients.infrastructure.repositories.prospect_repository import ProspectRepository
 from bopclients.infrastructure.repositories.prospect_priority_repository import ProspectPriorityRepository
@@ -104,6 +106,8 @@ class RuntimeContainer:
     token_service: TokenService
     password_hasher: PasswordHasher
     auth_service: AuthService
+    invitation_repo: Optional[InvitationRepository] = None
+    invitation_service: Optional[InvitationService] = None
     search_service: Optional[SearchService] = None
     prospect_service: Optional[ProspectService] = None
     opportunity_scorer: Optional[RuleBasedOpportunityScorer] = None
@@ -165,6 +169,15 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         token_service=token_service,
         password_hasher=password_hasher,
         session_expire_days=settings.auth_session_expire_days,
+    )
+
+    # Secure Team Invitations (P24)
+    invitation_repo = InvitationRepository(db)
+    invitation_service = InvitationService(
+        inv_repo=invitation_repo,
+        org_repo=org_repo,
+        user_repo=user_repo,
+        auth_service=auth_service,
     )
 
     # Integration Outbox Dispatcher & Publisher Worker (P18 / P18.1)
@@ -317,6 +330,8 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         token_service=token_service,
         password_hasher=password_hasher,
         auth_service=auth_service,
+        invitation_repo=invitation_repo,
+        invitation_service=invitation_service,
         search_service=search_service,
         prospect_service=prospect_service,
         opportunity_scorer=opportunity_scorer,

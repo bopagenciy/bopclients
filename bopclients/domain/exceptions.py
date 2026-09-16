@@ -75,3 +75,31 @@ class AIProviderError(AIResearchError):
 
 class AIResponseValidationError(AIResearchError):
     """Raised when AI provider response fails JSON or schema validation."""
+
+
+class InvitationNotFoundError(EntityNotFoundError):
+    """Raised when an invitation is not found by ID or token hash."""
+
+
+class InvitationExpiredError(BopClientsDomainError):
+    """Raised when attempting to accept or interact with an expired invitation."""
+
+
+class InvitationAlreadyAcceptedError(BopClientsDomainError):
+    """Raised when an invitation has already been accepted."""
+
+
+class InvitationRevokedError(BopClientsDomainError):
+    """Raised when an invitation has been revoked."""
+
+
+class AlreadyOrganizationMemberError(BopClientsDomainError):
+    """Raised when attempting to invite or accept for a user already in the organization."""
+
+
+class DuplicateInvitationError(BopClientsDomainError):
+    """Raised when an active pending invitation already exists for the email and organization."""
+
+
+class InvitationEmailMismatchError(BopClientsDomainError):
+    """Raised when accepting user's email does not match the invitation email."""

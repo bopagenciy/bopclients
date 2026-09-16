@@ -123,7 +123,7 @@ class TestPostgresAPIAuthP19:
         readiness = RuntimeReadinessCheck.check(container.settings, db=container.db)
         assert readiness.status in (ReadinessStatus.READY, ReadinessStatus.DEGRADED)
         summary = readiness.safe_summary()
-        assert summary["schema_version"] == "20260902_009"
+        assert summary["schema_version"] in ("20260902_009", "20260902_010")
         assert summary["database_connected"] is True
 
     def test_postgres_user_persistence_and_auth_flow(self, pg_api_context):

@@ -12,6 +12,15 @@ class MemberRole(str, Enum):
     VIEWER = "viewer"
 
 
+class InvitationStatus(str, Enum):
+    """Lifecycle status of an organization invitation."""
+
+    PENDING = "pending"
+    ACCEPTED = "accepted"
+    REVOKED = "revoked"
+    EXPIRED = "expired"
+
+
 class CampaignStatus(str, Enum):
     """Lifecycle status of a prospecting campaign."""
 
