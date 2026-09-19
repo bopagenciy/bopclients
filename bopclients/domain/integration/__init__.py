@@ -16,6 +16,7 @@ from bopclients.domain.integration.outbox import OutboxStatus, OutboxRecord
 from bopclients.domain.integration.inbox import InboxStatus, InboxRecord
 from bopclients.domain.integration.destination import (
     DestinationTransportType,
+    DestinationAuthMode,
     IntegrationDestination,
     IntegrationSubscription,
 )
@@ -50,6 +51,7 @@ __all__ = [
     "InboxStatus",
     "InboxRecord",
     "DestinationTransportType",
+    "DestinationAuthMode",
     "IntegrationDestination",
     "IntegrationSubscription",
     "DeliveryStatus",

@@ -10,14 +10,18 @@ import logging
 import re
 import socket
 import time
-from typing import Optional, Dict, Any, Callable, Union
+from typing import Optional, Dict, Any, Callable, Union, Set, Tuple
 from urllib.parse import urlparse
 import httpcore
 from httpcore._backends.sync import SyncBackend, SyncStream
 from httpcore._exceptions import ConnectError, ConnectTimeout, map_exceptions
 import httpx
 
-from bopclients.domain.integration.destination import IntegrationDestination, DestinationTransportType
+from bopclients.domain.integration.destination import (
+    IntegrationDestination,
+    DestinationTransportType,
+    DestinationAuthMode,
+)
 from bopclients.domain.integration.delivery import (
     TransportPublishResult,
     TransportResultStatus,
@@ -74,7 +78,7 @@ def is_ip_disallowed(raw_ip: Union[ipaddress.IPv4Address, ipaddress.IPv6Address]
     return False
 
 
-def normalize_and_validate_hostname(host: str) -> str:
+def normalize_and_validate_hostname(host: str, allow_loopback: bool = False) -> str:
     """Validate and normalize hostname string rejecting invalid formats or control characters."""
     if not host or not host.strip():
         raise ValueError("SSRF violation: empty hostname")
@@ -83,17 +87,29 @@ def normalize_and_validate_hostname(host: str) -> str:
         raise ValueError("SSRF violation: invalid dot-only hostname")
     if any(c in host_clean for c in ("\r", "\n", "\t", " ", "@")):
         raise ValueError(f"SSRF violation: invalid characters in hostname '{host}'")
-    if host_clean in ("localhost", "127.0.0.1", "::1", "0.0.0.0", "metadata.google.internal"):
-        raise ValueError(f"SSRF violation: loopback/metadata host '{host_clean}' is prohibited")
+    if not allow_loopback and host_clean in ("localhost", "127.0.0.1", "::1", "0.0.0.0"):
+        raise ValueError(f"SSRF violation: loopback host '{host_clean}' is prohibited")
+    if host_clean == "metadata.google.internal":
+        raise ValueError("SSRF violation: cloud metadata host is prohibited")
     return host_clean
 
 
-def validate_url_ssrf(url: str, allow_insecure_http: bool = False) -> None:
+def validate_url_ssrf(
+    url: str,
+    allow_insecure_http: bool = False,
+    allowed_local_destinations: Optional[Set[Tuple[str, int]]] = None,
+) -> None:
     """Preflight validation of endpoint URL against SSRF vulnerabilities."""
     parsed = urlparse(url)
     scheme = (parsed.scheme or "").lower()
+    raw_host = (parsed.hostname or "").strip().lower()
+    port = parsed.port or (443 if scheme == "https" else 80)
 
-    if scheme == "http" and not allow_insecure_http:
+    is_allowed_local = False
+    if allowed_local_destinations and (raw_host, port) in allowed_local_destinations:
+        is_allowed_local = True
+
+    if scheme == "http" and not (allow_insecure_http or is_allowed_local):
         raise ValueError(f"SSRF violation: insecure HTTP scheme is prohibited in production ('{url}')")
     elif scheme not in ("http", "https"):
         raise ValueError(f"SSRF violation: unsupported scheme '{scheme}' in '{url}'")
@@ -101,13 +117,17 @@ def validate_url_ssrf(url: str, allow_insecure_http: bool = False) -> None:
     if parsed.username or parsed.password:
         raise ValueError(f"SSRF violation: credentials in URL are prohibited ('{url}')")
 
-    host_clean = normalize_and_validate_hostname(parsed.hostname or "")
+    host_clean = normalize_and_validate_hostname(raw_host, allow_loopback=is_allowed_local)
 
     # Check if host is direct IP literal
     try:
         ip = ipaddress.ip_address(host_clean)
-        if is_ip_disallowed(ip):
-            raise ValueError(f"SSRF violation: disallowed IP address '{host_clean}'")
+        if is_allowed_local:
+            if str(ip) == "169.254.169.254" or ip.is_multicast:
+                raise ValueError(f"SSRF violation: disallowed IP address '{host_clean}'")
+        else:
+            if is_ip_disallowed(ip):
+                raise ValueError(f"SSRF violation: disallowed IP address '{host_clean}'")
         return
     except ValueError as ex:
         if "SSRF violation" in str(ex):
@@ -120,8 +140,12 @@ def validate_url_ssrf(url: str, allow_insecure_http: bool = False) -> None:
             sockaddr = entry[4]
             ip_str = sockaddr[0]
             ip_obj = ipaddress.ip_address(ip_str)
-            if is_ip_disallowed(ip_obj):
-                raise ValueError(f"SSRF violation: hostname '{host_clean}' resolves to disallowed IP '{ip_str}'")
+            if is_allowed_local:
+                if str(ip_obj) == "169.254.169.254" or ip_obj.is_multicast:
+                    raise ValueError(f"SSRF violation: hostname '{host_clean}' resolves to prohibited IP '{ip_str}'")
+            else:
+                if is_ip_disallowed(ip_obj):
+                    raise ValueError(f"SSRF violation: hostname '{host_clean}' resolves to disallowed IP '{ip_str}'")
     except socket.gaierror:
         # If host cannot be resolved during pre-validation, connection time will handle DNS failure
         pass
@@ -137,8 +161,13 @@ class SafeSyncBackend(SyncBackend):
     - Preserves TLS SNI & certificate verification by retaining server_hostname in start_tls.
     """
 
-    def __init__(self, allow_insecure_http: bool = False):
+    def __init__(
+        self,
+        allow_insecure_http: bool = False,
+        allowed_local_destinations: Optional[Set[Tuple[str, int]]] = None,
+    ):
         self.allow_insecure_http = allow_insecure_http
+        self.allowed_local_destinations = allowed_local_destinations or set()
 
     def connect_tcp(
         self,
@@ -152,13 +181,18 @@ class SafeSyncBackend(SyncBackend):
             socket_options = []
         source_address = None if local_address is None else (local_address, 0)
 
-        host_clean = normalize_and_validate_hostname(host)
+        is_allowed_local = bool(self.allowed_local_destinations and (host.strip().lower(), port) in self.allowed_local_destinations)
+        host_clean = normalize_and_validate_hostname(host, allow_loopback=is_allowed_local)
 
         # Check if already IP literal
         try:
             direct_ip = ipaddress.ip_address(host_clean)
-            if is_ip_disallowed(direct_ip):
-                raise SSRFConnectionViolation(f"SSRF violation: destination IP '{host_clean}' is disallowed")
+            if is_allowed_local:
+                if str(direct_ip) == "169.254.169.254" or direct_ip.is_multicast:
+                    raise SSRFConnectionViolation(f"SSRF violation: destination IP '{host_clean}' is prohibited")
+            else:
+                if is_ip_disallowed(direct_ip):
+                    raise SSRFConnectionViolation(f"SSRF violation: destination IP '{host_clean}' is disallowed")
             safe_ip = host_clean
         except ValueError as ex:
             if isinstance(ex, SSRFConnectionViolation):
@@ -179,10 +213,16 @@ class SafeSyncBackend(SyncBackend):
                 ip_str = sockaddr[0]
                 try:
                     ip_obj = ipaddress.ip_address(ip_str)
-                    if is_ip_disallowed(ip_obj):
-                        raise SSRFConnectionViolation(
-                            f"SSRF violation: host '{host_clean}' resolved to disallowed IP '{ip_str}' at connection time"
-                        )
+                    if is_allowed_local:
+                        if str(ip_obj) == "169.254.169.254" or ip_obj.is_multicast:
+                            raise SSRFConnectionViolation(
+                                f"SSRF violation: host '{host_clean}' resolved to prohibited IP '{ip_str}' at connection time"
+                            )
+                    else:
+                        if is_ip_disallowed(ip_obj):
+                            raise SSRFConnectionViolation(
+                                f"SSRF violation: host '{host_clean}' resolved to disallowed IP '{ip_str}' at connection time"
+                            )
                 except ValueError as ip_ex:
                     if isinstance(ip_ex, SSRFConnectionViolation):
                         raise
@@ -234,12 +274,14 @@ class HttpWebhookTransport(IntegrationTransport):
         client: Optional[httpx.Client] = None,
         secret_resolver: Optional[Union[Callable[[str], Optional[str]], IntegrationSecretResolver]] = None,
         allow_insecure_http: bool = False,
+        allowed_local_destinations: Optional[Set[Tuple[str, int]]] = None,
     ):
         self.connect_timeout = connect_timeout
         self.read_timeout = read_timeout
         self._custom_client = client
         self.secret_resolver = secret_resolver
         self.allow_insecure_http = allow_insecure_http
+        self.allowed_local_destinations = allowed_local_destinations or set()
 
     @property
     def transport_type(self) -> str:
@@ -300,7 +342,11 @@ class HttpWebhookTransport(IntegrationTransport):
         """
         # 1. SSRF Validation
         try:
-            validate_url_ssrf(destination.endpoint_url, allow_insecure_http=self.allow_insecure_http)
+            validate_url_ssrf(
+                destination.endpoint_url,
+                allow_insecure_http=self.allow_insecure_http,
+                allowed_local_destinations=self.allowed_local_destinations,
+            )
         except ValueError as ex:
             return TransportPublishResult(
                 status=TransportResultStatus.PERMANENT_FAILURE,
@@ -336,28 +382,68 @@ class HttpWebhookTransport(IntegrationTransport):
         custom_headers = destination.get_headers_template()
         if custom_headers:
             for k, v in custom_headers.items():
-                if k.lower() not in ("content-length", "host", "x-bop-signature-256", "x-bop-timestamp"):
+                if k.lower() not in ("content-length", "host", "x-bop-signature-256", "x-bop-timestamp", "authorization"):
                     headers[k] = str(v)
 
-        # 3. Optional Replay-Resistant HMAC-SHA256 signature if secret_key_ref is resolved
-        if destination.secret_key_ref and self.secret_resolver:
+        # 3. Authentication Mode Handling (BEARER vs HMAC_SHA256)
+        raw_auth_mode = getattr(destination, "auth_mode", DestinationAuthMode.HMAC_SHA256.value)
+        norm_auth_mode = (str(raw_auth_mode) if raw_auth_mode else DestinationAuthMode.HMAC_SHA256.value).strip().upper()
+
+        if norm_auth_mode == DestinationAuthMode.BEARER.value:
+            if not destination.secret_key_ref:
+                return TransportPublishResult(
+                    status=TransportResultStatus.PERMANENT_FAILURE,
+                    error_code="MISSING_BEARER_SECRET_REF",
+                    error_message="Destination with BEARER auth_mode requires a valid secret_key_ref",
+                )
+            if not self.secret_resolver:
+                return TransportPublishResult(
+                    status=TransportResultStatus.PERMANENT_FAILURE,
+                    error_code="SECRET_RESOLUTION_FAILURE",
+                    error_message="No secret_resolver configured on transport to resolve BEARER token",
+                )
             try:
                 secret = self._resolve_secret(destination.secret_key_ref)
-                if secret:
-                    # Signing input: <timestamp>.<raw_envelope_json>
-                    signing_payload = f"{now_ts}.{envelope_json}".encode("utf-8")
-                    sig = hmac.new(
-                        secret.encode("utf-8"),
-                        signing_payload,
-                        hashlib.sha256,
-                    ).hexdigest()
-                    headers["X-Bop-Signature-256"] = f"sha256={sig}"
+                if not secret:
+                    return TransportPublishResult(
+                        status=TransportResultStatus.PERMANENT_FAILURE,
+                        error_code="SECRET_RESOLUTION_FAILURE",
+                        error_message=f"Secret reference '{destination.secret_key_ref}' resolved to empty or null secret",
+                    )
+                headers["Authorization"] = f"Bearer {secret}"
             except Exception as ex:
                 return TransportPublishResult(
                     status=TransportResultStatus.PERMANENT_FAILURE,
                     error_code="SECRET_RESOLUTION_FAILURE",
                     error_message=sanitize_error_message(f"Failed resolving credential reference: {ex}"),
                 )
+
+        elif norm_auth_mode == DestinationAuthMode.HMAC_SHA256.value:
+            # Replay-Resistant HMAC-SHA256 signature if secret_key_ref is resolved
+            if destination.secret_key_ref and self.secret_resolver:
+                try:
+                    secret = self._resolve_secret(destination.secret_key_ref)
+                    if secret:
+                        # Signing input: <timestamp>.<raw_envelope_json>
+                        signing_payload = f"{now_ts}.{envelope_json}".encode("utf-8")
+                        sig = hmac.new(
+                            secret.encode("utf-8"),
+                            signing_payload,
+                            hashlib.sha256,
+                        ).hexdigest()
+                        headers["X-Bop-Signature-256"] = f"sha256={sig}"
+                except Exception as ex:
+                    return TransportPublishResult(
+                        status=TransportResultStatus.PERMANENT_FAILURE,
+                        error_code="SECRET_RESOLUTION_FAILURE",
+                        error_message=sanitize_error_message(f"Failed resolving credential reference: {ex}"),
+                    )
+        else:
+            return TransportPublishResult(
+                status=TransportResultStatus.PERMANENT_FAILURE,
+                error_code="UNSUPPORTED_AUTH_MODE",
+                error_message=f"Unsupported destination auth_mode '{norm_auth_mode}'",
+            )
 
         timeout = httpx.Timeout(
             timeout=timeout_seconds,
@@ -369,7 +455,10 @@ class HttpWebhookTransport(IntegrationTransport):
             if self._custom_client:
                 client = self._custom_client
             else:
-                backend = SafeSyncBackend(allow_insecure_http=self.allow_insecure_http)
+                backend = SafeSyncBackend(
+                    allow_insecure_http=self.allow_insecure_http,
+                    allowed_local_destinations=self.allowed_local_destinations,
+                )
                 pool = httpcore.ConnectionPool(network_backend=backend)
                 transport = httpx.HTTPTransport(verify=True, trust_env=False)
                 transport._pool = pool

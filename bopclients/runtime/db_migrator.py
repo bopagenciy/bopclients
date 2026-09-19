@@ -438,6 +438,7 @@ class DatabaseMigrator:
                 target_app_id VARCHAR(50) NOT NULL,
                 destination_name VARCHAR(100) NOT NULL,
                 transport_type VARCHAR(20) NOT NULL DEFAULT 'HTTP',
+                auth_mode VARCHAR(32) NOT NULL DEFAULT 'HMAC_SHA256',
                 endpoint_url VARCHAR(500) NOT NULL,
                 secret_key_ref VARCHAR(100),
                 headers_template_json TEXT,
@@ -447,6 +448,22 @@ class DatabaseMigrator:
             );
         """
         db.execute(dest_sql)
+
+        # Ensure auth_mode column exists on pre-existing bop_integration_destinations
+        if is_pg:
+            chk_cols = db.fetch_dicts(
+                "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'bop_integration_destinations'"
+            )
+            cols = {r["column_name"] for r in chk_cols}
+            if "auth_mode" not in cols:
+                db.execute("ALTER TABLE bop_integration_destinations ADD COLUMN auth_mode VARCHAR(32) NOT NULL DEFAULT 'HMAC_SHA256';")
+                db.commit()
+        else:
+            chk_cols = db.fetch_dicts("PRAGMA table_info(bop_integration_destinations)")
+            cols = {r["name"] for r in chk_cols}
+            if "auth_mode" not in cols:
+                db.execute("ALTER TABLE bop_integration_destinations ADD COLUMN auth_mode TEXT NOT NULL DEFAULT 'HMAC_SHA256';")
+                db.commit()
 
         # 2. Create bop_integration_subscriptions
         sub_sql = """

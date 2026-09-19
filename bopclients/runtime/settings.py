@@ -4,7 +4,7 @@ import os
 import re
 from enum import Enum
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Set, Tuple
 
 
 class AppEnvironment(str, Enum):
@@ -89,6 +89,7 @@ class RuntimeSettings:
     integration_http_read_timeout: float = 10.0
     integration_max_attempts: int = 5
     integration_allow_insecure_http: bool = False
+    integration_local_destinations_allowlist: List[str] = field(default_factory=list)
 
     # Product API & Auth configuration (P19)
     auth_signing_key: str = "bop_default_dev_secret_key_change_in_production_32bytes"
@@ -150,9 +151,13 @@ class RuntimeSettings:
         pub_max_attempts = int(os.environ.get("INTEGRATION_MAX_ATTEMPTS", "5"))
         pub_allow_insecure = os.environ.get("INTEGRATION_ALLOW_INSECURE_HTTP", "false").strip().lower() in ("true", "1", "yes")
 
-        # In production, insecure http is strictly disallowed
+        pub_local_allowlist_raw = os.environ.get("INTEGRATION_LOCAL_DESTINATIONS_ALLOWLIST", "").strip()
+        pub_local_allowlist = [item.strip() for item in pub_local_allowlist_raw.split(",") if item.strip()]
+
+        # In production, insecure http and local loopback/private destinations are strictly disallowed
         if env == AppEnvironment.PRODUCTION:
             pub_allow_insecure = False
+            pub_local_allowlist = []
 
         auth_key = os.environ.get("BOP_AUTH_SIGNING_KEY", "bop_default_dev_secret_key_change_in_production_32bytes").strip()
         auth_expire_sec = int(os.environ.get("BOP_AUTH_TOKEN_EXPIRE_SECONDS", "3600"))
@@ -202,6 +207,7 @@ class RuntimeSettings:
             integration_http_read_timeout=pub_read_timeout,
             integration_max_attempts=pub_max_attempts,
             integration_allow_insecure_http=pub_allow_insecure,
+            integration_local_destinations_allowlist=pub_local_allowlist,
             auth_signing_key=auth_key,
             auth_token_expire_seconds=auth_expire_sec,
             auth_session_expire_days=session_expire_days,
@@ -275,6 +281,40 @@ class RuntimeSettings:
         # Mask password in URL pattern scheme://user:password@host/db
         masked = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", self.database_url)
         return masked
+
+    def parse_allowed_local_destinations(self) -> Set[Tuple[str, int]]:
+        """Parse configured integration local destinations allowlist into validated (host, port) tuples.
+
+        Guarantees:
+        - In production, unconditionally returns empty set.
+        - Host is normalized to lowercase and whitespace stripped.
+        - Port is validated as an integer (1-65535).
+        - If no port specified, defaults to standard HTTP/HTTPS/dev ports (80, 443, 8000).
+        """
+        if self.environment == AppEnvironment.PRODUCTION:
+            return set()
+
+        result: Set[Tuple[str, int]] = set()
+        for raw in self.integration_local_destinations_allowlist:
+            if not raw or not str(raw).strip():
+                continue
+            item = str(raw).strip()
+            if ":" in item:
+                parts = item.rsplit(":", 1)
+                host = parts[0].strip().lower()
+                try:
+                    port = int(parts[1].strip())
+                    if 1 <= port <= 65535 and host:
+                        result.add((host, port))
+                except ValueError:
+                    continue
+            else:
+                host = item.lower()
+                if host:
+                    result.add((host, 80))
+                    result.add((host, 443))
+                    result.add((host, 8000))
+        return result
 
     def safe_summary(self) -> Dict[str, Any]:
         """Return safe dictionary summary without revealing secrets or raw tokens."""

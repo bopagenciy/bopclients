@@ -220,6 +220,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         read_timeout=settings.integration_http_read_timeout,
         secret_resolver=secret_resolver,
         allow_insecure_http=settings.integration_allow_insecure_http,
+        allowed_local_destinations=settings.parse_allowed_local_destinations(),
     )
     integration_dispatcher = IntegrationOutboxDispatcher(
         outbox_repo=outbox_repo,

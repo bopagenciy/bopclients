@@ -472,6 +472,7 @@ BOPCLIENTS_DDL_TABLES: List[str] = [
         target_app_id VARCHAR(50) NOT NULL,
         destination_name VARCHAR(100) NOT NULL,
         transport_type VARCHAR(20) NOT NULL DEFAULT 'HTTP',
+        auth_mode VARCHAR(32) NOT NULL DEFAULT 'HMAC_SHA256',
         endpoint_url VARCHAR(500) NOT NULL,
         secret_key_ref VARCHAR(100),
         headers_template_json TEXT,

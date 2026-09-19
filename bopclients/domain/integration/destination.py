@@ -50,6 +50,13 @@ class DestinationTransportType(str, Enum):
     HTTP = "HTTP"
 
 
+class DestinationAuthMode(str, Enum):
+    """Supported authentication modes for integration event delivery."""
+
+    HMAC_SHA256 = "HMAC_SHA256"
+    BEARER = "BEARER"
+
+
 @dataclass
 class IntegrationDestination:
     """Outbound delivery endpoint definition for an external consuming application."""
@@ -65,6 +72,7 @@ class IntegrationDestination:
     is_active: bool
     created_at: str
     updated_at: str
+    auth_mode: str = DestinationAuthMode.HMAC_SHA256.value
 
     @classmethod
     def create(
@@ -74,6 +82,7 @@ class IntegrationDestination:
         destination_name: str,
         endpoint_url: str,
         transport_type: str = DestinationTransportType.HTTP.value,
+        auth_mode: str = DestinationAuthMode.HMAC_SHA256.value,
         secret_key_ref: Optional[str] = None,
         headers_template: Optional[Dict[str, str]] = None,
         is_active: bool = True,
@@ -88,6 +97,15 @@ class IntegrationDestination:
             raise ValueError("destination_name cannot be empty")
         if not endpoint_url or not endpoint_url.strip():
             raise ValueError("endpoint_url cannot be empty")
+
+        clean_auth_mode = (auth_mode or DestinationAuthMode.HMAC_SHA256.value).strip().upper()
+        if clean_auth_mode not in (
+            DestinationAuthMode.HMAC_SHA256.value,
+            DestinationAuthMode.BEARER.value,
+        ):
+            raise ValueError(
+                f"Invalid auth_mode '{auth_mode}': must be one of {[m.value for m in DestinationAuthMode]}"
+            )
 
         clean_url = endpoint_url.strip()
         parsed = urlparse(clean_url)
@@ -137,6 +155,7 @@ class IntegrationDestination:
             is_active=is_active,
             created_at=now,
             updated_at=now,
+            auth_mode=clean_auth_mode,
         )
 
     def get_headers_template(self) -> Dict[str, str]:

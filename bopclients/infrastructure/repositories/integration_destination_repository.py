@@ -8,6 +8,7 @@ from bopclients.domain.integration.destination import (
     IntegrationDestination,
     IntegrationSubscription,
     DestinationTransportType,
+    DestinationAuthMode,
 )
 from bopclients.infrastructure.repositories.base_repository import BaseTenantRepository
 
@@ -17,6 +18,7 @@ class IntegrationDestinationRepository(BaseTenantRepository):
 
     @classmethod
     def _row_to_destination(cls, r: dict) -> IntegrationDestination:
+        auth_mode = r.get("auth_mode") or DestinationAuthMode.HMAC_SHA256.value
         return IntegrationDestination(
             id=r["id"],
             bop_organization_id=r["bop_organization_id"],
@@ -29,6 +31,7 @@ class IntegrationDestinationRepository(BaseTenantRepository):
             is_active=bool(r.get("is_active", True)),
             created_at=r["created_at"],
             updated_at=r["updated_at"],
+            auth_mode=auth_mode,
         )
 
     @classmethod
@@ -55,9 +58,9 @@ class IntegrationDestinationRepository(BaseTenantRepository):
         sql = f"""
             INSERT INTO bop_integration_destinations (
                 id, bop_organization_id, target_app_id, destination_name,
-                transport_type, endpoint_url, secret_key_ref,
+                transport_type, auth_mode, endpoint_url, secret_key_ref,
                 headers_template_json, is_active, created_at, updated_at
-            ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
+            ) VALUES ({p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p}, {p})
         """
         self.db.execute(
             sql,
@@ -67,6 +70,7 @@ class IntegrationDestinationRepository(BaseTenantRepository):
                 destination.target_app_id,
                 destination.destination_name,
                 destination.transport_type,
+                destination.auth_mode,
                 destination.endpoint_url,
                 destination.secret_key_ref,
                 destination.headers_template_json,
