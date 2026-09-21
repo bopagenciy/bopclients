@@ -79,6 +79,7 @@ class ProspectResearchOrchestrator:
         org_id: str,
         prospect_id: str,
         campaign_id: Optional[str] = None,
+        run_id: Optional[str] = None,
     ) -> ProspectResearchResult:
         """Generate evidence-backed sales research intelligence for a single prospect."""
         prospect = self.prospect_repo.get_prospect_by_id(org_id, prospect_id)
@@ -87,16 +88,31 @@ class ProspectResearchOrchestrator:
 
         start_time = datetime.now(timezone.utc).isoformat()
 
-        # 1. Initialize ResearchRun
-        run = ResearchRun(
-            organization_id=org_id,
-            campaign_id=campaign_id,
-            prospect_id=prospect_id,
-            run_type="prospect_research",
-            status="pending",
-        )
-        run = self.research_run_repo.save(org_id, run)
-        self.research_run_repo.update_status(org_id, run.id, status="running", started_at=start_time)
+        # 1. Initialize or correlate existing ResearchRun
+        if run_id:
+            run = self.research_run_repo.get_by_id(org_id, run_id)
+            if not run:
+                raise TenantAccessError(f"ResearchRun '{run_id}' not found for organization '{org_id}'")
+            if run.status in ("completed", "failed"):
+                raise DiscoveryExecutionError(
+                    f"ResearchRun '{run_id}' is already in terminal state '{run.status}' and cannot be executed."
+                )
+            if run.status == "pending":
+                self.research_run_repo.update_status(
+                    org_id, run.id, status="running", started_at=start_time, expected_status="pending"
+                )
+        else:
+            run = ResearchRun(
+                organization_id=org_id,
+                campaign_id=campaign_id,
+                prospect_id=prospect_id,
+                run_type="prospect_research",
+                status="pending",
+            )
+            run = self.research_run_repo.save(org_id, run)
+            self.research_run_repo.update_status(
+                org_id, run.id, status="running", started_at=start_time, expected_status="pending"
+            )
 
         try:
             # 2. Gather Context (EnrichmentResult, Signals, LeadScore, Services, ICP, Contacts, Sources)
@@ -217,11 +233,23 @@ class ProspectResearchOrchestrator:
                 confidence=sanitized_draft.overall_confidence,
                 data=intel_data,
             )
-            self.prospect_intel_repo.save(org_id, intel_entity)
-
-            # 6. Complete ResearchRun
+            # 5. Atomically complete ResearchRun with execution attempt fencing
             end_time = datetime.now(timezone.utc).isoformat()
-            self.research_run_repo.update_status(org_id, run.id, status="completed", completed_at=end_time)
+            updated_run = self.research_run_repo.update_status(
+                org_id=org_id,
+                run_id=run.id,
+                status="completed",
+                completed_at=end_time,
+                execution_attempt_id=run.execution_attempt_id,
+                expected_status="running",
+            )
+            if not updated_run:
+                raise DiscoveryExecutionError(
+                    f"Execution attempt '{run.execution_attempt_id}' for research run '{run.id}' lost lease (run is no longer running)."
+                )
+
+            # 6. Persist ProspectIntelligence snapshot ONLY after confirming execution attempt fencing
+            self.prospect_intel_repo.save(org_id, intel_entity)
 
             return ProspectResearchResult(
                 prospect_id=prospect_id,
@@ -244,7 +272,13 @@ class ProspectResearchOrchestrator:
         except Exception as exc:
             end_time = datetime.now(timezone.utc).isoformat()
             self.research_run_repo.update_status(
-                org_id, run.id, status="failed", completed_at=end_time, error_message=str(exc)
+                org_id=org_id,
+                run_id=run.id,
+                status="failed",
+                completed_at=end_time,
+                error_message=str(exc),
+                execution_attempt_id=run.execution_attempt_id,
+                expected_status="running",
             )
             if isinstance(exc, (TenantAccessError, AIResearchError)):
                 raise

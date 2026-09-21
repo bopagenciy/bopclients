@@ -1,5 +1,7 @@
 """Database repository for ResearchRun execution tracking (Tenant Isolated)."""
 
+import uuid
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from bopclients.domain.research_run import ResearchRun
 from bopclients.domain.exceptions import TenantAccessError
@@ -132,24 +134,38 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
         started_at: Optional[str] = None,
         completed_at: Optional[str] = None,
         error_message: Optional[str] = None,
+        execution_attempt_id: Optional[str] = None,
+        expected_status: Optional[str] = None,
     ) -> Optional[ResearchRun]:
         org_id = self._validate_tenant(org_id)
-        run = self.get_by_id(org_id, run_id)
-        if not run:
-            raise TenantAccessError(f"ResearchRun '{run_id}' not found for organization '{org_id}'")
-
         p = self._placeholder()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        where_clauses = [f"organization_id = {p}", f"id = {p}"]
+        where_params = [org_id, run_id]
+
+        if expected_status:
+            where_clauses.append(f"status = {p}")
+            where_params.append(expected_status)
+        if execution_attempt_id:
+            where_clauses.append(f"execution_attempt_id = {p}")
+            where_params.append(execution_attempt_id)
+
+        where_sql = " AND ".join(where_clauses)
         sql = f"""
         UPDATE research_runs SET
             status = {p},
             started_at = COALESCE({p}, started_at),
             completed_at = COALESCE({p}, completed_at),
-            error_message = COALESCE({p}, error_message)
-        WHERE organization_id = {p} AND id = {p}
+            error_message = COALESCE({p}, error_message),
+            updated_at = {p}
+        WHERE {where_sql}
         """
-        self.db.execute(sql, (status, started_at, completed_at, error_message, org_id, run_id))
+        full_params = tuple([status, started_at, completed_at, error_message, now_iso] + where_params)
+        count = self._execute_rowcount(sql, full_params)
         self.db.commit()
-        return self.get_by_id(org_id, run_id)
+        if count > 0:
+            return self.get_by_id(org_id, run_id)
+        return None
 
     def list_by_organization(
         self,
@@ -215,3 +231,51 @@ class ResearchRunRepository(BaseTenantRepository, IResearchRunRepository):
         count = self._execute_rowcount(sql, (error_message, completed_at_iso, completed_at_iso, org_id, run_id))
         self.db.commit()
         return count > 0
+
+    def claim_run(
+        self,
+        org_id: str,
+        run_id: str,
+        execution_attempt_id: Optional[str] = None,
+        started_at_iso: Optional[str] = None,
+        worker_id: Optional[str] = None,
+    ) -> Optional[ResearchRun]:
+        """Atomically transition a ResearchRun from 'pending' to 'running' with exclusive execution lease.
+
+        Returns the claimed ResearchRun if successfully claimed, or None if already claimed or not pending.
+        """
+        org_id = self._validate_tenant(org_id)
+        attempt_id = execution_attempt_id or worker_id or str(uuid.uuid4())
+        started_iso = started_at_iso or datetime.now(timezone.utc).isoformat()
+        p = self._placeholder()
+        sql = f"""
+            UPDATE research_runs SET
+                status = 'running',
+                execution_attempt_id = {p},
+                started_at = {p},
+                updated_at = {p}
+            WHERE organization_id = {p} AND id = {p} AND status = 'pending'
+        """
+        count = self._execute_rowcount(sql, (attempt_id, started_iso, started_iso, org_id, run_id))
+        self.db.commit()
+        if count > 0:
+            return self.get_by_id(org_id, run_id)
+        return None
+
+    def list_pending_runs(
+        self,
+        org_id: Optional[str] = None,
+        limit: int = 10,
+    ) -> List[ResearchRun]:
+        """Fetch pending ResearchRuns ordered by created_at ASC."""
+        p = self._placeholder()
+        params = []
+        where_clause = "status = 'pending'"
+        if org_id:
+            org_id = self._validate_tenant(org_id)
+            where_clause += f" AND organization_id = {p}"
+            params.append(org_id)
+
+        sql = f"SELECT * FROM research_runs WHERE {where_clause} ORDER BY created_at ASC LIMIT {int(limit)}"
+        rows = self.db.fetch_dicts(sql, tuple(params))
+        return [self._row_to_entity(r) for r in rows]

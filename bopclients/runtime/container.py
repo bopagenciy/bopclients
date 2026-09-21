@@ -34,6 +34,7 @@ from bopclients.infrastructure.repositories.integration_outbox_repository import
 from bopclients.infrastructure.repositories.integration_inbox_repository import IntegrationInboxRepository
 from bopclients.infrastructure.repositories.integration_destination_repository import IntegrationDestinationRepository
 from bopclients.infrastructure.repositories.integration_delivery_repository import IntegrationDeliveryRepository
+from bopclients.infrastructure.repositories.service_repository import ServiceRepository
 from bopclients.domain.integration.delivery import EnvIntegrationSecretResolver
 from bopclients.infrastructure.transports.http_transport import HttpWebhookTransport
 from bopclients.application.integration_dispatcher import IntegrationOutboxDispatcher
@@ -44,6 +45,11 @@ from bopclients.application.signal_provider import OfficialWebsiteSignalProvider
 from bopclients.application.providers.procurement_provider import GovernmentProcurementProvider
 from bopclients.application.providers.news_provider import PublicNewsSignalProvider
 from bopclients.application.providers.gemini_research_provider import GeminiProspectResearchProvider
+from bopclients.application.providers.deterministic_research_provider import DeterministicResearchProvider
+from bopclients.application.research_validation_policy import ResearchValidationPolicy
+from bopclients.application.prospect_research_orchestrator import ProspectResearchOrchestrator
+from bopclients.application.prospect_research_service import ProspectResearchService
+from bopclients.worker.research_worker import ResearchWorker
 
 from bopclients.application.search_intent_parser import RuleBasedSearchIntentParser
 from bopclients.application.search_planner import DefaultSearchPlanner
@@ -121,6 +127,10 @@ class RuntimeContainer:
     opportunity_scorer: Optional[RuleBasedOpportunityScorer] = None
     priority_scorer: Optional[RuleBasedPriorityScorer] = None
     crm_handoff_service: Optional[CrmHandoffService] = None
+    service_repo: Optional[ServiceRepository] = None
+    prospect_research_orchestrator: Optional[ProspectResearchOrchestrator] = None
+    prospect_research_service: Optional[ProspectResearchService] = None
+    research_worker: Optional[ResearchWorker] = None
 
     @classmethod
     def initialize(cls, settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> "RuntimeContainer":
@@ -341,6 +351,31 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         is_production=(settings.environment == AppEnvironment.PRODUCTION),
     )
 
+    # Prospect Research Execution Stack (P30.1)
+    service_repo = ServiceRepository(db)
+    research_provider = DeterministicResearchProvider()
+    research_validation_policy = ResearchValidationPolicy()
+    prospect_research_orchestrator = ProspectResearchOrchestrator(
+        research_provider=research_provider,
+        validation_policy=research_validation_policy,
+        prospect_repo=prospect_repo,
+        research_run_repo=research_run_repo,
+        enrichment_result_repo=enrich_repo,
+        prospect_intel_repo=intel_repo,
+        service_repo=service_repo,
+        icp_repo=icp_repo,
+    )
+    prospect_research_service = ProspectResearchService(
+        orchestrator=prospect_research_orchestrator,
+        campaign_repo=campaign_repo,
+        prospect_repo=prospect_repo,
+    )
+    research_worker = ResearchWorker(
+        research_run_repo=research_run_repo,
+        research_service=prospect_research_service,
+        recovery_service=recovery_service,
+    )
+
     return RuntimeContainer(
         settings=settings,
         db=db,
@@ -385,6 +420,10 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         opportunity_scorer=opportunity_scorer,
         priority_scorer=priority_scorer,
         crm_handoff_service=crm_handoff_service,
+        service_repo=service_repo,
+        prospect_research_orchestrator=prospect_research_orchestrator,
+        prospect_research_service=prospect_research_service,
+        research_worker=research_worker,
     )
 
 
@@ -404,3 +443,9 @@ def build_integration_publisher_worker(settings: Optional[RuntimeSettings] = Non
     """Convenience helper building IntegrationPublisherWorker from RuntimeContainer."""
     container = build_runtime_container(settings=settings, db=db)
     return container.integration_publisher_worker
+
+
+def build_research_worker(settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> ResearchWorker:
+    """Convenience helper building ResearchWorker from RuntimeContainer."""
+    container = build_runtime_container(settings=settings, db=db)
+    return container.research_worker

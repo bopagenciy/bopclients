@@ -207,6 +207,8 @@ class IResearchRunRepository(ABC):
         started_at: Optional[str] = None,
         completed_at: Optional[str] = None,
         error_message: Optional[str] = None,
+        execution_attempt_id: Optional[str] = None,
+        expected_status: Optional[str] = None,
     ) -> Optional[ResearchRun]: ...
 
     @abstractmethod
@@ -217,6 +219,23 @@ class IResearchRunRepository(ABC):
         prospect_id: Optional[str] = None,
         limit: int = 100,
         offset: int = 0,
+    ) -> List[ResearchRun]: ...
+
+    @abstractmethod
+    def claim_run(
+        self,
+        org_id: str,
+        run_id: str,
+        execution_attempt_id: Optional[str] = None,
+        started_at_iso: Optional[str] = None,
+        worker_id: Optional[str] = None,
+    ) -> Optional[ResearchRun]: ...
+
+    @abstractmethod
+    def list_pending_runs(
+        self,
+        org_id: Optional[str] = None,
+        limit: int = 10,
     ) -> List[ResearchRun]: ...
 
 

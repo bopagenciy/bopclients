@@ -38,6 +38,7 @@ class ProspectResearchService:
         org_id: str,
         prospect_id: str,
         campaign_id: Optional[str] = None,
+        run_id: Optional[str] = None,
         provider: str = "deterministic",
     ) -> ProspectResearchResult:
         """Research a single prospect for an organization (Defaults safely to deterministic provider)."""
@@ -45,7 +46,7 @@ class ProspectResearchService:
         original_provider = self.orchestrator.research_provider
         try:
             self.orchestrator.research_provider = resolved
-            return self.orchestrator.research_prospect(org_id, prospect_id, campaign_id)
+            return self.orchestrator.research_prospect(org_id, prospect_id, campaign_id, run_id=run_id)
         finally:
             self.orchestrator.research_provider = original_provider
 
@@ -54,10 +55,11 @@ class ProspectResearchService:
         org_id: str,
         prospect_id: str,
         campaign_id: Optional[str] = None,
+        run_id: Optional[str] = None,
         provider: str = "deterministic",
     ) -> ProspectResearchResult:
         """Re-generate research intelligence snapshot for a prospect."""
-        return self.research_prospect(org_id, prospect_id, campaign_id, provider=provider)
+        return self.research_prospect(org_id, prospect_id, campaign_id, run_id=run_id, provider=provider)
 
     def research_campaign(
         self,

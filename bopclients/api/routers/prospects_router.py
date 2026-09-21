@@ -2,7 +2,7 @@ import io
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, Depends, status, Query, HTTPException, Response, Request
+from fastapi import APIRouter, Depends, status, Query, HTTPException, Response, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from bopclients.api.schemas.prospects import (
     ProspectFilterParams,
@@ -1257,6 +1257,7 @@ async def bulk_recalculate_priority(
 )
 async def bulk_research(
     payload: BulkResearchRequest,
+    background_tasks: BackgroundTasks,
     tenant: TenantContext = Depends(require_permission(Permission.RESEARCH_RUN)),
     container: RuntimeContainer = Depends(get_container),
 ) -> BulkResearchResponse:
@@ -1302,6 +1303,8 @@ async def bulk_research(
             saved = container.research_run_repo.save(org_id, run)
             queued += 1
             run_ids.append(saved.id)
+            if container.research_worker:
+                background_tasks.add_task(container.research_worker.claim_and_execute_run, org_id, saved.id)
         except Exception:
             failed += 1
 

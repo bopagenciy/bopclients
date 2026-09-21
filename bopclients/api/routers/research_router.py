@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, List
-from fastapi import APIRouter, Depends, status, Query
+from fastapi import APIRouter, Depends, status, Query, BackgroundTasks
 from bopclients.api.schemas.research import ResearchTriggerRequest, ResearchRunResponse
 from bopclients.api.pagination import PaginationParams, PaginatedResponse
 from bopclients.api.dependencies import require_permission, get_container
@@ -42,6 +42,7 @@ def _run_to_response(r: ResearchRun) -> ResearchRunResponse:
 async def trigger_prospect_research(
     prospect_id: str,
     payload: ResearchTriggerRequest,
+    background_tasks: BackgroundTasks,
     tenant: TenantContext = Depends(require_permission(Permission.RESEARCH_RUN)),
     container: RuntimeContainer = Depends(get_container),
 ) -> ResearchRunResponse:
@@ -77,7 +78,27 @@ async def trigger_prospect_research(
         updated_at=now,
     )
     saved = container.research_run_repo.save(org_id, run)
+    if container.research_worker:
+        background_tasks.add_task(container.research_worker.claim_and_execute_run, org_id, saved.id)
     return _run_to_response(saved)
+
+
+@router.get(
+    "/api/v1/research-runs/{run_id}",
+    response_model=ResearchRunResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Get research run details by ID",
+)
+async def get_research_run(
+    run_id: str,
+    tenant: TenantContext = Depends(require_permission(Permission.PROSPECT_READ)),
+    container: RuntimeContainer = Depends(get_container),
+) -> ResearchRunResponse:
+    org_id = tenant.organization_id
+    run = container.research_run_repo.get_by_id(org_id, run_id)
+    if not run:
+        raise EntityNotFoundError(f"Research run '{run_id}' not found.")
+    return _run_to_response(run)
 
 
 @router.get(
