@@ -37,6 +37,7 @@ class DiscoveryTask:
     radius_miles: float = 10.0
     limit: int = 100
     priority: int = 1
+    negative_keywords: List[str] = field(default_factory=list)
     metadata: Dict[str, Any] = field(default_factory=dict)
 
 

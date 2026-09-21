@@ -108,6 +108,7 @@ class DefaultSearchPlanner(ISearchPlanner):
                         radius_miles=intent.radius_miles if intent.radius_miles is not None else resolved_loc.radius_miles,
                         limit=min(intent.max_results, 1000),
                         priority=1,
+                        negative_keywords=list(intent.negative_keywords),
                     )
                     tasks.append(task)
 

@@ -1,7 +1,7 @@
 """Abstract gateway contract separating BopClients SaaS product layer from FORGE engine."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Optional, Dict, Any
 
 
@@ -17,6 +17,7 @@ class DiscoveryQuery:
     radius_miles: float = 10.0
     industry: Optional[str] = None
     limit: int = 1000
+    negative_keywords: List[str] = field(default_factory=list)
 
 
 @dataclass

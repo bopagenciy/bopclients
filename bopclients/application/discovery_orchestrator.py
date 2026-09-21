@@ -100,6 +100,24 @@ class DiscoveryOrchestrator:
                     tasks_succeeded += 1
                     total_raw += len(discovered_batch)
 
+                    if task.metadata.get("source_sample_truncated"):
+                        diag = task.metadata.get("diagnostics", {})
+                        execution_warnings.append(
+                            SearchWarning(
+                                code="SOURCE_SAMPLE_TRUNCATED",
+                                message=(
+                                    f"Source query for category '{task.category}' reached the limit of {task.limit} candidates. "
+                                    "Candidate sample was truncated before local validation; complete source coverage is not guaranteed."
+                                ),
+                                details={
+                                    "task_id": task.id,
+                                    "category": task.category,
+                                    "limit": task.limit,
+                                    "diagnostics": diag,
+                                },
+                            )
+                        )
+
                     for biz in discovered_batch:
                         if len(imported_prospects) >= max_results_limit:
                             break
