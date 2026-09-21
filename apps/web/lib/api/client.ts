@@ -39,6 +39,9 @@ import type {
   CrmHandoffStatusResponse,
   BulkCrmHandoffRequest,
   BulkCrmHandoffResponse,
+  ResearchRun,
+  PaginatedResponse,
+  ProspectIntelligenceResponse,
 } from './types';
 
 export interface FetchOptions extends RequestInit {
@@ -404,5 +407,46 @@ export async function bulkProspectCrmHandoff(
   return apiClient<BulkCrmHandoffResponse>('/api/v1/prospects/bulk/crm-handoff', {
     method: 'POST',
     body: JSON.stringify(payload),
+  });
+}
+
+/**
+ * P30 Prospect Research & Intelligence API Helpers
+ */
+export async function triggerProspectResearch(
+  prospectId: string,
+  payload: { campaign_id?: string; run_type?: string } = { run_type: 'full_diligence' }
+): Promise<ResearchRun> {
+  return apiClient<ResearchRun>(`/api/v1/prospects/${prospectId}/research`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getResearchRun(runId: string): Promise<ResearchRun> {
+  return apiClient<ResearchRun>(`/api/v1/research-runs/${runId}`, {
+    method: 'GET',
+  });
+}
+
+export async function getProspectIntelligence(
+  prospectId: string
+): Promise<ProspectIntelligenceResponse> {
+  return apiClient<ProspectIntelligenceResponse>(`/api/v1/prospects/${prospectId}/intelligence`, {
+    method: 'GET',
+  });
+}
+
+export async function listProspectResearchRuns(
+  prospectId: string,
+  limit: number = 10
+): Promise<PaginatedResponse<ResearchRun>> {
+  return apiClient<PaginatedResponse<ResearchRun>>('/api/v1/research-runs', {
+    method: 'GET',
+    params: {
+      prospect_id: prospectId,
+      page: 1,
+      page_size: limit,
+    },
   });
 }

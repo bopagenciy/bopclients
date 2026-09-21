@@ -560,3 +560,55 @@ export interface BulkCrmHandoffResponse {
   failed: number;
   errors: Record<string, string>;
 }
+
+export interface ResearchClaim {
+  id: string;
+  claim_type: string;
+  statement: string;
+  classification: 'observed' | 'derived' | 'inferred' | string;
+  confidence: number;
+  evidence_refs?: string[];
+  source_refs?: string[];
+}
+
+export interface CommercialOpportunity {
+  opportunity_type: string;
+  title: string;
+  description: string;
+  confidence: number;
+  supporting_signals?: string[];
+  supporting_claims?: string[];
+  matched_services?: string[];
+  priority?: 'low' | 'medium' | 'high' | 'urgent' | string;
+}
+
+export interface ProspectIntelligenceData {
+  executive_summary?: string;
+  business_profile?: Record<string, any>;
+  claims?: ResearchClaim[];
+  commercial_opportunities?: CommercialOpportunity[];
+  risks?: string[];
+  unknowns?: string[];
+  usage_metadata?: Record<string, any> | null;
+  ai_provider?: string;
+  ai_model?: string;
+  api_mode?: string;
+  prompt_version?: string;
+  research_version?: string;
+  generated_from?: {
+    enrichment_updated_at?: string | null;
+    signals_latest_at?: string | null;
+    active_signals_fingerprint?: string;
+    lead_score_fingerprint?: string;
+    active_services_fingerprint?: string;
+    services_count?: number;
+  };
+}
+
+export interface ProspectIntelligenceResponse {
+  prospect_id: string;
+  organization_id: string;
+  intelligence: ProspectIntelligenceData | null;
+  confidence?: number | null;
+  research_version?: string | null;
+}

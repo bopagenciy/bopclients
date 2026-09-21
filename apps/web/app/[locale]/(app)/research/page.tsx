@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useI18n } from '@/lib/i18n/context';
 import { useAuth } from '@/lib/auth/context';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/Card';
@@ -9,7 +11,7 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { EmptyState } from '@/components/states/EmptyState';
 import { PermissionGate } from '@/components/navigation/PermissionGate';
-import { Compass, Info, Sparkles } from 'lucide-react';
+import { Compass, Info, Sparkles, ExternalLink } from 'lucide-react';
 
 interface ResearchRunItem {
   id: string;
@@ -21,14 +23,16 @@ interface ResearchRunItem {
   created_at: string;
 }
 
-export default function ResearchPage() {
-  const { t } = useI18n();
+export default function ResearchPage({ initialRuns }: { initialRuns?: ResearchRunItem[] } = {}) {
+  const { t, locale } = useI18n();
   const { activeOrg } = useAuth();
+  const router = useRouter();
   const [query, setQuery] = useState('');
-  const [runs, setRuns] = useState<ResearchRunItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [runs, setRuns] = useState<ResearchRunItem[]>(initialRuns || []);
+  const [loading, setLoading] = useState(!initialRuns);
 
   useEffect(() => {
+    if (initialRuns) return;
     async function loadResearchRuns() {
       setLoading(true);
       try {
@@ -49,7 +53,16 @@ export default function ResearchPage() {
     }
 
     loadResearchRuns();
-  }, [activeOrg]);
+  }, [activeOrg, initialRuns]);
+
+  const handleFindProspect = () => {
+    const trimmed = query.trim();
+    if (trimmed) {
+      router.push(`/${locale}/prospects?search=${encodeURIComponent(trimmed)}`);
+    } else {
+      router.push(`/${locale}/prospects`);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -75,12 +88,12 @@ export default function ResearchPage() {
         </div>
       </div>
 
-      {/* Research Query Console */}
+      {/* Research Query Console: Search & Select Prospect */}
       <Card>
         <CardHeader>
-          <CardTitle>Autonomous Entity Discovery</CardTitle>
+          <CardTitle>Autonomous Entity Discovery & Research</CardTitle>
           <CardDescription>
-            Input an enterprise domain or business entity name to trigger deep-web signal harvesting.
+            {t('research.select_prospect_desc')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -89,12 +102,17 @@ export default function ResearchPage() {
               placeholder="e.g. domain.com or Corporate Entity Name"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleFindProspect();
+                }
+              }}
               className="flex-1"
             />
             <PermissionGate permission="research.run">
-              <Button size="md" className="sm:w-auto">
+              <Button size="md" className="sm:w-auto" onClick={handleFindProspect}>
                 <Sparkles className="w-4 h-4 mr-1.5 text-brand-gold" />
-                Launch Pipeline
+                {t('research.find_prospect')}
               </Button>
             </PermissionGate>
           </div>
@@ -126,14 +144,34 @@ export default function ResearchPage() {
                       Run ID: {run.id.slice(0, 8)}...
                     </p>
                     <p className="text-[11px] text-foreground-muted">
-                      Type: {run.run_type || 'standard_discovery'}
+                      Type: {run.run_type || 'full_diligence'}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  <Badge size="sm" variant={run.status === 'completed' ? 'success' : 'info'}>
-                    {run.status}
+                  <Badge
+                    size="sm"
+                    variant={
+                      run.status === 'completed'
+                        ? 'success'
+                        : run.status === 'failed'
+                        ? 'danger'
+                        : run.status === 'running'
+                        ? 'warning'
+                        : 'info'
+                    }
+                  >
+                    {t(`research.status.${(run.status || 'pending').toLowerCase()}`)}
                   </Badge>
+                  {run.prospect_id && (
+                    <Link
+                      href={`/${locale}/prospects/${run.prospect_id}`}
+                      className="text-xs text-brand-gold hover:underline flex items-center gap-1 font-medium ml-1"
+                    >
+                      {t('research.view_dossier')}
+                      <ExternalLink className="w-3 h-3" />
+                    </Link>
+                  )}
                   <span className="text-[11px] text-foreground-muted font-mono">
                     {new Date(run.created_at).toLocaleTimeString()}
                   </span>
