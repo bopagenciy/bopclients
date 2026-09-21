@@ -288,15 +288,18 @@ export interface ApiError {
 export interface SearchIntent {
   organization_id: string;
   campaign_id?: string | null;
+  target_market_id?: string | null;
   raw_query: string;
   industries: string[];
   business_categories: string[];
   countries: string[];
   regions: string[];
   cities: string[];
+  radius_miles?: number | null;
   languages: string[];
   company_size_min?: number | null;
   company_size_max?: number | null;
+  company_sizes?: string[];
   decision_maker_roles: string[];
   keywords: string[];
   negative_keywords?: string[];

@@ -32,6 +32,17 @@ interface CampaignItem {
   id: string;
   name: string;
   status: string;
+  icp_id?: string | null;
+}
+
+interface TargetMarketItem {
+  id: string;
+  country: string;
+  region?: string | null;
+  city?: string | null;
+  postal_code?: string | null;
+  radius_miles?: number | null;
+  language: string;
 }
 
 export default function DiscoveryPage() {
@@ -45,6 +56,10 @@ export default function DiscoveryPage() {
   // Campaigns list for selector
   const [campaigns, setCampaigns] = useState<CampaignItem[]>([]);
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>(preselectedCampaignId);
+
+  // Target markets for selected campaign ICP
+  const [targetMarkets, setTargetMarkets] = useState<TargetMarketItem[]>([]);
+  const [selectedMarketId, setSelectedMarketId] = useState<string>('');
 
   // Discovery Pipeline States
   const [prompt, setPrompt] = useState('');
@@ -83,6 +98,25 @@ export default function DiscoveryPage() {
     loadCampaigns();
   }, [activeOrg, selectedCampaignId]);
 
+  // Fetch target markets whenever selected campaign changes
+  useEffect(() => {
+    setSelectedMarketId('');
+    setTargetMarkets([]);
+    if (!selectedCampaignId) return;
+
+    const camp = campaigns.find((c) => c.id === selectedCampaignId);
+    if (!camp?.icp_id) return;
+
+    fetch(`/api/proxy/api/v1/icps/${camp.icp_id}`, { credentials: 'include' })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.target_markets && Array.isArray(data.target_markets)) {
+          setTargetMarkets(data.target_markets);
+        }
+      })
+      .catch(() => {});
+  }, [selectedCampaignId, campaigns]);
+
   // Step 1: Parse Intent
   const handleParseIntent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -101,6 +135,7 @@ export default function DiscoveryPage() {
         body: JSON.stringify({
           raw_query: prompt.trim(),
           campaign_id: selectedCampaignId || undefined,
+          target_market_id: selectedMarketId || undefined,
         }),
         credentials: 'include',
       });
@@ -275,26 +310,48 @@ export default function DiscoveryPage() {
               />
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-foreground mb-1">
-                {t('discovery.campaign_label')} *
-              </label>
-              <select
-                value={selectedCampaignId}
-                onChange={(e) => setSelectedCampaignId(e.target.value)}
-                className="w-full h-9 px-3 rounded-md border border-border bg-surface text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-brand-dark"
-              >
-                <option value="">{t('discovery.campaign_placeholder')}</option>
-                {campaigns.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} ({c.status})
-                  </option>
-                ))}
-              </select>
-              {campaigns.length === 0 && (
-                <p className="text-[11px] text-danger mt-1">
-                  {t('discovery.no_active_campaigns')}
-                </p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1">
+                  {t('discovery.campaign_label')} *
+                </label>
+                <select
+                  value={selectedCampaignId}
+                  onChange={(e) => setSelectedCampaignId(e.target.value)}
+                  className="w-full h-9 px-3 rounded-md border border-border bg-surface text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-brand-dark"
+                >
+                  <option value="">{t('discovery.campaign_placeholder')}</option>
+                  {campaigns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.status})
+                    </option>
+                  ))}
+                </select>
+                {campaigns.length === 0 && (
+                  <p className="text-[11px] text-danger mt-1">
+                    {t('discovery.no_active_campaigns')}
+                  </p>
+                )}
+              </div>
+
+              {targetMarkets.length > 1 && (
+                <div>
+                  <label className="block text-xs font-semibold text-foreground mb-1">
+                    Target Market
+                  </label>
+                  <select
+                    value={selectedMarketId}
+                    onChange={(e) => setSelectedMarketId(e.target.value)}
+                    className="w-full h-9 px-3 rounded-md border border-border bg-surface text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-brand-dark"
+                  >
+                    <option value="">Select Target Market...</option>
+                    {targetMarkets.map((tm) => (
+                      <option key={tm.id} value={tm.id}>
+                        {[tm.city, tm.region, tm.country].filter(Boolean).join(', ')}{tm.radius_miles ? ` (${tm.radius_miles} mi)` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
           </div>
@@ -355,7 +412,7 @@ export default function DiscoveryPage() {
 
             <div className="p-3 bg-surface-subtle rounded-md">
               <p className="text-foreground-muted font-medium mb-1">{t('discovery.target_locations')}</p>
-              <div className="flex flex-wrap gap-1">
+              <div className="flex flex-wrap items-center gap-1">
                 {intent.cities && intent.cities.length > 0 ? (
                   intent.cities.map((loc) => (
                     <Badge key={loc} size="sm" variant="outline">
@@ -365,13 +422,20 @@ export default function DiscoveryPage() {
                 ) : (
                   <span className="text-foreground-muted">—</span>
                 )}
+                {intent.radius_miles ? (
+                  <Badge size="sm" variant="outline" className="text-brand-dark border-brand-dark/30">
+                    {intent.radius_miles} mi
+                  </Badge>
+                ) : null}
               </div>
             </div>
 
             <div className="p-3 bg-surface-subtle rounded-md">
               <p className="text-foreground-muted font-medium mb-1">{t('discovery.company_size')}</p>
               <span className="text-foreground font-mono">
-                {intent.company_size_min || 1} - {intent.company_size_max || 'Any'}
+                {intent.company_sizes && intent.company_sizes.length > 0
+                  ? intent.company_sizes.join(', ')
+                  : `${intent.company_size_min || 1} - ${intent.company_size_max || 'Any'}`}
               </span>
             </div>
           </div>

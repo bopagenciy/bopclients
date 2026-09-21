@@ -335,6 +335,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         search_planner=search_planner,
         orchestrator=discovery_orchestrator,
         campaign_repo=campaign_repo,
+        icp_repo=icp_repo,
     )
     opportunity_scorer = RuleBasedOpportunityScorer()
     priority_scorer = RuleBasedPriorityScorer()

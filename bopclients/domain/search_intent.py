@@ -30,11 +30,16 @@ class SearchIntent:
 
     company_size_min: Optional[int] = None
     company_size_max: Optional[int] = None
+    company_sizes: List[str] = field(default_factory=list)
+
+    target_market_id: Optional[str] = None
+    radius_miles: Optional[float] = None
 
     decision_maker_roles: List[str] = field(default_factory=list)
 
     keywords: List[str] = field(default_factory=list)
     negative_keywords: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
 
     desired_signals: List[str] = field(default_factory=list)
     excluded_signals: List[str] = field(default_factory=list)

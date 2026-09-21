@@ -10268,6 +10268,18 @@
             "title": "Campaign Id",
             "description": "Optional target campaign ID to associate intent with"
           },
+          "target_market_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Market Id",
+            "description": "Optional target market ID"
+          },
           "context": {
             "anyOf": [
               {
@@ -10305,6 +10317,28 @@
               }
             ],
             "title": "Campaign Id"
+          },
+          "target_market_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Market Id"
+          },
+          "radius_miles": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radius Miles"
           },
           "raw_query": {
             "type": "string",
@@ -10374,6 +10408,13 @@
             ],
             "title": "Company Size Max"
           },
+          "company_sizes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Company Sizes"
+          },
           "decision_maker_roles": {
             "items": {
               "type": "string"
@@ -10387,6 +10428,13 @@
             },
             "type": "array",
             "title": "Keywords"
+          },
+          "negative_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Negative Keywords"
           },
           "services_to_offer": {
             "items": {
@@ -10440,6 +10488,28 @@
             ],
             "title": "Campaign Id"
           },
+          "target_market_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Market Id"
+          },
+          "radius_miles": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radius Miles"
+          },
           "raw_query": {
             "type": "string",
             "title": "Raw Query"
@@ -10508,6 +10578,13 @@
             ],
             "title": "Company Size Max"
           },
+          "company_sizes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Company Sizes"
+          },
           "decision_maker_roles": {
             "items": {
               "type": "string"
@@ -10521,6 +10598,13 @@
             },
             "type": "array",
             "title": "Keywords"
+          },
+          "negative_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Negative Keywords"
           },
           "services_to_offer": {
             "items": {

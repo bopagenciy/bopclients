@@ -34,6 +34,33 @@ class DefaultSearchPlanner(ISearchPlanner):
                 )
             )
 
+        # Emit warning for company size constraint: raw discovery providers do not support employee-size filtering
+        if intent.company_sizes:
+            warnings.append(
+                SearchWarning(
+                    code="EXACT_SIZE_FILTER_REQUIRES_ENRICHMENT",
+                    message=(
+                        f"Raw discovery providers do not support employee-size filtering. "
+                        f"Configured company size constraints ({', '.join(intent.company_sizes)}) cannot be evaluated during discovery "
+                        f"and require post-discovery company research."
+                    ),
+                    details={
+                        "company_sizes": intent.company_sizes,
+                        "provider_filtering_supported": False,
+                    },
+                )
+            )
+
+        # Emit warnings attached to intent
+        for w_code in getattr(intent, "warnings", []):
+            if w_code == "MULTIPLE_TARGET_MARKETS_REQUIRE_SELECTION":
+                warnings.append(
+                    SearchWarning(
+                        code="MULTIPLE_TARGET_MARKETS_REQUIRE_SELECTION",
+                        message="Multiple target markets are configured for this campaign ICP. Explicit target market selection is required to apply geographic targeting.",
+                    )
+                )
+
         # Categories: WHO WE SEARCH (strictly industries/business_categories, NEVER services_to_offer)
         raw_cats = intent.industries or intent.business_categories
         categories = [c for c in raw_cats if c not in (intent.services_to_offer or [])] or raw_cats or ["general"]
@@ -78,7 +105,7 @@ class DefaultSearchPlanner(ISearchPlanner):
                         postal_code=resolved_loc.postal_code,
                         latitude=resolved_loc.latitude,
                         longitude=resolved_loc.longitude,
-                        radius_miles=resolved_loc.radius_miles,
+                        radius_miles=intent.radius_miles if intent.radius_miles is not None else resolved_loc.radius_miles,
                         limit=min(intent.max_results, 1000),
                         priority=1,
                     )

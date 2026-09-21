@@ -9,6 +9,7 @@ class SearchIntentRequest(BaseModel):
 
     raw_query: str = Field(..., min_length=2, description="Natural language description of target prospects")
     campaign_id: Optional[str] = Field(default=None, description="Optional target campaign ID to associate intent with")
+    target_market_id: Optional[str] = Field(default=None, description="Optional target market ID")
     context: Optional[Dict[str, Any]] = Field(default=None, description="Optional additional context (e.g. ICP parameters)")
 
 
@@ -17,6 +18,8 @@ class SearchIntentResponse(BaseModel):
 
     organization_id: str
     campaign_id: Optional[str] = None
+    target_market_id: Optional[str] = None
+    radius_miles: Optional[float] = None
     raw_query: str
     industries: List[str] = Field(default_factory=list)
     business_categories: List[str] = Field(default_factory=list)
@@ -26,6 +29,7 @@ class SearchIntentResponse(BaseModel):
     languages: List[str] = Field(default_factory=list)
     company_size_min: Optional[int] = None
     company_size_max: Optional[int] = None
+    company_sizes: List[str] = Field(default_factory=list)
     decision_maker_roles: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
     negative_keywords: List[str] = Field(default_factory=list)
@@ -39,6 +43,8 @@ class SearchPlanRequest(BaseModel):
 
     organization_id: Optional[str] = None
     campaign_id: Optional[str] = None
+    target_market_id: Optional[str] = None
+    radius_miles: Optional[float] = None
     raw_query: str
     industries: List[str] = Field(default_factory=list)
     business_categories: List[str] = Field(default_factory=list)
@@ -48,6 +54,7 @@ class SearchPlanRequest(BaseModel):
     languages: List[str] = Field(default_factory=list)
     company_size_min: Optional[int] = None
     company_size_max: Optional[int] = None
+    company_sizes: List[str] = Field(default_factory=list)
     decision_maker_roles: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
     negative_keywords: List[str] = Field(default_factory=list)
