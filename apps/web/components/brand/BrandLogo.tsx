@@ -8,15 +8,21 @@ interface BrandLogoProps {
   className?: string;
   collapsed?: boolean;
   locale?: string;
+  fallbackOnly?: boolean;
 }
 
-export function BrandLogo({ className = '', collapsed = false, locale = 'en' }: BrandLogoProps) {
+export function BrandLogo({
+  className = '',
+  collapsed = false,
+  locale = 'en',
+  fallbackOnly = false,
+}: BrandLogoProps) {
   const { t } = useI18n();
-  // By default, since official logo is not present in repo, fallback starts active.
-  // If an official asset is dropped into /brand/bop-clients-logo.svg, it will attempt render.
-  const [assetLoadFailed, setAssetLoadFailed] = useState(true);
+  const [assetLoadFailed, setAssetLoadFailed] = useState(false);
 
   const homeLabel = t ? t('brand.home_label') : 'BopClients Home';
+
+  const showImage = !fallbackOnly && !assetLoadFailed;
 
   return (
     <Link
@@ -24,12 +30,12 @@ export function BrandLogo({ className = '', collapsed = false, locale = 'en' }: 
       className={`flex items-center gap-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold rounded-md ${className}`}
       aria-label={homeLabel}
     >
-      {!assetLoadFailed ? (
+      {showImage ? (
         /* eslint-disable-next-line @next/next/no-img-element */
         <img
-          src="/brand/bop-clients-logo.svg"
+          src={collapsed ? '/brand/bop-clients-mark.png' : '/brand/bop-clients-wordmark.png'}
           alt="BopClients"
-          className="h-8 w-auto"
+          className={collapsed ? 'h-7 w-auto object-contain shrink-0' : 'h-8 w-auto object-contain shrink-0'}
           onError={() => setAssetLoadFailed(true)}
         />
       ) : (

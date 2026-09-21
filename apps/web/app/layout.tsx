@@ -5,10 +5,13 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
-  title: 'BOP | CLIENTS — Autonomous Prospecting Platform',
+  title: 'BopClients — Autonomous Prospecting Platform',
   description: 'Enterprise B2B prospecting, ICP discovery, signal enrichment, and lead qualification',
+  applicationName: 'BopClients',
   icons: {
-    icon: '/brand/bop-clients-logo.svg',
+    icon: '/brand/bop-clients-icon.png',
+    shortcut: '/favicon.ico',
+    apple: '/brand/bop-clients-icon.png',
   },
 };
 

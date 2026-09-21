@@ -23,7 +23,8 @@ interface ResearchRunItem {
   created_at: string;
 }
 
-export default function ResearchPage({ initialRuns }: { initialRuns?: ResearchRunItem[] } = {}) {
+export default function ResearchPage(props?: any) {
+  const initialRuns = props?.initialRuns;
   const { t, locale } = useI18n();
   const { activeOrg } = useAuth();
   const router = useRouter();
