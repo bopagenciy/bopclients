@@ -97,6 +97,60 @@ EXCLUDED_FACILITY_CATEGORIES: Set[str] = {
 }
 
 
+# Regular Spanish specialty roots following -logía (discipline) / -logo(s)/-loga(s) (practitioners) / -lógico(s) (adjectives)
+SPECIALTY_LOGIA_ROOTS: List[str] = [
+    r"cardi", r"ur", r"endocrin", r"ginec", r"perinat", r"neonat",
+    r"radi", r"neur", r"dermat", r"onc", r"anestesi", r"anestesiol",
+    r"oftalm", r"reumat", r"neum", r"gastroenter", r"hemat", r"infect",
+    r"traumat", r"otorrinolaring", r"nefr", r"epidemi", r"inmun",
+    r"pat", r"farmac", r"toxic", r"odont", r"alerg", r"kinesiol",
+    r"coloproct", r"mast", r"hemodinami", r"uroginec",
+]
+
+_LOGIA_SPECIALTY_PATTERN = (
+    r"(?:" + "|".join(SPECIALTY_LOGIA_ROOTS) + r")[oó]log(?:[íi]a[s]?|[ao]s?|[oó]gic[ao]s?)"
+)
+
+# Medical specialties and clinical health disciplines with non-logía morphology
+SPECIALTY_OTHER_PATTERNS: List[str] = [
+    # Pediatría / Pediatra / Pediátrico
+    r"pediatr[íi]a[s]?", r"pedi[aá]tr[ao]s?", r"pedi[aá]tric[ao]s?",
+    # Psiquiatría / Psiquiatra / Psiquiátrico
+    r"psiquiatr[íi]a[s]?", r"psiqui[aá]tr[ao]s?", r"psiqui[aá]tric[ao]s?",
+    # Geriatría / Geriatra / Geriátrico
+    r"geriatr[íi]a[s]?", r"geri[aá]tr[ao]s?", r"geri[aá]tric[ao]s?",
+    # Cirugía / Cirujano / Quirúrgico / Neurocirugía
+    r"cirug[íi]a[s]?", r"cirujan[ao]s?", r"quir[uú]rgic[ao]s?", r"neurocirug[íi]a[s]?", r"neurocirujan[ao]s?",
+    # Obstetricia / Obstetra / Ginecoobstetricia
+    r"obstetricia[s]?", r"obst[ée]tric[ao]s?", r"obstetr[ao]s?", r"gineco[\s\-]?obstetricia[s]?",
+    # Ortopedia / Ortopédico / Ortopedista
+    r"ortoped[íi]a[s]?", r"ortop[eé]dic[ao]s?", r"ortopedist[ao]s?",
+    # Medicina Interna / Internista
+    r"medicina\s+interna", r"internist[ao]s?",
+    # Materno-Fetal
+    r"materno[\s\-]?fetal(?:es)?",
+    # Genética Médica / Genetista
+    r"gen[eé]tica(?:\s+m[eé]dica)?", r"genetist[ao]s?",
+    # Otorrino
+    r"otorrino[s]?", r"otorrinolaringolog[íi]a[s]?",
+    # Anestesia / Reanimación
+    r"anestesia[s]?", r"reanimaci[oó]n",
+    # General medical / health / science terms
+    r"m[ée]dic[ao]s?", r"medicina[s]?", r"salud", r"salubridad", r"sanitari[ao]s?",
+    r"cient[íi]fic[ao]s?", r"ciencia[s]?", r"biom[ée]dic[ao]s?", r"cl[íi]nic[ao]s?",
+    r"enfermer[íi]a[s]?", r"terapia[s]?", r"fisioterapi[ao]s?",
+    # English terms
+    r"health", r"medical", r"medicine", r"scientific", r"science",
+    r"physicians?", r"surgeons?", r"biomedical", r"clinical",
+    r"cardiology", r"pediatrics", r"urology", r"oncology", r"neurology",
+    r"radiology", r"psychiatry", r"dermatology", r"anesthesiology",
+    r"pathology", r"epidemiology", r"gastroenterology", r"endocrinology",
+    r"gynecology", r"obstetrics", r"ophthalmology", r"orthopedics",
+    r"pulmonology", r"rheumatology", r"nephrology", r"hematology",
+    r"immunology", r"surgery", r"internal\s+medicine",
+]
+
+
 class OvertureCandidateValidator:
     """Deterministic validation and exclusion policy for discovery candidates."""
 
@@ -113,13 +167,7 @@ class OvertureCandidateValidator:
     )
 
     MEDICAL_SCIENTIFIC_PATTERN = re.compile(
-        r"\b(?:m[ée]dic[ao]s?|medicina|salud|cient[íi]fic[ao]s?|ciencia|ciencias|"
-        r"pediatr[íi][ao]s?|cardiol[oó]g[ao]s?|oncol[oó]g[ao]s?|cirug[íi]a|cirujan[ao]s?|"
-        r"ginecol[oó]g[ao]s?|dermatol[oó]g[ao]s?|odontol[oó]g[ao]s?|neurol[oó]g[ao]s?|"
-        r"psiquiatr[íi][ao]s?|oftalmol[oó]g[ao]s?|radiol[oó]g[ao]s?|anestesiol[oó]g[ao]s?|"
-        r"patol[oó]g[ao]s?|epidemiol[oó]g[ao]s?|inmunol[oó]g[ao]s?|farmacol[oó]g[ao]s?|"
-        r"biom[ée]dic[ao]s?|cl[íi]nic[ao]s?|enfermer[íi]a|terapia|salubridad|"
-        r"health|medical|medicine|scientific|science|physicians?|surgeons?|biomedical|clinical)\b",
+        r"\b(?:" + _LOGIA_SPECIALTY_PATTERN + r"|" + r"|".join(SPECIALTY_OTHER_PATTERNS) + r")\b",
         re.IGNORECASE,
     )
 
