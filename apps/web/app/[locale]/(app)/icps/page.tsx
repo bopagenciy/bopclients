@@ -102,6 +102,10 @@ export default function ICPsPage() {
     setIsModalOpen(true);
   };
 
+  const closeModal = useCallback(() => {
+    setIsModalOpen(false);
+  }, []);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name.trim()) {
@@ -291,7 +295,7 @@ export default function ICPsPage() {
       {/* Create / Edit ICP Modal */}
       <Modal
         isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
+        onClose={closeModal}
         title={editingIcp ? t('icps.modal_edit_title') : t('icps.modal_create_title')}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -387,7 +391,7 @@ export default function ICPsPage() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={() => setIsModalOpen(false)}
+              onClick={closeModal}
               disabled={formSubmitting}
             >
               {t('common.cancel')}
