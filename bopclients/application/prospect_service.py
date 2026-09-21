@@ -35,6 +35,15 @@ class ProspectService:
 
         if existing:
             prospect = existing
+            # Record secondary discovery provenance if discovered by another source or external id
+            ps = ProspectSource(
+                organization_id=cmd.organization_id,
+                prospect_id=prospect.id,
+                source_type=cmd.source,
+                source_url=cmd.website_url,
+                external_id=cmd.forge_record_id,
+            )
+            self.prospect_repo.add_prospect_source(cmd.organization_id, ps)
         else:
             prospect = Prospect(
                 organization_id=cmd.organization_id,

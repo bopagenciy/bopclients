@@ -151,7 +151,7 @@ class DiscoveryOrchestrator:
                             state=biz.state,
                             postal_code=biz.zip_code,
                             industry=biz.forge_industry or biz.category,
-                            source="overture",
+                            source=(task.provider or "overture").lower(),
                         )
                         prospect = self.prospect_service.add_prospect(cmd)
 

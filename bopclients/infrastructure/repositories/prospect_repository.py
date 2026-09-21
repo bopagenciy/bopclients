@@ -468,6 +468,42 @@ class ProspectRepository(BaseTenantRepository, IProspectRepository):
                     external_id=r.get("external_id"),
                     collected_at=r["collected_at"],
                 )
+        elif source.source_url:
+            check_sql = f"""
+            SELECT * FROM prospect_sources
+            WHERE organization_id = {p} AND prospect_id = {p} AND source_type = {p} AND source_url = {p}
+            LIMIT 1
+            """
+            rows = self.db.fetch_dicts(check_sql, (org_id, source.prospect_id, source.source_type, source.source_url))
+            if rows:
+                r = rows[0]
+                return ProspectSource(
+                    id=r["id"],
+                    organization_id=r["organization_id"],
+                    prospect_id=r["prospect_id"],
+                    source_type=r["source_type"],
+                    source_url=r.get("source_url"),
+                    external_id=r.get("external_id"),
+                    collected_at=r["collected_at"],
+                )
+        else:
+            check_sql = f"""
+            SELECT * FROM prospect_sources
+            WHERE organization_id = {p} AND prospect_id = {p} AND source_type = {p}
+            LIMIT 1
+            """
+            rows = self.db.fetch_dicts(check_sql, (org_id, source.prospect_id, source.source_type))
+            if rows:
+                r = rows[0]
+                return ProspectSource(
+                    id=r["id"],
+                    organization_id=r["organization_id"],
+                    prospect_id=r["prospect_id"],
+                    source_type=r["source_type"],
+                    source_url=r.get("source_url"),
+                    external_id=r.get("external_id"),
+                    collected_at=r["collected_at"],
+                )
 
         sql = f"""
         INSERT INTO prospect_sources (id, organization_id, prospect_id, source_type, source_url, external_id, collected_at)
