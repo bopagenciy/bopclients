@@ -102,11 +102,89 @@ class TestSearchIntentAndPlanner:
         assert CategoryNormalizer.normalize("dentistas") == "dentist"
         assert CategoryNormalizer.normalize("abogados") == "lawyer"
         assert CategoryNormalizer.normalize("restaurante") == "restaurant"
+        assert CategoryNormalizer.normalize("asociaciones médicas") == "medical_association"
+        assert CategoryNormalizer.normalize("sociedades científicas") == "scientific_society"
+        assert CategoryNormalizer.normalize("colegios profesionales") == "professional_association"
+        assert CategoryNormalizer.normalize("organizaciones sin fines de lucro") == "non_profit"
+        assert CategoryNormalizer.normalize("clínicas") == "clinic"
+        assert CategoryNormalizer.normalize("salud") == "healthcare"
 
         assert CountryNormalizer.normalize("Colombia") == "CO"
         assert CountryNormalizer.normalize("España") == "ES"
         assert CountryNormalizer.normalize("Estados Unidos") == "US"
         assert CountryNormalizer.normalize("Alemania") == "DE"
+
+    def test_semantic_cases_a_through_f(self):
+        parser = RuleBasedSearchIntentParser()
+
+        # Case A: Buscar clínicas en Cali. -> clinic positive
+        intent_a = parser.parse("org-1", None, "Buscar clínicas en Cali.")
+        assert "clinic" in intent_a.industries
+        assert intent_a.negative_keywords == []
+
+        # Case B: Excluir clínicas en Cali. -> clinic NOT positive
+        intent_b = parser.parse("org-1", None, "Excluir clínicas en Cali.")
+        assert "clinic" not in intent_b.industries
+        assert "clinic" in intent_b.negative_keywords
+
+        # Case C: Buscar asociaciones médicas en Cali, excluir clínicas. -> associations positive, clinics excluded
+        intent_c = parser.parse("org-1", None, "Buscar asociaciones médicas en Cali, excluir clínicas.")
+        assert "medical_association" in intent_c.industries
+        assert "clinic" not in intent_c.industries
+        assert "clinic" in intent_c.negative_keywords
+
+        # Case D: Buscar asociaciones médicas y sociedades científicas en Cali, Colombia. -> both recognized
+        intent_d = parser.parse("org-1", None, "Buscar asociaciones médicas y sociedades científicas en Cali, Colombia.")
+        assert "medical_association" in intent_d.industries
+        assert "scientific_society" in intent_d.industries
+        assert intent_d.negative_keywords == []
+
+        # Case E: Buscar asociaciones médicas, no hospitales, no clínicas, no consultorios ni farmacias.
+        intent_e = parser.parse("org-1", None, "Buscar asociaciones médicas, no hospitales, no clínicas, no consultorios ni farmacias.")
+        assert "medical_association" in intent_e.industries
+        assert "clinic" not in intent_e.industries
+        assert "hospital" not in intent_e.industries
+        assert "medical_office" not in intent_e.industries
+        assert "pharmacy" not in intent_e.industries
+        assert "hospital" in intent_e.negative_keywords
+        assert "clinic" in intent_e.negative_keywords
+        assert "medical_office" in intent_e.negative_keywords
+        assert "pharmacy" in intent_e.negative_keywords
+
+        # Case F: Buscar clínicas y asociaciones médicas en Cali. -> both affirmative recognized
+        intent_f = parser.parse("org-1", None, "Buscar clínicas y asociaciones médicas en Cali.")
+        assert "clinic" in intent_f.industries
+        assert "medical_association" in intent_f.industries
+        assert intent_f.negative_keywords == []
+
+    def test_user_long_and_short_queries(self):
+        parser = RuleBasedSearchIntentParser()
+
+        # Short query
+        intent_short = parser.parse("org-1", None, "Buscar asociaciones médicas y sociedades científicas en Cali, Colombia.")
+        assert "medical_association" in intent_short.industries
+        assert "scientific_society" in intent_short.industries
+        assert "Cali" in intent_short.cities
+        assert "CO" in intent_short.countries
+        assert "clinic" not in intent_short.industries
+
+        # Long query
+        long_query = (
+            "Buscar asociaciones médicas y sociedades científicas en Cali, Colombia, que agrupen "
+            "profesionales de la salud. Busco organizaciones gremiales o científicas, no hospitales, "
+            "no clínicas, no consultorios ni farmacias."
+        )
+        intent_long = parser.parse("org-1", None, long_query)
+        assert "medical_association" in intent_long.industries
+        assert "scientific_society" in intent_long.industries
+        assert "professional_association" in intent_long.industries
+        assert "clinic" not in intent_long.industries
+        assert "hospital" in intent_long.negative_keywords
+        assert "clinic" in intent_long.negative_keywords
+        assert "medical_office" in intent_long.negative_keywords
+        assert "pharmacy" in intent_long.negative_keywords
+        assert "Cali" in intent_long.cities
+        assert "CO" in intent_long.countries
 
     def test_search_plan_signal_warning_and_category_separation(self):
         resolver = StaticLocationResolver()

@@ -14,6 +14,8 @@ describe('P21 Prospecting Workflows & Discovery Contract Test', () => {
       'discovery.language_notice',
       'discovery.parse_button',
       'discovery.intent_title',
+      'discovery.extracted_keywords',
+      'discovery.excluded_keywords',
       'discovery.plan_button',
       'discovery.plan_title',
       'discovery.execute_button',

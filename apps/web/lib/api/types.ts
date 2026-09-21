@@ -299,6 +299,7 @@ export interface SearchIntent {
   company_size_max?: number | null;
   decision_maker_roles: string[];
   keywords: string[];
+  negative_keywords?: string[];
   services_to_offer: string[];
   desired_signals: string[];
   max_results: number;

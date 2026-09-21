@@ -185,6 +185,7 @@
     "target_locations": "Target Locations",
     "company_size": "Company Size (Min-Max)",
     "extracted_keywords": "Extracted Keywords:",
+    "excluded_keywords": "Excluded Keywords:",
     "plan_button": "Generate Search Plan",
     "planning": "Generating Search Plan...",
     "plan_title": "2. Search Plan Preview",

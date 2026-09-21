@@ -276,6 +276,22 @@ def test_parse_intent_endpoint_en_and_es(p21_fixture):
     data_es = res_es.json()
     assert data_es["raw_query"] == "Distribuidores de seguridad industrial en Miami"
 
+    # Spanish query with medical associations and excluded clinics
+    res_assoc = client.post(
+        "/api/v1/discovery/intents",
+        headers=headers,
+        json={
+            "raw_query": "Buscar asociaciones médicas en Cali, excluir clínicas",
+            "campaign_id": camp_id,
+        },
+    )
+    assert res_assoc.status_code == 200
+    data_assoc = res_assoc.json()
+    assert "medical_association" in data_assoc["industries"]
+    assert "clinic" not in data_assoc["industries"]
+    assert "clinic" in data_assoc["negative_keywords"]
+    assert "Cali" in data_assoc["cities"]
+
 
 def test_plan_search_endpoint(p21_fixture):
     client = p21_fixture["client"]

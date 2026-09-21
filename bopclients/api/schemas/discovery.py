@@ -28,6 +28,7 @@ class SearchIntentResponse(BaseModel):
     company_size_max: Optional[int] = None
     decision_maker_roles: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
+    negative_keywords: List[str] = Field(default_factory=list)
     services_to_offer: List[str] = Field(default_factory=list)
     desired_signals: List[str] = Field(default_factory=list)
     max_results: int = 100
@@ -49,6 +50,7 @@ class SearchPlanRequest(BaseModel):
     company_size_max: Optional[int] = None
     decision_maker_roles: List[str] = Field(default_factory=list)
     keywords: List[str] = Field(default_factory=list)
+    negative_keywords: List[str] = Field(default_factory=list)
     services_to_offer: List[str] = Field(default_factory=list)
     desired_signals: List[str] = Field(default_factory=list)
     max_results: int = 100

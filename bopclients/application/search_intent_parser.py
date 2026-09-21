@@ -24,11 +24,85 @@ class RuleBasedSearchIntentParser(ISearchIntentParser):
     _CATEGORY_KEYWORDS = {
         "dentist": "dentist", "dentists": "dentist", "dentista": "dentist", "dentistas": "dentist",
         "clínica dental": "dentist", "clinica dental": "dentist", "dental office": "dentist", "dental clinic": "dentist",
+        "consultorio dental": "dentist", "odontología": "dentist", "odontologia": "dentist",
+        # Lawyers
         "lawyer": "lawyer", "lawyers": "lawyer", "abogado": "lawyer", "abogados": "lawyer", "legal": "lawyer", "attorney": "lawyer",
+        # Restaurants
         "restaurant": "restaurant", "restaurants": "restaurant", "restaurante": "restaurant", "restaurantes": "restaurant",
-        "agencia de marketing": "marketing", "marketing agency": "marketing", "marketing": "marketing",
-        "clínicas": "clinic", "clinicas": "clinic", "clínica": "clinic", "clinica": "clinic", "médicos": "clinic", "medicos": "clinic"
+        # Marketing
+        "agencia de marketing": "marketing", "agencias de marketing": "marketing", "marketing agency": "marketing", "marketing": "marketing",
+        # Medical Associations
+        "asociación médica": "medical_association", "asociacion medica": "medical_association",
+        "asociaciones médicas": "medical_association", "asociaciones medicas": "medical_association",
+        "medical association": "medical_association", "medical associations": "medical_association",
+        # Scientific Societies
+        "sociedad científica": "scientific_society", "sociedad cientifica": "scientific_society",
+        "sociedades científicas": "scientific_society", "sociedades cientificas": "scientific_society",
+        "scientific society": "scientific_society", "scientific societies": "scientific_society",
+        # Professional Associations / Gremios
+        "colegio profesional": "professional_association", "colegios profesionales": "professional_association",
+        "colegio médico": "professional_association", "colegios médicos": "professional_association",
+        "colegio medico": "professional_association", "colegios medicos": "professional_association",
+        "professional association": "professional_association", "professional associations": "professional_association",
+        "organización gremial": "professional_association", "organizacion gremial": "professional_association",
+        "organizaciones gremiales": "professional_association",
+        "gremio": "professional_association", "gremios": "professional_association",
+        # Non-profit
+        "organización sin fines de lucro": "non_profit", "organizacion sin fines de lucro": "non_profit",
+        "organizaciones sin fines de lucro": "non_profit",
+        "health nonprofit": "non_profit", "health non-profit": "non_profit",
+        "nonprofit": "non_profit", "non-profit": "non_profit",
+        # Clinics & Doctors
+        "clínicas": "clinic", "clinicas": "clinic", "clínica": "clinic", "clinica": "clinic",
+        "médicos": "clinic", "medicos": "clinic", "médico": "clinic", "medico": "clinic",
+        "doctor": "clinic", "doctors": "clinic",
+        # Hospitals
+        "hospitales": "hospital", "hospital": "hospital", "hospitals": "hospital",
+        # Medical Offices / Consultorios
+        "consultorios médicos": "medical_office", "consultorios medicos": "medical_office",
+        "consultorio médico": "medical_office", "consultorio medico": "medical_office",
+        "consultorios": "medical_office", "consultorio": "medical_office",
+        "medical office": "medical_office", "medical offices": "medical_office",
+        # Pharmacies
+        "farmacias": "pharmacy", "farmacia": "pharmacy", "pharmacies": "pharmacy", "pharmacy": "pharmacy",
+        # Generic Health
+        "servicios de salud": "healthcare", "sector salud": "healthcare", "salud": "healthcare",
     }
+
+    @staticmethod
+    def _is_negated(text: str, match_start: int, match_end: int) -> bool:
+        """Evaluate whether a matched category keyword falls within bounded negation scope."""
+        preceding = text[:match_start]
+        clauses = re.split(r'[\.;\n]', preceding)
+        current_clause = clauses[-1]
+
+        affirmative_patterns = [
+            r'\b(?:pero|but|busco|buscar|quiero|queremos|encontrar|find|search\s+for|incluir|include)\b'
+        ]
+        exclusion_pattern = (
+            r'\b(?:excluir|excluyendo|sin\s+incluir|exclude|excluding|excepto|except|sin|without|no|not|ni|nor)\b'
+        )
+
+        excl_matches = list(re.finditer(exclusion_pattern, current_clause, re.IGNORECASE))
+        if not excl_matches:
+            return False
+
+        last_excl = excl_matches[-1]
+        text_between = current_clause[last_excl.end():]
+        for aff in affirmative_patterns:
+            if re.search(aff, text_between, re.IGNORECASE):
+                return False
+
+        excl_word = last_excl.group(0).lower()
+        words_between = text_between.strip().split()
+
+        if excl_word in ('no', 'not', 'sin', 'without', 'ni', 'nor'):
+            return len(words_between) <= 4
+
+        if excl_word in ('excluir', 'excluyendo', 'sin incluir', 'exclude', 'excluding', 'excepto', 'except'):
+            return True
+
+        return False
 
     _SERVICE_KEYWORDS = {
         "marketing": "marketing",
@@ -62,13 +136,43 @@ class RuleBasedSearchIntentParser(ISearchIntentParser):
 
         clean_query = raw_query.strip().lower()
 
-        # Extract Categories
-        industries: List[str] = []
-        for kw, cat in self._CATEGORY_KEYWORDS.items():
-            if re.search(r'\b' + re.escape(kw) + r'\b', clean_query):
-                norm_cat = CategoryNormalizer.normalize(cat)
-                if norm_cat and norm_cat not in industries:
-                    industries.append(norm_cat)
+        # Extract Categories with bounded negation scope and longest-match precedence
+        sorted_kw = sorted(self._CATEGORY_KEYWORDS.items(), key=lambda x: len(x[0]), reverse=True)
+        occupied_spans = set()
+        matched_tokens = []
+
+        for kw, cat in sorted_kw:
+            for m in re.finditer(r'\b' + re.escape(kw) + r'\b', clean_query):
+                span_range = range(m.start(), m.end())
+                if any(idx in occupied_spans for idx in span_range):
+                    continue
+                for idx in span_range:
+                    occupied_spans.add(idx)
+                matched_tokens.append((m.start(), m.end(), kw, cat))
+
+        # Preserve query order of appearance
+        matched_tokens.sort(key=lambda x: x[0])
+
+        positive_cats: List[str] = []
+        negative_keywords: List[str] = []
+
+        for start, end, kw, cat in matched_tokens:
+            norm_cat = CategoryNormalizer.normalize(cat)
+            if not norm_cat:
+                continue
+            if self._is_negated(clean_query, start, end):
+                if norm_cat not in negative_keywords:
+                    negative_keywords.append(norm_cat)
+            else:
+                if norm_cat not in positive_cats:
+                    positive_cats.append(norm_cat)
+
+        # Excluded categories must never be added as affirmative targets
+        industries = [c for c in positive_cats if c not in negative_keywords]
+
+        # Salud (generic healthcare) must not override or pollute specific association/medical categories
+        if any(c in industries for c in ("medical_association", "scientific_society", "professional_association", "clinic")):
+            industries = [c for c in industries if c != "healthcare"]
 
         # Extract Cities
         cities: List[str] = []
@@ -138,6 +242,7 @@ class RuleBasedSearchIntentParser(ISearchIntentParser):
             languages=languages,
             company_size_min=company_min,
             company_size_max=company_max,
+            negative_keywords=negative_keywords,
             services_to_offer=services,
             desired_signals=desired_signals,
             max_results=100,

@@ -333,7 +333,7 @@ export default function DiscoveryPage() {
               </p>
             </div>
             <Badge size="sm" variant="outline">
-              Lang: {intent.languages?.[0]?.toUpperCase() || 'EN'}
+              Lang: {intent.languages?.[0]?.toUpperCase() || '—'}
             </Badge>
           </div>
 
@@ -380,6 +380,13 @@ export default function DiscoveryPage() {
             <div className="text-xs">
               <span className="text-foreground-muted mr-2">{t('discovery.extracted_keywords')}</span>
               <span className="font-mono text-foreground">{intent.keywords.join(', ')}</span>
+            </div>
+          )}
+
+          {intent.negative_keywords && intent.negative_keywords.length > 0 && (
+            <div className="text-xs">
+              <span className="text-danger font-medium mr-2">{t('discovery.excluded_keywords')}</span>
+              <span className="font-mono text-danger/90">{intent.negative_keywords.join(', ')}</span>
             </div>
           )}
 

@@ -185,6 +185,7 @@
     "target_locations": "Ubicaciones Objetivo",
     "company_size": "Tamaño de Empresa (Mín-Máx)",
     "extracted_keywords": "Palabras Clave Extraídas:",
+    "excluded_keywords": "Términos Excluidos:",
     "plan_button": "Generar Plan de Búsqueda",
     "planning": "Generando Plan de Búsqueda...",
     "plan_title": "2. Vista Previa del Plan de Búsqueda",
