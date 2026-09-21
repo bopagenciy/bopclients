@@ -13,8 +13,12 @@ from bopclients.api.schemas.discovery import (
     DiscoveryExecutionRequest,
     DiscoveryExecutionResponse,
     DiscoveredProspectSummary,
+    DiscoveryPreviewRequest,
+    DiscoveryPreviewResponse,
+    DiscoveryCandidateSummary,
 )
-from bopclients.api.dependencies import require_permission, get_container
+from bopclients.api.dependencies import require_permission, get_container, get_tenant_context
+from bopclients.domain.enums import MemberRole
 from bopclients.domain.auth.context import TenantContext
 from bopclients.domain.auth.policy import Permission
 from bopclients.domain.search_intent import SearchIntent
@@ -207,6 +211,13 @@ def _validate_submitted_tasks(
     seen_task_keys = set()
 
     for task in tasks:
+        # Web search / Tavily preview-only enforcement
+        if task.provider.lower() in ("web_search", "tavily"):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Direct prospect import is not authorized for web search / Tavily. Preview mode only.",
+            )
+
         # Provider validation (E)
         if task.provider.lower() not in allowed_providers:
             raise HTTPException(
@@ -488,5 +499,171 @@ async def execute_discovery(
         prospects_reused=result.prospects_reused,
         total_imported_prospects=result.total_imported_prospects,
         imported_prospects=imported_summaries,
+        errors=result.errors or [],
+    )
+
+
+@router.post(
+    "/preview",
+    response_model=DiscoveryPreviewResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Execute discovery preview returning candidate entities without database persistence",
+)
+async def preview_discovery(
+    payload: DiscoveryPreviewRequest,
+    tenant: TenantContext = Depends(get_tenant_context),
+    container: RuntimeContainer = Depends(get_container),
+) -> DiscoveryPreviewResponse:
+    org_id = tenant.organization_id
+
+    # 1. Role Authorization Gate: Admin/Owner only
+    if tenant.role not in (MemberRole.ADMIN, MemberRole.OWNER):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only tenant administrators may initiate discovery preview.",
+        )
+
+    # 2. Campaign Validation if campaign_id is provided
+    camp_id = payload.campaign_id
+    if camp_id:
+        camp = container.campaign_repo.get_by_id(org_id, camp_id)
+        if not camp:
+            raise EntityNotFoundError(f"Campaign '{camp_id}' not found.")
+
+    provider_name = (payload.provider or "web_search").strip().lower()
+
+    # 3. Provider Gate & Tenant Authorization check for web_search / tavily
+    if provider_name in ("web_search", "tavily"):
+        orchestrator = container.discovery_orchestrator or (
+            container.search_service.orchestrator if container.search_service else None
+        )
+        web_prov = orchestrator.providers.get("web_search") if orchestrator else None
+        if not web_prov or not web_prov.enabled:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Web search discovery provider is disabled by default. Explicit configuration required.",
+            )
+        if web_prov.authorized_tenants is not None and org_id not in web_prov.authorized_tenants:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Tenant '{org_id}' is not authorized for web search discovery.",
+            )
+
+    # 4. Construct SearchPlan
+    if payload.search_plan:
+        plan_req = payload.search_plan
+        # Validate tenant match
+        if getattr(plan_req, "organization_id", None) and plan_req.organization_id != org_id:
+            raise TenantAccessError(f"Search plan organization '{plan_req.organization_id}' does not match authenticated organization '{org_id}'.")
+
+        tasks = [
+            DiscoveryTask(
+                id=t.task_id or str(uuid.uuid4()),
+                provider=t.provider,
+                query=t.query_params.get("query"),
+                category=t.query_params.get("category"),
+                city=t.query_params.get("city"),
+                region=t.query_params.get("region"),
+                country=t.query_params.get("country", "CO"),
+                postal_code=t.query_params.get("postal_code"),
+                limit=int(t.query_params.get("limit", 5)) if t.query_params.get("limit") is not None else 5,
+                priority=t.priority,
+                negative_keywords=t.query_params.get("negative_keywords") or [],
+                metadata={"organization_id": org_id, "preview": True},
+            )
+            for t in plan_req.tasks if hasattr(plan_req, "tasks") and plan_req.tasks
+        ]
+
+        if not tasks and getattr(plan_req, "raw_query", None):
+            plan = container.search_service.create_web_search_preview_plan(
+                org_id=org_id,
+                query=plan_req.raw_query,
+                campaign_id=camp_id,
+                limit=min(getattr(plan_req, "max_results", 5) or 5, 5),
+            )
+        elif not tasks:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="search_plan must contain tasks or a valid raw_query.",
+            )
+        else:
+            # Enforce budget: maximum 1 web search task, limit <= 5
+            web_tasks = [t for t in tasks if t.provider.lower() in ("web_search", "tavily")]
+            if len(web_tasks) > 1:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Controlled preview budget violation: Maximum 1 web search query allowed (received {len(web_tasks)}).",
+                )
+            for wt in web_tasks:
+                if wt.limit > 5:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Controlled preview budget violation: Task limit ({wt.limit}) exceeds maximum allowed of 5 results.",
+                    )
+            plan = SearchPlan(
+                id=str(uuid.uuid4()),
+                organization_id=org_id,
+                campaign_id=camp_id,
+                tasks=tasks,
+            )
+    elif payload.raw_query:
+        plan = container.search_service.create_web_search_preview_plan(
+            org_id=org_id,
+            query=payload.raw_query,
+            campaign_id=camp_id,
+            limit=5,
+        )
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Either 'search_plan' or 'raw_query' must be provided for discovery preview.",
+        )
+
+    # 5. Execute preview (zero persistence)
+    result = container.search_service.preview_search(
+        org_id=org_id,
+        campaign_id=camp_id,
+        search_plan=plan,
+    )
+
+    candidate_summaries = [
+        DiscoveryCandidateSummary(
+            candidate_id=c.get("candidate_id", ""),
+            name=c.get("name", ""),
+            website_url=c.get("website_url"),
+            category=c.get("category"),
+            city=c.get("city"),
+            state=c.get("state"),
+            country=c.get("country"),
+            geographic_scope=c.get("geographic_scope"),
+            classification_status=c.get("classification_status"),
+            classification_details=c.get("classification_details"),
+            title=c.get("title"),
+            snippet=c.get("snippet"),
+            source=c.get("source"),
+        )
+        for c in (result.candidates or [])
+    ]
+
+    exec_status = "completed"
+    if result.tasks_failed > 0 and result.tasks_succeeded == 0:
+        exec_status = "failed"
+    elif result.tasks_failed > 0 and result.tasks_succeeded > 0:
+        exec_status = "partial"
+
+    warning_msgs = [w.message for w in result.warnings]
+
+    return DiscoveryPreviewResponse(
+        status=exec_status,
+        organization_id=org_id,
+        campaign_id=camp_id,
+        provider=provider_name,
+        tasks_executed=result.tasks_total,
+        candidates_count=len(candidate_summaries),
+        candidates=candidate_summaries,
+        prospects_inserted=0,
+        sources_inserted=0,
+        database_writes=0,
+        warnings=warning_msgs,
         errors=result.errors or [],
     )

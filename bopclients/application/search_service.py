@@ -230,3 +230,81 @@ class SearchService:
                 )
 
         return self.orchestrator.execute_plan(search_plan)
+
+    def preview_search(
+        self, org_id: str, campaign_id: Optional[str], search_plan: SearchPlan
+    ) -> SearchExecutionResult:
+        """Execute a search plan in dry-run preview mode without inserting prospects or database records."""
+        from bopclients.domain.exceptions import SearchPlanningError
+        if search_plan.organization_id != org_id:
+            raise TenantAccessError("SearchPlan organization_id mismatch")
+
+        if campaign_id and search_plan.campaign_id and campaign_id != search_plan.campaign_id:
+            raise TenantAccessError("SearchPlan campaign_id mismatch")
+
+        if campaign_id and self.campaign_repo:
+            camp = self.campaign_repo.get_by_id(org_id, campaign_id)
+            if not camp:
+                raise TenantAccessError(
+                    f"Preview failed: Campaign '{campaign_id}' not found for organization '{org_id}'"
+                )
+
+        # Budget and task validation for web search preview
+        web_tasks = [
+            t for t in search_plan.tasks
+            if (t.provider or "").strip().lower() in ("web_search", "tavily")
+        ]
+        if len(web_tasks) > 1:
+            raise SearchPlanningError(
+                f"Controlled preview budget violation: Maximum 1 web search query allowed (received {len(web_tasks)})."
+            )
+
+        for wt in web_tasks:
+            if wt.limit > 5:
+                raise SearchPlanningError(
+                    f"Controlled preview budget violation: Task limit ({wt.limit}) exceeds maximum allowed of 5 results."
+                )
+
+        return self.orchestrator.preview_plan(search_plan)
+
+    def create_web_search_preview_plan(
+        self,
+        org_id: str,
+        query: str,
+        campaign_id: Optional[str] = None,
+        category: str = "medical_association",
+        country: str = "CO",
+        city: Optional[str] = "Cali",
+        region: Optional[str] = "Valle del Cauca",
+        limit: int = 5,
+        negative_keywords: Optional[List[str]] = None,
+    ) -> SearchPlan:
+        """Construct a single-query, budget-bounded web search plan for controlled preview."""
+        import uuid
+        from bopclients.application.search_dto import DiscoveryTask
+
+        clamped_limit = min(max(1, limit), 5)
+        default_negs = ["hospital", "clinica", "clínica", "consultorio", "eps", "ips"]
+        negs = list(negative_keywords) if negative_keywords is not None else default_negs
+
+        task = DiscoveryTask(
+            id=str(uuid.uuid4()),
+            provider="web_search",
+            query=query.strip(),
+            category=category,
+            country=country,
+            city=city,
+            region=region,
+            limit=clamped_limit,
+            priority=1,
+            negative_keywords=negs,
+            metadata={"organization_id": org_id, "preview": True},
+        )
+
+        return SearchPlan(
+            id=str(uuid.uuid4()),
+            organization_id=org_id,
+            campaign_id=campaign_id,
+            intent_id="web_preview",
+            tasks=[task],
+        )

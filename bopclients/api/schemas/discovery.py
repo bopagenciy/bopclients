@@ -152,3 +152,49 @@ class DiscoveryExecutionResponse(BaseModel):
     total_imported_prospects: int
     imported_prospects: List[DiscoveredProspectSummary] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
+
+
+class DiscoveryCandidateSummary(BaseModel):
+    """Summary of a candidate returned during preview without database persistence."""
+
+    candidate_id: str
+    name: str
+    website_url: Optional[str] = None
+    category: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    geographic_scope: Optional[str] = None
+    classification_status: Optional[str] = None
+    classification_details: Optional[Dict[str, Any]] = None
+    title: Optional[str] = None
+    snippet: Optional[str] = None
+    source: Optional[str] = None
+
+
+class DiscoveryPreviewRequest(BaseModel):
+    """Request payload for controlled single-query preview."""
+
+    campaign_id: Optional[str] = Field(default=None, description="Optional target campaign ID")
+    raw_query: Optional[str] = Field(default=None, description="Search query string")
+    search_plan: Optional[Union[SearchPlanExecutionPayload, SearchPlanRequest]] = Field(
+        default=None, description="Optional search plan to preview"
+    )
+    provider: str = Field(default="web_search", description="Discovery provider ('web_search' or 'overture')")
+
+
+class DiscoveryPreviewResponse(BaseModel):
+    """Outcome of running discovery in preview mode with zero persistence."""
+
+    status: str = Field(..., description="'completed', 'partial', or 'failed'")
+    organization_id: str
+    campaign_id: Optional[str] = None
+    provider: str
+    tasks_executed: int = 0
+    candidates_count: int = 0
+    candidates: List[DiscoveryCandidateSummary] = Field(default_factory=list)
+    prospects_inserted: int = 0
+    sources_inserted: int = 0
+    database_writes: int = 0
+    warnings: List[str] = Field(default_factory=list)
+    errors: List[str] = Field(default_factory=list)

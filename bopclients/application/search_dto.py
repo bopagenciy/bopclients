@@ -81,6 +81,7 @@ class SearchExecutionResult:
     prospects_reused: int = 0
     total_imported_prospects: int = 0
     imported_prospects: List[Prospect] = field(default_factory=list)
+    candidates: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[SearchWarning] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
     executed_at: str = field(

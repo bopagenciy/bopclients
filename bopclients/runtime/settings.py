@@ -59,6 +59,9 @@ class RuntimeSettings:
     enabled_providers: List[str] = field(default_factory=lambda: ["official_website"])
     sam_gov_api_key: str = ""
     gemini_api_key: str = ""
+    tavily_api_key: str = ""
+    tavily_enabled: bool = False
+    tavily_authorized_tenants: List[str] = field(default_factory=list)
 
     # Worker configuration
     worker_batch_size: int = 25
@@ -127,6 +130,10 @@ class RuntimeSettings:
 
         sam_key = os.environ.get("SAM_GOV_API_KEY", "").strip()
         gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+        tavily_key = os.environ.get("TAVILY_API_KEY", "").strip()
+        tavily_en = os.environ.get("TAVILY_ENABLED", "false").strip().lower() in ("true", "1", "yes")
+        tavily_tenants_raw = os.environ.get("TAVILY_AUTHORIZED_TENANTS", "").strip()
+        tavily_tenants = [t.strip() for t in tavily_tenants_raw.split(",") if t.strip()]
 
         batch_sz = int(os.environ.get("MONITORING_WORKER_BATCH_SIZE", "25"))
         max_it = int(os.environ.get("MONITORING_WORKER_MAX_ITEMS", "100"))
@@ -234,6 +241,9 @@ class RuntimeSettings:
             web_public_url=web_public_url_val,
             password_reset_token_expire_minutes=pwd_reset_expire,
             email_verification_token_expire_hours=email_verify_expire,
+            tavily_api_key=tavily_key,
+            tavily_enabled=tavily_en,
+            tavily_authorized_tenants=tavily_tenants,
         )
 
     def validate(self):

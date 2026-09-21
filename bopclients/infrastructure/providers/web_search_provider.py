@@ -145,10 +145,19 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
         return self.PROVIDER_NAME
 
     def supports(self, task: DiscoveryTask) -> bool:
-        """Verify whether task is intended for web_search and provider is currently enabled."""
-        if (task.provider or "").strip().lower() != self.PROVIDER_NAME:
+        """Verify whether task is intended for web_search/tavily and provider is currently enabled."""
+        p_name = (task.provider or "").strip().lower()
+        if p_name not in (self.PROVIDER_NAME, "tavily"):
             return False
         return self.enabled
+
+    def is_category_supported(self, category: str) -> bool:
+        """Verify whether category is supported by web search provider."""
+        from bopclients.infrastructure.providers.overture_provider import EXCLUDED_FACILITY_CATEGORIES
+        cat = (category or "").strip().lower()
+        if cat in EXCLUDED_FACILITY_CATEGORIES:
+            return False
+        return True
 
     def authorize_tenant(self, organization_id: str) -> None:
         """Explicitly authorize a tenant for web search discovery."""

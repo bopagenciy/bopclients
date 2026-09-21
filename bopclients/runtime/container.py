@@ -58,6 +58,8 @@ from bopclients.infrastructure.gateways.forge_gateway import ForgeDiscoveryGatew
 from bopclients.infrastructure.providers.overture_provider import OvertureDiscoveryProvider
 from bopclients.application.discovery_orchestrator import DiscoveryOrchestrator
 from bopclients.application.search_service import SearchService
+from bopclients.infrastructure.providers.tavily_transport import TavilyWebSearchTransport
+from bopclients.infrastructure.providers.web_search_provider import WebSearchDiscoveryProvider
 from bopclients.application.prospect_service import ProspectService
 from bopclients.application.opportunity_scorer import RuleBasedOpportunityScorer
 from bopclients.application.priority_scorer import RuleBasedPriorityScorer
@@ -122,6 +124,7 @@ class RuntimeContainer:
     invitation_repo: Optional[InvitationRepository] = None
     invitation_service: Optional[InvitationService] = None
     email_sender: Optional[ITransactionalEmailSender] = None
+    discovery_orchestrator: Optional[DiscoveryOrchestrator] = None
     search_service: Optional[SearchService] = None
     prospect_service: Optional[ProspectService] = None
     opportunity_scorer: Optional[RuleBasedOpportunityScorer] = None
@@ -321,9 +324,32 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         discovery_gateway = None
 
     discovery_provider = OvertureDiscoveryProvider(discovery_gateway)
+
+    # Controlled Web Search Preview Provider (P30.5G.4E)
+    tavily_transport = TavilyWebSearchTransport(
+        api_key=settings.tavily_api_key,
+        enabled=settings.tavily_enabled,
+    )
+    authorized_web_tenants = set(settings.tavily_authorized_tenants)
+    # Canonical Bop Agencia tenant resolution from database
+    try:
+        bop_agencia_org = org_repo.get_by_slug("bop-agencia")
+        if bop_agencia_org:
+            authorized_web_tenants.add(bop_agencia_org.id)
+    except Exception:
+        pass
+
+    web_search_provider = WebSearchDiscoveryProvider(
+        transport=tavily_transport,
+        enabled=settings.tavily_enabled,
+        authorized_tenants=authorized_web_tenants,
+        max_queries_per_run=1,
+        max_results_per_query=5,
+    )
+
     prospect_service = ProspectService(prospect_repo, discovery_gateway)
     discovery_orchestrator = DiscoveryOrchestrator(
-        providers=[discovery_provider],
+        providers=[discovery_provider, web_search_provider],
         prospect_service=prospect_service,
         research_run_repo=research_run_repo,
         campaign_repo=campaign_repo,
@@ -416,6 +442,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         invitation_repo=invitation_repo,
         invitation_service=invitation_service,
         email_sender=email_sender,
+        discovery_orchestrator=discovery_orchestrator,
         search_service=search_service,
         prospect_service=prospect_service,
         opportunity_scorer=opportunity_scorer,

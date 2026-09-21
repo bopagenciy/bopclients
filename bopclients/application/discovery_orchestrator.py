@@ -25,7 +25,12 @@ class DiscoveryOrchestrator:
         research_run_repo: IResearchRunRepository,
         campaign_repo: Optional[ICampaignRepository] = None,
     ):
-        self.providers = {p.name.lower(): p for p in providers}
+        self.providers = {}
+        for p in providers:
+            p_name = p.name.lower()
+            self.providers[p_name] = p
+            if p_name == "web_search":
+                self.providers["tavily"] = p
         self.prospect_service = prospect_service
         self.research_run_repo = research_run_repo
         self.campaign_repo = campaign_repo
@@ -35,6 +40,20 @@ class DiscoveryOrchestrator:
     ) -> SearchExecutionResult:
         org_id = plan.organization_id
         campaign_id = plan.campaign_id
+
+        # Safety Gate: Fail closed if any task targets Tavily in live import mode
+        from bopclients.infrastructure.providers.tavily_transport import TavilyWebSearchTransport
+        for task in plan.tasks:
+            p_name = (task.provider or "").strip().lower()
+            if p_name == "tavily":
+                raise DiscoveryExecutionError(
+                    "Direct prospect import is not authorized for Tavily provider. Preview mode only."
+                )
+            prov = self.providers.get(p_name)
+            if prov and hasattr(prov, "_transport") and isinstance(prov._transport, TavilyWebSearchTransport):
+                raise DiscoveryExecutionError(
+                    "Direct prospect import is not authorized for Tavily provider. Preview mode only."
+                )
 
         # Validate campaign tenant ownership if campaign_id is supplied
         if campaign_id and self.campaign_repo:
@@ -221,3 +240,152 @@ class DiscoveryOrchestrator:
                 error_message=str(fatal_err),
             )
             raise DiscoveryExecutionError(f"Fatal error during discovery orchestration: {fatal_err}") from fatal_err
+
+    def preview_plan(
+        self, plan: SearchPlan, max_results_override: Optional[int] = None
+    ) -> SearchExecutionResult:
+        """Execute search plan in strictly bounded, zero-persistence preview mode.
+
+        Guarantees:
+        1. ZERO prospect inserts (ProspectService.add_prospect is never called).
+        2. ZERO prospect source inserts.
+        3. ZERO campaign prospect inserts.
+        4. ZERO ResearchRun database records saved or updated.
+        5. ZERO CRM synchronization or outbox dispatches.
+        6. ZERO AI/Gemini research worker jobs.
+        7. Strict budget enforcement (for web_search/Tavily: max 1 query, max 5 results).
+        """
+        from datetime import datetime, timezone
+        org_id = plan.organization_id
+        campaign_id = plan.campaign_id
+
+        # Validate campaign tenant ownership if campaign_id is supplied
+        if campaign_id and self.campaign_repo:
+            camp = self.campaign_repo.get_by_id(org_id, campaign_id)
+            if not camp:
+                raise TenantAccessError(
+                    f"Execution rejected: Campaign '{campaign_id}' not found for organization '{org_id}'"
+                )
+
+        # Web search / Tavily pilot constraints check:
+        web_tasks = [
+            t for t in plan.tasks
+            if (t.provider or "").strip().lower() in ("web_search", "tavily")
+        ]
+        if len(web_tasks) > 1:
+            raise DiscoveryExecutionError(
+                f"Controlled preview budget violation: Maximum 1 web search query allowed (received {len(web_tasks)})."
+            )
+
+        for wt in web_tasks:
+            if wt.limit > 5:
+                raise DiscoveryExecutionError(
+                    f"Controlled preview budget violation: Task '{wt.id}' limit ({wt.limit}) exceeds maximum allowed of 5 results."
+                )
+            if wt.limit <= 0:
+                raise DiscoveryExecutionError(
+                    f"Controlled preview budget violation: Task '{wt.id}' limit ({wt.limit}) must be > 0."
+                )
+            wt.metadata["organization_id"] = org_id
+
+        total_raw = 0
+        candidates: List[Dict[str, Any]] = []
+        batch_seen_keys: Set[Tuple[str, str]] = set()
+        execution_warnings: List[SearchWarning] = list(plan.warnings)
+        execution_errors: List[str] = []
+
+        tasks_total = len(plan.tasks)
+        tasks_succeeded = 0
+        tasks_failed = 0
+
+        max_results_limit = max_results_override or 5
+
+        for task in plan.tasks:
+            p_name = (task.provider or "").strip().lower()
+            provider = self.providers.get(p_name)
+            if not provider and p_name == "tavily":
+                provider = self.providers.get("web_search")
+
+            if not provider or not provider.supports(task):
+                tasks_failed += 1
+                msg = f"No active or enabled discovery provider registered for '{task.provider}'."
+                execution_errors.append(msg)
+                execution_warnings.append(
+                    SearchWarning(
+                        code="PROVIDER_NOT_AVAILABLE",
+                        message=msg,
+                        details={"task_id": task.id},
+                    )
+                )
+                continue
+
+            try:
+                if p_name in ("web_search", "tavily"):
+                    task.limit = min(task.limit or 5, 5)
+
+                discovered_batch = provider.discover(task)
+                tasks_succeeded += 1
+                total_raw += len(discovered_batch)
+
+                for biz in discovered_batch:
+                    if len(candidates) >= max_results_limit:
+                        break
+
+                    ext_id = biz.overture_id or ""
+                    norm_url = (biz.website_url or "").strip().lower().rstrip("/")
+                    batch_key = (ext_id, norm_url)
+
+                    if batch_key in batch_seen_keys and (ext_id or norm_url):
+                        continue
+                    if ext_id or norm_url:
+                        batch_seen_keys.add(batch_key)
+
+                    candidate_info = {
+                        "candidate_id": biz.overture_id,
+                        "name": biz.name,
+                        "website_url": biz.website_url,
+                        "category": biz.category,
+                        "city": biz.city,
+                        "state": biz.state,
+                        "country": task.country or "CO",
+                        "geographic_scope": biz.raw_data.get("geographic_scope") if biz.raw_data else None,
+                        "classification_status": biz.raw_data.get("classification_status") if biz.raw_data else None,
+                        "classification_details": biz.raw_data.get("classification_details") if biz.raw_data else None,
+                        "title": biz.raw_data.get("title") if biz.raw_data else None,
+                        "snippet": biz.raw_data.get("snippet") if biz.raw_data else None,
+                        "source": p_name,
+                    }
+                    candidates.append(candidate_info)
+
+            except Exception as task_err:
+                tasks_failed += 1
+                msg = f"Discovery preview task '{task.id}' failed: {task_err}"
+                execution_errors.append(msg)
+                execution_warnings.append(
+                    SearchWarning(
+                        code="TASK_EXECUTION_FAILED",
+                        message=msg,
+                        details={"task_id": task.id},
+                    )
+                )
+
+        end_time = datetime.now(timezone.utc).isoformat()
+
+        return SearchExecutionResult(
+            plan_id=plan.id,
+            organization_id=org_id,
+            campaign_id=campaign_id,
+            research_run_id="",  # Zero DB writes: no research run record
+            tasks_total=tasks_total,
+            tasks_succeeded=tasks_succeeded,
+            tasks_failed=tasks_failed,
+            total_discovered_raw=total_raw,
+            prospects_created=0,  # Zero prospect inserts
+            prospects_reused=0,
+            total_imported_prospects=0,  # Zero prospect imports
+            imported_prospects=[],  # Zero prospect imports
+            candidates=candidates,  # Transient candidate list
+            warnings=execution_warnings,
+            errors=execution_errors,
+            executed_at=end_time,
+        )
