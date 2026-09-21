@@ -97,85 +97,31 @@ EXCLUDED_FACILITY_CATEGORIES: Set[str] = {
 }
 
 
-# Regular Spanish specialty roots following -logía (discipline) / -logo(s)/-loga(s) (practitioners) / -lógico(s) (adjectives)
-SPECIALTY_LOGIA_ROOTS: List[str] = [
-    r"cardi", r"ur", r"endocrin", r"ginec", r"perinat", r"neonat",
-    r"radi", r"neur", r"dermat", r"onc", r"anestesi", r"anestesiol",
-    r"oftalm", r"reumat", r"neum", r"gastroenter", r"hemat", r"infect",
-    r"traumat", r"otorrinolaring", r"nefr", r"epidemi", r"inmun",
-    r"pat", r"farmac", r"toxic", r"odont", r"alerg", r"kinesiol",
-    r"coloproct", r"mast", r"hemodinami", r"uroginec",
-]
-
-_LOGIA_SPECIALTY_PATTERN = (
-    r"(?:" + "|".join(SPECIALTY_LOGIA_ROOTS) + r")[oó]log(?:[íi]a[s]?|[ao]s?|[oó]gic[ao]s?)"
+from bopclients.application.discovery.candidate_classifier import (
+    CandidateClassificationStatus,
+    CandidateClassificationRequest,
+    ClassificationDecision,
+    IOrganizationCandidateClassifier,
+    OrganizationCandidateClassifier,
+    SPECIALTY_LOGIA_ROOTS,
+    SPECIALTY_OTHER_PATTERNS,
 )
-
-# Medical specialties and clinical health disciplines with non-logía morphology
-SPECIALTY_OTHER_PATTERNS: List[str] = [
-    # Pediatría / Pediatra / Pediátrico
-    r"pediatr[íi]a[s]?", r"pedi[aá]tr[ao]s?", r"pedi[aá]tric[ao]s?",
-    # Psiquiatría / Psiquiatra / Psiquiátrico
-    r"psiquiatr[íi]a[s]?", r"psiqui[aá]tr[ao]s?", r"psiqui[aá]tric[ao]s?",
-    # Geriatría / Geriatra / Geriátrico
-    r"geriatr[íi]a[s]?", r"geri[aá]tr[ao]s?", r"geri[aá]tric[ao]s?",
-    # Cirugía / Cirujano / Quirúrgico / Neurocirugía
-    r"cirug[íi]a[s]?", r"cirujan[ao]s?", r"quir[uú]rgic[ao]s?", r"neurocirug[íi]a[s]?", r"neurocirujan[ao]s?",
-    # Obstetricia / Obstetra / Ginecoobstetricia
-    r"obstetricia[s]?", r"obst[ée]tric[ao]s?", r"obstetr[ao]s?", r"gineco[\s\-]?obstetricia[s]?",
-    # Ortopedia / Ortopédico / Ortopedista
-    r"ortoped[íi]a[s]?", r"ortop[eé]dic[ao]s?", r"ortopedist[ao]s?",
-    # Medicina Interna / Internista
-    r"medicina\s+interna", r"internist[ao]s?",
-    # Materno-Fetal
-    r"materno[\s\-]?fetal(?:es)?",
-    # Genética Médica / Genetista
-    r"gen[eé]tica(?:\s+m[eé]dica)?", r"genetist[ao]s?",
-    # Otorrino
-    r"otorrino[s]?", r"otorrinolaringolog[íi]a[s]?",
-    # Anestesia / Reanimación
-    r"anestesia[s]?", r"reanimaci[oó]n",
-    # General medical / health / science terms
-    r"m[ée]dic[ao]s?", r"medicina[s]?", r"salud", r"salubridad", r"sanitari[ao]s?",
-    r"cient[íi]fic[ao]s?", r"ciencia[s]?", r"biom[ée]dic[ao]s?", r"cl[íi]nic[ao]s?",
-    r"enfermer[íi]a[s]?", r"terapia[s]?", r"fisioterapi[ao]s?",
-    # English terms
-    r"health", r"medical", r"medicine", r"scientific", r"science",
-    r"physicians?", r"surgeons?", r"biomedical", r"clinical",
-    r"cardiology", r"pediatrics", r"urology", r"oncology", r"neurology",
-    r"radiology", r"psychiatry", r"dermatology", r"anesthesiology",
-    r"pathology", r"epidemiology", r"gastroenterology", r"endocrinology",
-    r"gynecology", r"obstetrics", r"ophthalmology", r"orthopedics",
-    r"pulmonology", r"rheumatology", r"nephrology", r"hematology",
-    r"immunology", r"surgery", r"internal\s+medicine",
-]
 
 
 class OvertureCandidateValidator:
-    """Deterministic validation and exclusion policy for discovery candidates."""
+    """Deterministic validation and exclusion policy for Overture discovery candidates.
 
-    FACILITY_PREFIX_PATTERN = re.compile(
-        r"^(?:cl[íi]nica|hospital|sanatorio|centro m[ée]dico|consultorio|policl[íi]nica|farmacia|droguer[íi]a)\b",
-        re.IGNORECASE,
-    )
+    Adapts Overture provider-specific categories and coordinates, delegating core
+    lexical organization and medical specialty reasoning to the source-neutral classifier.
+    """
 
-    ASSOCIATION_MARKER_PATTERN = re.compile(
-        r"\b(?:asociaci[oó]n|asociaciones|sociedad|sociedades|colegio|colegios|federaci[oó]n|federaciones|"
-        r"confederaci[oó]n|confederaciones|gremio|gremios|fundaci[oó]n|fundaciones|uni[oó]n|uniones|"
-        r"association|associations|society|societies|federation|federations|college|colleges|council|guild)\b",
-        re.IGNORECASE,
-    )
+    FACILITY_PREFIX_PATTERN = OrganizationCandidateClassifier.FACILITY_PREFIX_PATTERN
+    ASSOCIATION_MARKER_PATTERN = OrganizationCandidateClassifier.ASSOCIATION_MARKER_PATTERN
+    MEDICAL_SCIENTIFIC_PATTERN = OrganizationCandidateClassifier.MEDICAL_SCIENTIFIC_PATTERN
+    PROFESSIONAL_ASSOC_PATTERN = OrganizationCandidateClassifier.PROFESSIONAL_ASSOC_PATTERN
 
-    MEDICAL_SCIENTIFIC_PATTERN = re.compile(
-        r"\b(?:" + _LOGIA_SPECIALTY_PATTERN + r"|" + r"|".join(SPECIALTY_OTHER_PATTERNS) + r")\b",
-        re.IGNORECASE,
-    )
-
-    PROFESSIONAL_ASSOC_PATTERN = re.compile(
-        r"\b(?:colegio|colegios|gremio|gremios|profesional|profesionales|"
-        r"professional|asociaci[oó]n|sociedad|federaci[oó]n)\b",
-        re.IGNORECASE,
-    )
+    def __init__(self, classifier: Optional[IOrganizationCandidateClassifier] = None):
+        self.classifier = classifier or OrganizationCandidateClassifier()
 
     def is_genuine_association(self, biz: DiscoveredBusiness) -> bool:
         name = (biz.name or "").strip()
@@ -198,21 +144,20 @@ class OvertureCandidateValidator:
         return False
 
     def has_medical_or_scientific_specialization(self, biz: DiscoveredBusiness) -> bool:
-        name = (biz.name or "").strip()
-        if self.MEDICAL_SCIENTIFIC_PATTERN.search(name):
-            return True
-        cat = (biz.category or "").strip()
-        if cat and self.MEDICAL_SCIENTIFIC_PATTERN.search(cat):
-            return True
-        ind = (biz.forge_industry or "").strip()
-        if ind and self.MEDICAL_SCIENTIFIC_PATTERN.search(ind):
-            return True
-        return False
+        hints = {biz.category} if biz.category else set()
+        meta = dict(biz.raw_data) if isinstance(biz.raw_data, dict) else {}
+        if biz.forge_industry:
+            meta["forge_industry"] = biz.forge_industry
+        if biz.category:
+            meta["category"] = biz.category
+        return self.classifier.has_medical_or_scientific_specialization(
+            biz.name, category_hints=hints, raw_metadata=meta
+        )
 
     def validate_candidate(
         self, biz: DiscoveredBusiness, task: DiscoveryTask
     ) -> Tuple[bool, Optional[str]]:
-        """Validate a candidate business against geographic radius, exclusions, and entity specialization."""
+        """Validate an Overture candidate business against radius, exclusions, and entity specialization."""
         name = (biz.name or "").strip()
         cat = (biz.category or "").lower().strip()
 
@@ -258,23 +203,20 @@ class OvertureCandidateValidator:
                         f"EXCEEDS_RADIUS ({dist:.2f} mi > {task.radius_miles:.2f} mi)",
                     )
 
-        # 2. Extract all candidate categories (primary + alternates if present in raw_data)
+        # 2. Extract candidate category hints and facility hints from Overture
         cand_cats = {cat} if cat else set()
         raw_alts_list = []
         if isinstance(biz.raw_data, dict):
-            # Check categories.alternate (standard GeoParquet)
             alts1 = (
                 biz.raw_data.get("categories", {}).get("alternate", [])
                 if isinstance(biz.raw_data.get("categories"), dict)
                 else []
             )
-            # Check taxonomy.alternates
             alts2 = (
                 biz.raw_data.get("taxonomy", {}).get("alternates", [])
                 if isinstance(biz.raw_data.get("taxonomy"), dict)
                 else []
             )
-            # Check direct alternate keys
             alts3 = biz.raw_data.get("alternate_categories", [])
             alts4 = (
                 biz.raw_data.get("categories", {}).get("alternates", [])
@@ -293,88 +235,41 @@ class OvertureCandidateValidator:
         # 3. Canonical target classification
         task_cat_norm = (task.category or "").strip().lower()
         canonical_target = CATEGORY_ALIASES.get(task_cat_norm, task_cat_norm)
-        is_association_target = canonical_target in (
-            "medical_association",
-            "scientific_society",
-            "professional_association",
-            "non_profit",
+
+        # Canonical category hints
+        cat_hints = set()
+        if cat in OVERTURE_DIRECT_CATEGORIES or any(c in OVERTURE_DIRECT_CATEGORIES for c in cand_cats):
+            cat_hints.add("association")
+        if cat == "professional_association" or "professional_association" in cand_cats:
+            cat_hints.add("professional_association")
+        if cat == "non_governmental_organization" or "non_governmental_organization" in cand_cats:
+            cat_hints.add("non_profit")
+
+        # Facility hints
+        facility_hints = set()
+        if cat in EXCLUDED_FACILITY_CATEGORIES:
+            facility_hints.add(cat)
+
+        # Build raw metadata dict preserving alternate categories
+        meta = dict(biz.raw_data) if isinstance(biz.raw_data, dict) else {}
+        if raw_alts_list:
+            meta["alternate_categories"] = raw_alts_list
+        if biz.forge_industry:
+            meta["forge_industry"] = biz.forge_industry
+        if cat:
+            meta["category"] = cat
+
+        req = CandidateClassificationRequest(
+            name=name,
+            target_intent=canonical_target,
+            canonical_category_hints=cat_hints,
+            canonical_facility_hints=facility_hints,
+            negative_keywords=list(task.negative_keywords or []),
+            raw_metadata=meta,
         )
 
-        # 4. Check for contradictory entity evidence (fails closed)
-        if is_association_target:
-            # If primary category is an association/organization but alternate categories contain an excluded facility
-            has_facility_alt = any(c in EXCLUDED_FACILITY_CATEGORIES for c in raw_alts_list)
-            if has_facility_alt:
-                return (
-                    False,
-                    f"CONTRADICTORY_ENTITY_EVIDENCE (category claims '{cat}' but alternates include facility {raw_alts_list})",
-                )
-
-            # Check explicit metadata contradiction flag
-            if isinstance(biz.raw_data, dict) and (
-                biz.raw_data.get("contradictory") is True
-                or biz.raw_data.get("is_facility") is True
-            ):
-                return False, f"CONTRADICTORY_ENTITY_EVIDENCE ({name})"
-
-            # Check dual-nature contradictory naming e.g. "Asociación y Clínica..."
-            if re.search(
-                r"\b(?:asociaci[oó]n|sociedad)\s+(?:y|e)\s+(?:cl[íi]nica|hospital|consultorio)\b",
-                name,
-                re.IGNORECASE,
-            ):
-                return False, f"CONTRADICTORY_ENTITY_EVIDENCE ({name})"
-
-        # 5. Facility and exclusion checks
-        # A. Facility category disqualification for association searches
-        if is_association_target:
-            if any(c in EXCLUDED_FACILITY_CATEGORIES for c in cand_cats):
-                return False, f"EXCLUDED_FACILITY_CATEGORY ({cat})"
-
-        # B. Negative keyword exclusions
-        neg_keywords = [
-            k.strip().lower() for k in (task.negative_keywords or []) if k.strip()
-        ]
-        # Also include canonical negative categories
-        if neg_keywords:
-            for neg in neg_keywords:
-                # Direct category exclusion
-                if neg in cand_cats:
-                    return False, f"EXCLUDED_BY_CATEGORY_KEYWORD ({neg})"
-
-                # If name matches negative keyword
-                if re.search(r"\b" + re.escape(neg) + r"\b", name, re.IGNORECASE):
-                    # Clinical/hospital terminology in genuine association names does NOT exclude them
-                    if self.is_genuine_association(biz):
-                        continue
-                    return False, f"EXCLUDED_BY_NEGATIVE_KEYWORD ({neg})"
-
-        # C. Name-level facility prefix check (e.g., "Clínica de la Asociación")
-        if self.FACILITY_PREFIX_PATTERN.search(name):
-            # If search targets associations or facility is excluded, reject
-            if is_association_target or any(
-                nk in ("clinic", "clínica", "clinica", "hospital", "consultorio", "farmacia")
-                for nk in neg_keywords
-            ):
-                return False, f"EXCLUDED_FACILITY_NAME ({name})"
-
-        # 6. Entity specialization requirements for association targets
-        if is_association_target:
-            if not self.is_genuine_association(biz):
-                return False, f"NOT_AN_ASSOCIATION ({name})"
-
-            if canonical_target in ("medical_association", "scientific_society"):
-                if not self.has_medical_or_scientific_specialization(biz):
-                    return False, f"UNVERIFIED_MEDICAL_SPECIALIZATION ({name})"
-
-            elif canonical_target == "professional_association":
-                if not (
-                    self.PROFESSIONAL_ASSOC_PATTERN.search(name)
-                    or cat == "professional_association"
-                ):
-                    return False, f"NOT_A_PROFESSIONAL_ASSOCIATION ({name})"
-
-        return True, None
+        decision = self.classifier.classify(req)
+        return decision.is_valid, decision.reason
 
 
 class OvertureDiscoveryProvider(IDiscoveryProvider):
