@@ -15,6 +15,7 @@ import {
   Sparkles,
   ArrowRight,
   CheckCircle2,
+  AlertCircle,
   AlertTriangle,
   RotateCcw,
   ExternalLink,
@@ -595,22 +596,51 @@ export default function DiscoveryPage() {
           <div className="flex items-center justify-between border-b border-border pb-3">
             <div>
               <h2 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-success" />
+                {executionResult.status === 'failed' ? (
+                  <AlertCircle className="w-4 h-4 text-danger" />
+                ) : (
+                  <CheckCircle2 className="w-4 h-4 text-success" />
+                )}
                 {t('discovery.results_title')}
               </h2>
               <p className="text-xs text-foreground-muted mt-0.5">
-                Campaign pipeline updated with deduplicated discovery records
+                {executionResult.status === 'failed'
+                  ? 'Discovery execution encountered errors and no prospects were imported'
+                  : 'Campaign pipeline updated with deduplicated discovery records'}
               </p>
             </div>
             <Badge
               size="sm"
-              variant={executionResult.status === 'completed' ? 'success' : 'warning'}
+              variant={
+                executionResult.status === 'completed'
+                  ? 'success'
+                  : executionResult.status === 'failed'
+                  ? 'danger'
+                  : 'warning'
+              }
             >
               {executionResult.status === 'completed'
                 ? t('discovery.status_completed')
+                : executionResult.status === 'failed'
+                ? t('discovery.status_failed')
                 : t('discovery.status_partial')}
             </Badge>
           </div>
+
+          {/* Execution Errors if any */}
+          {executionResult.errors && executionResult.errors.length > 0 && (
+            <div className="p-3 bg-rose-50 border border-rose-200/80 rounded-md space-y-1 text-xs">
+              <div className="flex items-center gap-1.5 text-rose-700 font-semibold">
+                <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+                <span>{t('discovery.errors_title')} ({executionResult.errors.length})</span>
+              </div>
+              <ul className="text-rose-700/90 space-y-1 pl-5 list-disc">
+                {executionResult.errors.map((err, idx) => (
+                  <li key={idx}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* Metric Counters */}
           <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">

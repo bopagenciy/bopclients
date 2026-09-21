@@ -31,16 +31,7 @@ class StaticLocationResolver(ILocationResolver):
     ) -> Optional[ResolvedLocation]:
         norm_country = CountryNormalizer.normalize(country)
 
-        # If postal code provided directly
-        if postal_code:
-            return ResolvedLocation(
-                country_code=norm_country,
-                region_code=region.upper() if region else None,
-                city=city.title() if city else None,
-                postal_code=postal_code,
-            )
-
-        # If city provided, look up in known database
+        # If city provided, look up in known database first to resolve coordinates
         if city:
             clean_city = city.strip().lower()
             key = (norm_country, clean_city)
@@ -50,10 +41,19 @@ class StaticLocationResolver(ILocationResolver):
                     country_code=norm_country,
                     region_code=reg or (region.upper() if region else None),
                     city=city.title(),
-                    postal_code=zip_code,
+                    postal_code=postal_code or zip_code,
                     latitude=lat,
                     longitude=lon,
                 )
+
+        # If postal code provided directly without known city
+        if postal_code:
+            return ResolvedLocation(
+                country_code=norm_country,
+                region_code=region.upper() if region else None,
+                city=city.title() if city else None,
+                postal_code=postal_code,
+            )
 
         # Fallback for country/region without city postal code resolution
         return ResolvedLocation(

@@ -22,7 +22,7 @@ from bopclients.domain.exceptions import EntityNotFoundError, TenantAccessError,
 from bopclients.runtime.container import RuntimeContainer
 from bopclients.application.search_dto import SearchPlan, DiscoveryTask, SearchWarning
 from bopclients.domain.normalizers import CategoryNormalizer
-from bopclients.infrastructure.providers.overture_provider import EXCLUDED_FACILITY_CATEGORIES
+from bopclients.infrastructure.providers.overture_provider import EXCLUDED_FACILITY_CATEGORIES, haversine_distance_miles
 
 router = APIRouter(prefix="/api/v1/discovery", tags=["Discovery"])
 
@@ -64,6 +64,8 @@ def _plan_to_response(plan: SearchPlan) -> SearchPlanResponse:
                 "region": t.region,
                 "country": t.country,
                 "postal_code": t.postal_code,
+                "latitude": t.latitude,
+                "longitude": t.longitude,
                 "radius_miles": t.radius_miles,
                 "limit": t.limit,
                 "negative_keywords": t.negative_keywords,
@@ -291,6 +293,29 @@ def _validate_submitted_tasks(
                     detail=f"Task geographic center '{task.city}, {task.country}' does not match campaign target markets.",
                 )
 
+        # Coordinate recovery and integrity validation
+        resolver = getattr(container.search_service.search_planner, "location_resolver", None) if getattr(container, "search_service", None) and hasattr(container.search_service, "search_planner") else None
+        canonical_loc = resolver.resolve(country=task.country, city=task.city, postal_code=task.postal_code) if resolver else None
+
+        if task.latitude is None or task.longitude is None:
+            if canonical_loc and canonical_loc.latitude is not None and canonical_loc.longitude is not None:
+                task.latitude = canonical_loc.latitude
+                task.longitude = canonical_loc.longitude
+            elif task.provider.lower() == "overture" and (task.country or "US").upper() != "US":
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Task geographic center '{task.city}, {task.country}' has no valid coordinates and cannot be resolved.",
+                )
+        else:
+            if canonical_loc and canonical_loc.latitude is not None and canonical_loc.longitude is not None:
+                dist = haversine_distance_miles(task.latitude, task.longitude, canonical_loc.latitude, canonical_loc.longitude)
+                allowed_deviation = max(task.radius_miles or 25.0, 30.0)
+                if dist > allowed_deviation:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"Task coordinates ({task.latitude:.4f}, {task.longitude:.4f}) deviate from canonical location '{task.city}, {task.country}'.",
+                    )
+
         # Unexpected task check (G)
         task_key = (task.provider.lower(), task_cat, (task.country or "").upper(), (task.city or "").lower())
         if task_key in seen_task_keys:
@@ -363,6 +388,8 @@ async def execute_discovery(
                 region=t.query_params.get("region"),
                 country=t.query_params.get("country", "US"),
                 postal_code=t.query_params.get("postal_code"),
+                latitude=float(t.query_params["latitude"]) if t.query_params.get("latitude") is not None else None,
+                longitude=float(t.query_params["longitude"]) if t.query_params.get("longitude") is not None else None,
                 radius_miles=float(t.query_params.get("radius_miles", 10.0)) if t.query_params.get("radius_miles") is not None else 10.0,
                 limit=int(t.query_params.get("limit", 100)) if t.query_params.get("limit") is not None else 100,
                 priority=t.priority,
