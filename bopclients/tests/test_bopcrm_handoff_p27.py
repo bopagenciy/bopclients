@@ -616,3 +616,245 @@ class TestBopCrmHandoffP27:
         assert status_res["status"] == "DELIVERING"
         assert status_res["attempt_count"] == 1
         assert "500 Internal Server Error" in status_res["last_error_message"]
+
+
+def test_p28_prospect_detail_regression(crm_ctx):
+    """Proves P28.3 Prospect Detail fix:
+    A. Prospect with intelligence returns HTTP 200.
+    B. Prospect without intelligence returns HTTP 200.
+    C. Existing response schema remains compatible.
+    D. CRM handoff status remains accessible.
+    E. Cross-tenant prospect remains inaccessible (HTTP 404).
+    """
+    client = crm_ctx["client"]
+    container = crm_ctx["container"]
+    org_a = crm_ctx["org_a"]
+    headers_a = crm_ctx["admin_headers"]
+    prospect_a = crm_ctx["prospect_a"]
+    prospect_b = crm_ctx["prospect_b"]
+
+    # B. Prospect WITHOUT intelligence
+    res_no_intel = client.get(f"/api/v1/prospects/{prospect_a.id}", headers=headers_a)
+    assert res_no_intel.status_code == 200
+    data_no_intel = res_no_intel.json()
+
+    # C. Existing response schema remains compatible
+    assert "prospect" in data_no_intel
+    assert data_no_intel["prospect"]["id"] == prospect_a.id
+    assert "campaign_associations" in data_no_intel
+    assert "lead_score" in data_no_intel
+    assert "priority" in data_no_intel
+    assert "recent_signals" in data_no_intel
+    assert "monitoring_schedule" in data_no_intel
+    assert data_no_intel.get("intelligence_summary") is None
+
+    # D. CRM handoff status remains accessible
+    _seed_crm_destination(container, org_a.bop_organization_id)
+    res_crm_status = client.get(f"/api/v1/prospects/{prospect_a.id}/crm-handoff", headers=headers_a)
+    assert res_crm_status.status_code == 200
+    assert res_crm_status.json()["status"] == "NOT_SENT"
+
+    # A. Prospect WITH intelligence
+    from bopclients.domain.prospect_intelligence import ProspectIntelligence
+    intel_entity = ProspectIntelligence(
+        organization_id=org_a.id,
+        prospect_id=prospect_a.id,
+        provider="deterministic",
+        research_version="v1.0",
+        confidence=0.95,
+        data={
+            "summary_text": "High-growth solar manufacturer expanding supply chain.",
+            "key_insights": ["Expanding production lines", "Procuring industrial supplies"],
+            "recommended_angle": "Pitch bulk supply volume discounts",
+        },
+    )
+    container.intel_repo.save(org_a.id, intel_entity)
+
+    res_with_intel = client.get(f"/api/v1/prospects/{prospect_a.id}", headers=headers_a)
+    assert res_with_intel.status_code == 200
+    data_with_intel = res_with_intel.json()
+    assert data_with_intel["intelligence_summary"] is not None
+    assert data_with_intel["intelligence_summary"]["summary_text"] == "High-growth solar manufacturer expanding supply chain."
+    assert "Expanding production lines" in data_with_intel["intelligence_summary"]["key_insights"]
+    assert data_with_intel["intelligence_summary"]["recommended_angle"] == "Pitch bulk supply volume discounts"
+
+    # E. Cross-tenant prospect remains inaccessible
+    res_cross = client.get(f"/api/v1/prospects/{prospect_b.id}", headers=headers_a)
+    assert res_cross.status_code == 404
+
+
+class TestP28CanonicalProspectUrl:
+    """Targeted tests for Phase P28.5 Canonical Prospect URL & Reverse Navigation."""
+
+    def test_a_local_public_web_url_produces_correct_nextjs_url(self, crm_ctx):
+        """A. Local public web URL produces the correct Next.js prospect URL."""
+        from bopclients.application.crm_handoff_service import (
+            validate_web_public_url,
+            build_canonical_prospect_url,
+        )
+        client = crm_ctx["client"]
+        container = crm_ctx["container"]
+        headers = crm_ctx["admin_headers"]
+        prospect_a = crm_ctx["prospect_a"]
+        org_a = crm_ctx["org_a"]
+
+        _seed_crm_destination(container, org_a.bop_organization_id)
+
+        res = client.post(
+            f"/api/v1/prospects/{prospect_a.id}/crm-handoff",
+            headers=headers,
+        )
+        assert res.status_code == 200
+        event_id = res.json()["event_id"]
+
+        event = container.outbox_repo.get_event(event_id, bop_organization_id=org_a.bop_organization_id)
+        assert event is not None
+        prospect_url = event.payload.get("prospect_url")
+        assert prospect_url == f"http://localhost:3011/en/prospects/{prospect_a.id}"
+
+        # Also verify direct builder
+        built = build_canonical_prospect_url("http://localhost:3011", prospect_a.id, "en")
+        assert built == f"http://localhost:3011/en/prospects/{prospect_a.id}"
+
+    def test_b_api_origin_never_leaks_into_prospect_url(self, crm_ctx):
+        """B. API origin never leaks into prospect_url."""
+        from bopclients.application.crm_handoff_service import (
+            validate_web_public_url,
+            build_canonical_prospect_url,
+        )
+        # 1. Direct validation rejects API host and port 8100
+        with pytest.raises(ValueError, match=r"8100"):
+            validate_web_public_url("http://127.0.0.1:8100")
+        with pytest.raises(ValueError, match=r"8100"):
+            validate_web_public_url("http://localhost:8100")
+        with pytest.raises(ValueError, match=r"8100"):
+            build_canonical_prospect_url("http://127.0.0.1:8100", "p-123")
+
+        # 2. Service ignores API base_url passed to trigger_handoff
+        container = crm_ctx["container"]
+        org_a = crm_ctx["org_a"]
+        _seed_crm_destination(container, org_a.bop_organization_id)
+
+        from bopclients.domain.prospect import Prospect
+        prospect_safe = Prospect(
+            id=str(uuid.uuid4()),
+            organization_id=org_a.id,
+            name="Safe Prospect",
+        )
+        container.prospect_repo.save_prospect(org_a.id, prospect_safe)
+
+        res = container.crm_handoff_service.trigger_handoff(
+            bop_organization_id=org_a.bop_organization_id,
+            organization_id=org_a.id,
+            prospect_id=prospect_safe.id,
+            requested_by_user_id="user-1",
+            base_url="http://127.0.0.1:8100",  # simulating API request host
+        )
+        event = container.outbox_repo.get_event(res["event_id"], bop_organization_id=org_a.bop_organization_id)
+        assert ":8100" not in event.payload["prospect_url"]
+        assert event.payload["prospect_url"].startswith("http://localhost:3011")
+
+    def test_c_docker_internal_host_never_leaks(self):
+        """C. Docker-internal host never leaks."""
+        from bopclients.application.crm_handoff_service import validate_web_public_url
+        with pytest.raises(ValueError, match=r"internal host"):
+            validate_web_public_url("http://backend:3000")
+        with pytest.raises(ValueError, match=r"internal host"):
+            validate_web_public_url("http://web:3000")
+        with pytest.raises(ValueError, match=r"internal host"):
+            validate_web_public_url("http://django-crm-backend:8000")
+        with pytest.raises(ValueError, match=r"internal host"):
+            validate_web_public_url("http://api.internal")
+
+    def test_d_configured_production_https_origin_works(self):
+        """D. Configured production HTTPS origin works."""
+        from bopclients.application.crm_handoff_service import build_canonical_prospect_url
+        prod_url = build_canonical_prospect_url(
+            web_public_url="https://clients.bopagenciy.com",
+            prospect_id="b0000004-0000-4000-8000-000000000004",
+            locale="en",
+            is_production=True,
+        )
+        assert prod_url == "https://clients.bopagenciy.com/en/prospects/b0000004-0000-4000-8000-000000000004"
+
+        # Trailing slash is properly normalized
+        prod_url_slash = build_canonical_prospect_url(
+            web_public_url="https://clients.bopagenciy.com/",
+            prospect_id="b0000004-0000-4000-8000-000000000004",
+            locale="en",
+            is_production=True,
+        )
+        assert prod_url_slash == "https://clients.bopagenciy.com/en/prospects/b0000004-0000-4000-8000-000000000004"
+
+        # HTTP rejected in production
+        with pytest.raises(ValueError, match=r"HTTPS"):
+            build_canonical_prospect_url(
+                web_public_url="http://clients.bopagenciy.com",
+                prospect_id="b0000004-0000-4000-8000-000000000004",
+                is_production=True,
+            )
+
+    def test_e_prospect_id_preserved(self):
+        """E. Prospect ID preserved exactly."""
+        from bopclients.application.crm_handoff_service import build_canonical_prospect_url
+        pid = "b0000004-0000-4000-8000-000000000004"
+        url = build_canonical_prospect_url("http://localhost:3011", pid, "en")
+        assert url.endswith(f"/prospects/{pid}")
+
+    def test_f_correct_supported_locale_path_used(self):
+        """F. Correct supported locale path used."""
+        from bopclients.application.crm_handoff_service import build_canonical_prospect_url
+        pid = "test-pid-1"
+        url_en = build_canonical_prospect_url("http://localhost:3011", pid, "en")
+        assert url_en == f"http://localhost:3011/en/prospects/{pid}"
+
+        url_es = build_canonical_prospect_url("http://localhost:3011", pid, "es")
+        assert url_es == f"http://localhost:3011/es/prospects/{pid}"
+
+        url_es_sub = build_canonical_prospect_url("http://localhost:3011", pid, "es-MX")
+        assert url_es_sub == f"http://localhost:3011/es/prospects/{pid}"
+
+        # Unknown locale falls back safely to default 'en'
+        url_fallback = build_canonical_prospect_url("http://localhost:3011", pid, "de")
+        assert url_fallback == f"http://localhost:3011/en/prospects/{pid}"
+
+    def test_g_existing_event_idempotency_unchanged(self, crm_ctx):
+        """G. Existing event idempotency unchanged."""
+        client = crm_ctx["client"]
+        container = crm_ctx["container"]
+        headers = crm_ctx["admin_headers"]
+        prospect_a = crm_ctx["prospect_a"]
+        org_a = crm_ctx["org_a"]
+
+        _seed_crm_destination(container, org_a.bop_organization_id)
+
+        res1 = client.post(f"/api/v1/prospects/{prospect_a.id}/crm-handoff", headers=headers)
+        assert res1.status_code == 200
+        assert res1.json()["is_idempotent_replay"] is False
+        event_id1 = res1.json()["event_id"]
+
+        res2 = client.post(f"/api/v1/prospects/{prospect_a.id}/crm-handoff", headers=headers)
+        assert res2.status_code == 200
+        assert res2.json()["is_idempotent_replay"] is True
+        assert res2.json()["event_id"] == event_id1
+
+        # Confirm only one outbox record exists
+        outbox_rows = container.outbox_repo.list_pending()
+        matching = [r for r in outbox_rows if r.event_id == event_id1]
+        assert len(matching) == 1
+
+    def test_h_missing_public_url_fails_safely_not_api_url(self):
+        """H. Missing public URL configuration fails safely rather than returning an API URL."""
+        from bopclients.application.crm_handoff_service import build_canonical_prospect_url
+        pid = "test-pid-2"
+        # In production, missing web_public_url raises ValueError
+        with pytest.raises(ValueError, match=r"BOPCLIENTS_WEB_PUBLIC_URL is required"):
+            build_canonical_prospect_url("", pid, is_production=True)
+
+        with pytest.raises(ValueError, match=r"BOPCLIENTS_WEB_PUBLIC_URL is required"):
+            build_canonical_prospect_url("   ", pid, is_production=True)
+
+        # In dev, missing web_public_url safely defaults to frontend port 3011, NEVER API port 8100
+        dev_url = build_canonical_prospect_url("", pid, is_production=False)
+        assert dev_url == f"http://localhost:3011/en/prospects/{pid}"
+        assert ":8100" not in dev_url

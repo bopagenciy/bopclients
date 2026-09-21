@@ -26,6 +26,7 @@ from bopclients.api.schemas.prospects import (
 )
 from bopclients.api.pagination import PaginationParams, PaginatedResponse, validate_sort_field
 from bopclients.api.dependencies import require_permission, get_container
+from bopclients.api.errors import resolve_request_locale
 from bopclients.domain.auth.context import TenantContext
 from bopclients.domain.auth.policy import Permission
 from bopclients.domain.campaign_prospect import CampaignProspect
@@ -683,14 +684,15 @@ async def get_prospect_detail(
         }
 
     # 4. Intelligence summary
-    intel = container.intel_repo.get_by_prospect_id(org_id, prospect_id)
+    intel = container.intel_repo.get_latest(org_id, prospect_id)
     intel_summary = None
     if intel:
+        intel_data = getattr(intel, "data", None) if isinstance(getattr(intel, "data", None), dict) else {}
         intel_summary = {
-            "summary_text": intel.summary_text,
-            "key_insights": intel.key_insights,
-            "recommended_angle": intel.recommended_angle,
-            "generated_at": intel.generated_at,
+            "summary_text": getattr(intel, "summary_text", None) or intel_data.get("summary_text") or intel_data.get("executive_summary"),
+            "key_insights": getattr(intel, "key_insights", None) or intel_data.get("key_insights") or [],
+            "recommended_angle": getattr(intel, "recommended_angle", None) or intel_data.get("recommended_angle"),
+            "generated_at": getattr(intel, "generated_at", None) or getattr(intel, "created_at", None),
         }
 
     # 5. Recent signals
@@ -1335,13 +1337,13 @@ async def bulk_prospect_crm_handoff(
     container: RuntimeContainer = Depends(get_container),
 ) -> BulkCrmHandoffResponse:
     user_id = getattr(request.state, "user_id", "system")
-    base_url = str(request.base_url).rstrip("/")
+    locale = resolve_request_locale(request)
     res = container.crm_handoff_service.bulk_handoff(
         bop_organization_id=tenant.bop_organization_id,
         organization_id=tenant.organization_id,
         prospect_ids=payload.prospect_ids,
         requested_by_user_id=user_id,
-        base_url=base_url,
+        locale=locale,
     )
     return BulkCrmHandoffResponse(**res)
 
@@ -1359,13 +1361,13 @@ async def handoff_prospect_to_crm(
     container: RuntimeContainer = Depends(get_container),
 ) -> CrmHandoffResponse:
     user_id = getattr(request.state, "user_id", "system")
-    base_url = str(request.base_url).rstrip("/")
+    locale = resolve_request_locale(request)
     res = container.crm_handoff_service.trigger_handoff(
         bop_organization_id=tenant.bop_organization_id,
         organization_id=tenant.organization_id,
         prospect_id=prospect_id,
         requested_by_user_id=user_id,
-        base_url=base_url,
+        locale=locale,
     )
     return CrmHandoffResponse(**res)
 

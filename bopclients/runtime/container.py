@@ -4,7 +4,7 @@ import logging
 from dataclasses import dataclass
 from typing import Optional, Any
 
-from bopclients.runtime.settings import RuntimeSettings
+from bopclients.runtime.settings import RuntimeSettings, AppEnvironment
 from bopclients.runtime.readiness import RuntimeReadinessCheck, ReadinessStatus
 
 from bopclients.infrastructure.repositories.organization_repository import OrganizationRepository, UserRepository
@@ -337,6 +337,8 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         campaign_repo=campaign_repo,
         signal_repo=observation_repo,
         dispatcher=integration_dispatcher,
+        web_public_url=settings.web_public_url,
+        is_production=(settings.environment == AppEnvironment.PRODUCTION),
     )
 
     return RuntimeContainer(

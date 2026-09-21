@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 import logging
 from typing import Dict, Any, Optional, List
 import uuid
+from urllib.parse import urlparse
 
 from bopclients.domain.integration.app_id import LOCAL_APPLICATION_ID
 from bopclients.domain.integration.delivery import DeliveryStatus, DeliveryRecord
@@ -25,6 +26,84 @@ from bopclients.application.integration_dispatcher import IntegrationOutboxDispa
 
 logger = logging.getLogger("bopclients.application.crm_handoff_service")
 
+DISALLOWED_INTERNAL_HOSTS = {
+    "backend",
+    "web",
+    "api",
+    "django-crm-backend",
+    "django-crm-frontend",
+    "db",
+    "redis",
+    "bophub-frontend",
+    "bophub-backend",
+    "integration-dispatcher",
+}
+
+
+def validate_web_public_url(url: str, is_production: bool = False) -> str:
+    """Validate public web URL ensuring valid HTTP/HTTPS scheme and preventing internal host/API leaks."""
+    if not url or not str(url).strip():
+        raise ValueError("Public web URL cannot be empty.")
+
+    cleaned = str(url).strip()
+    parsed = urlparse(cleaned)
+
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        raise ValueError(f"Invalid web public URL '{url}': must be an absolute URL with http or https scheme.")
+
+    hostname = (parsed.hostname or "").lower()
+    port = parsed.port
+
+    # Disallow API port 8100 explicitly
+    if port == 8100 or ":8100" in cleaned:
+        raise ValueError("Web public URL must not point to API host or port (8100).")
+
+    # Disallow Docker-internal hostnames
+    if hostname in DISALLOWED_INTERNAL_HOSTS or hostname.endswith((".internal", ".local")):
+        raise ValueError(f"Web public URL must not use internal host '{hostname}'.")
+
+    if is_production:
+        if parsed.scheme != "https":
+            raise ValueError("Web public URL must use HTTPS in production.")
+        if hostname in ("localhost", "127.0.0.1"):
+            raise ValueError("Web public URL cannot be localhost or loopback in production.")
+
+    return f"{parsed.scheme}://{parsed.netloc}".rstrip("/")
+
+
+def build_canonical_prospect_url(
+    web_public_url: str,
+    prospect_id: str,
+    locale: str = "en",
+    is_production: bool = False,
+) -> str:
+    """Build canonical browser-facing prospect detail URL matching Next.js routing:
+    {web_public_url}/{locale}/prospects/{prospect_id}
+    """
+    if not web_public_url or not str(web_public_url).strip():
+        if is_production:
+            raise ValueError("BOPCLIENTS_WEB_PUBLIC_URL is required in production.")
+        web_public_url = "http://localhost:3011"
+
+    base = validate_web_public_url(web_public_url, is_production=is_production)
+
+    # Normalize locale (supported: en, es; default: en)
+    norm_locale = (locale or "en").strip().lower()
+    if norm_locale.startswith("es"):
+        resolved_locale = "es"
+    elif norm_locale.startswith("en"):
+        resolved_locale = "en"
+    elif norm_locale in ("en", "es"):
+        resolved_locale = norm_locale
+    else:
+        resolved_locale = "en"
+
+    clean_prospect_id = str(prospect_id).strip()
+    if not clean_prospect_id:
+        raise ValueError("prospect_id cannot be empty.")
+
+    return f"{base}/{resolved_locale}/prospects/{clean_prospect_id}"
+
 
 class CrmHandoffService:
     """Service orchestrating prospect handoff into the platform transactional outbox for CRM delivery."""
@@ -39,6 +118,8 @@ class CrmHandoffService:
         campaign_repo: Optional[CampaignRepository] = None,
         signal_repo: Optional[SignalObservationRepository] = None,
         dispatcher: Optional[IntegrationOutboxDispatcher] = None,
+        web_public_url: str = "http://localhost:3011",
+        is_production: bool = False,
     ):
         self.prospect_repo = prospect_repo
         self.outbox_repo = outbox_repo
@@ -48,6 +129,8 @@ class CrmHandoffService:
         self.campaign_repo = campaign_repo
         self.signal_repo = signal_repo
         self.dispatcher = dispatcher
+        self.web_public_url = web_public_url or "http://localhost:3011"
+        self.is_production = is_production
 
     @staticmethod
     def derive_event_id(bop_organization_id: str, prospect_id: str) -> str:
@@ -100,6 +183,8 @@ class CrmHandoffService:
         prospect_id: str,
         requested_by_user_id: str,
         base_url: str = "",
+        web_public_url: Optional[str] = None,
+        locale: str = "en",
     ) -> Dict[str, Any]:
         """Trigger handoff of a prospect to Bop CRM via canonical integration outbox."""
         # 1. Tenant boundary: verify prospect exists and belongs to tenant
@@ -153,7 +238,23 @@ class CrmHandoffService:
         location_str = ", ".join(loc_parts) if loc_parts else None
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        prospect_url = f"{base_url}/prospects/{prospect.id}" if base_url else f"/prospects/{prospect.id}"
+
+        # Build canonical public web prospect URL (P28.5)
+        target_web_url = web_public_url or self.web_public_url
+        if base_url and not web_public_url:
+            if not (":8100" in base_url or "backend" in base_url):
+                try:
+                    validate_web_public_url(base_url, is_production=self.is_production)
+                    target_web_url = base_url
+                except ValueError:
+                    pass
+
+        prospect_url = build_canonical_prospect_url(
+            web_public_url=target_web_url,
+            prospect_id=prospect.id,
+            locale=locale,
+            is_production=self.is_production,
+        )
 
         payload: Dict[str, Any] = {
             "prospect_id": prospect.id,
@@ -267,6 +368,8 @@ class CrmHandoffService:
         prospect_ids: List[str],
         requested_by_user_id: str,
         base_url: str = "",
+        web_public_url: Optional[str] = None,
+        locale: str = "en",
     ) -> Dict[str, Any]:
         """Trigger handoff for multiple prospects in bulk."""
         destinations = self.destination_repo.get_destinations_for_event(
@@ -291,6 +394,8 @@ class CrmHandoffService:
                     prospect_id=pid,
                     requested_by_user_id=requested_by_user_id,
                     base_url=base_url,
+                    web_public_url=web_public_url,
+                    locale=locale,
                 )
                 if res.get("is_idempotent_replay"):
                     already_processed += 1

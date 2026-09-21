@@ -108,6 +108,9 @@ class RuntimeSettings:
     email_api_key: str = ""
     app_url: str = "http://localhost:3000"
 
+    # Public Web Application configuration (P28.5)
+    web_public_url: str = "http://localhost:3011"
+
     # Account Recovery & Verification configuration (P26)
     password_reset_token_expire_minutes: int = 60
     email_verification_token_expire_hours: int = 24
@@ -178,6 +181,15 @@ class RuntimeSettings:
         pwd_reset_expire = int(os.environ.get("BOP_PASSWORD_RESET_TOKEN_EXPIRE_MINUTES", "60"))
         email_verify_expire = int(os.environ.get("BOP_EMAIL_VERIFICATION_TOKEN_EXPIRE_HOURS", "24"))
 
+        web_public_url_env = os.environ.get("BOPCLIENTS_WEB_PUBLIC_URL", "").strip()
+        if not web_public_url_env:
+            if env == AppEnvironment.PRODUCTION:
+                web_public_url_val = ""
+            else:
+                web_public_url_val = "http://localhost:3011"
+        else:
+            web_public_url_val = web_public_url_env
+
         return cls(
             environment=env,
             database_url=db_url,
@@ -219,6 +231,7 @@ class RuntimeSettings:
             email_from=email_sender_from,
             email_api_key=email_key,
             app_url=app_url_val,
+            web_public_url=web_public_url_val,
             password_reset_token_expire_minutes=pwd_reset_expire,
             email_verification_token_expire_hours=email_verify_expire,
         )
@@ -273,6 +286,15 @@ class RuntimeSettings:
             pass
         else:
             raise ValueError(f"Unsupported database scheme: '{self.database_url}'")
+
+        # Public Web URL validation (P28.5)
+        if self.environment == AppEnvironment.PRODUCTION:
+            if not self.web_public_url:
+                raise ValueError("BOPCLIENTS_WEB_PUBLIC_URL must be explicitly configured in production.")
+            if not self.web_public_url.startswith("https://"):
+                raise ValueError("BOPCLIENTS_WEB_PUBLIC_URL must use HTTPS in production.")
+            if ":8100" in self.web_public_url:
+                raise ValueError("BOPCLIENTS_WEB_PUBLIC_URL must not point to API host or port (8100).")
 
     def mask_database_url(self) -> str:
         """Return database URI with user credentials safely redacted."""
@@ -353,4 +375,5 @@ class RuntimeSettings:
             "email_from": self.email_from,
             "email_configured": bool(self.email_api_key),
             "app_url": self.app_url,
+            "web_public_url": self.web_public_url,
         }
