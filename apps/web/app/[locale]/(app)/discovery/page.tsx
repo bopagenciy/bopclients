@@ -45,6 +45,32 @@ interface TargetMarketItem {
   language: string;
 }
 
+function formatApiError(err: any, fallbackMessage: string): string {
+  if (!err) return fallbackMessage;
+  let msg = err.error?.message || err.message || fallbackMessage;
+  if (err.error?.details) {
+    if (typeof err.error.details === 'string') {
+      msg = `${msg} (${err.error.details})`;
+    } else if (Array.isArray(err.error.details)) {
+      const dStr = err.error.details.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
+      if (dStr) msg = `${msg} (${dStr})`;
+    } else if (typeof err.error.details === 'object') {
+      const detailEntries = Object.entries(err.error.details).map(([k, v]) => `${k}: ${v}`);
+      if (detailEntries.length > 0) {
+        msg = `${msg} (${detailEntries.join(', ')})`;
+      }
+    }
+  } else if (err.detail) {
+    if (typeof err.detail === 'string') {
+      msg = err.detail;
+    } else if (Array.isArray(err.detail)) {
+      const dStr = err.detail.map((d: any) => d.msg || JSON.stringify(d)).join(', ');
+      if (dStr) msg = `${msg} (${dStr})`;
+    }
+  }
+  return msg;
+}
+
 export default function DiscoveryPage() {
   const { t, locale } = useI18n();
   const { activeOrg } = useAuth();
@@ -142,7 +168,7 @@ export default function DiscoveryPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || `Failed to parse intent (${res.status})`);
+        throw new Error(formatApiError(err, `Failed to parse intent (${res.status})`));
       }
 
       const data: SearchIntent = await res.json();
@@ -175,7 +201,7 @@ export default function DiscoveryPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || `Failed to generate search plan (${res.status})`);
+        throw new Error(formatApiError(err, `Failed to generate search plan (${res.status})`));
       }
 
       const data: SearchPlan = await res.json();
@@ -213,7 +239,7 @@ export default function DiscoveryPage() {
 
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.error?.message || `Failed to execute discovery (${res.status})`);
+        throw new Error(formatApiError(err, `Failed to execute discovery (${res.status})`));
       }
 
       const data: DiscoveryExecutionResult = await res.json();

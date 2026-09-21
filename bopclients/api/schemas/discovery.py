@@ -1,6 +1,6 @@
 """Pydantic schemas for discovery workflow endpoints."""
 
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Union
 from pydantic import BaseModel, Field
 
 
@@ -85,12 +85,43 @@ class SearchPlanResponse(BaseModel):
     generated_at: str
 
 
+class SearchPlanExecutionPayload(BaseModel):
+    """Pre-approved search plan payload submitted for execution with tasks or plan parameters."""
+
+    organization_id: Optional[str] = None
+    campaign_id: Optional[str] = None
+    target_market_id: Optional[str] = None
+    radius_miles: Optional[float] = None
+    raw_query: Optional[str] = None
+    tasks: List[DiscoveryTaskResponse] = Field(default_factory=list)
+    warnings: List[str] = Field(default_factory=list)
+    estimated_total_cost_credits: Optional[float] = 0.0
+    generated_at: Optional[str] = None
+    industries: List[str] = Field(default_factory=list)
+    business_categories: List[str] = Field(default_factory=list)
+    countries: List[str] = Field(default_factory=list)
+    regions: List[str] = Field(default_factory=list)
+    cities: List[str] = Field(default_factory=list)
+    languages: List[str] = Field(default_factory=list)
+    company_size_min: Optional[int] = None
+    company_size_max: Optional[int] = None
+    company_sizes: List[str] = Field(default_factory=list)
+    decision_maker_roles: List[str] = Field(default_factory=list)
+    keywords: List[str] = Field(default_factory=list)
+    negative_keywords: List[str] = Field(default_factory=list)
+    services_to_offer: List[str] = Field(default_factory=list)
+    desired_signals: List[str] = Field(default_factory=list)
+    max_results: Optional[int] = 100
+
+
 class DiscoveryExecutionRequest(BaseModel):
     """Request to execute discovery into an active campaign."""
 
     campaign_id: str = Field(..., description="Target active campaign ID (required)")
     raw_query: Optional[str] = Field(default=None, description="Optional raw query to parse & execute in one call")
-    search_plan: Optional[SearchPlanRequest] = Field(default=None, description="Optional pre-approved SearchPlan to execute")
+    search_plan: Optional[Union[SearchPlanExecutionPayload, SearchPlanRequest]] = Field(
+        default=None, description="Optional pre-approved SearchPlan or plan parameters to execute"
+    )
 
 
 class DiscoveredProspectSummary(BaseModel):

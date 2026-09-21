@@ -7849,13 +7849,17 @@
           "search_plan": {
             "anyOf": [
               {
+                "$ref": "#/components/schemas/SearchPlanExecutionPayload"
+              },
+              {
                 "$ref": "#/components/schemas/SearchPlanRequest"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Optional pre-approved SearchPlan to execute"
+            "title": "Search Plan",
+            "description": "Optional pre-approved SearchPlan or plan parameters to execute"
           }
         },
         "type": "object",
@@ -11255,6 +11259,223 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "SearchPlanExecutionPayload": {
+        "properties": {
+          "organization_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Organization Id"
+          },
+          "campaign_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Campaign Id"
+          },
+          "target_market_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Market Id"
+          },
+          "radius_miles": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Radius Miles"
+          },
+          "raw_query": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Raw Query"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/DiscoveryTaskResponse"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "estimated_total_cost_credits": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimated Total Cost Credits",
+            "default": 0.0
+          },
+          "generated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generated At"
+          },
+          "industries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Industries"
+          },
+          "business_categories": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Business Categories"
+          },
+          "countries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Countries"
+          },
+          "regions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Regions"
+          },
+          "cities": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Cities"
+          },
+          "languages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Languages"
+          },
+          "company_size_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Size Min"
+          },
+          "company_size_max": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Company Size Max"
+          },
+          "company_sizes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Company Sizes"
+          },
+          "decision_maker_roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Decision Maker Roles"
+          },
+          "keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Keywords"
+          },
+          "negative_keywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Negative Keywords"
+          },
+          "services_to_offer": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Services To Offer"
+          },
+          "desired_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Desired Signals"
+          },
+          "max_results": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Results",
+            "default": 100
+          }
+        },
+        "type": "object",
+        "title": "SearchPlanExecutionPayload",
+        "description": "Pre-approved search plan payload submitted for execution with tasks or plan parameters."
       }
     },
     "securitySchemes": {
