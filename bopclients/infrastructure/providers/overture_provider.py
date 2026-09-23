@@ -164,35 +164,7 @@ class OvertureCandidateValidator:
         # 1. Radius validation (Haversine great-circle distance)
         if task.latitude is not None and task.longitude is not None:
             if biz.latitude is None or biz.longitude is None:
-                # If candidate lacks coordinates:
-                # For exact postal code match in legacy US tests, allow if zip matches exactly
-                # and target is not a specialized association search
-                task_cat_norm = (task.category or "").strip().lower()
-                canonical_target = CATEGORY_ALIASES.get(task_cat_norm, task_cat_norm)
-                is_assoc = canonical_target in (
-                    "medical_association",
-                    "scientific_society",
-                    "professional_association",
-                    "non_profit",
-                )
-                if (
-                    not is_assoc
-                    and (
-                        (
-                            task.postal_code
-                            and biz.zip_code
-                            and task.postal_code.strip() == biz.zip_code.strip()
-                        )
-                        or (
-                            task.city
-                            and biz.city
-                            and task.city.strip().lower() == biz.city.strip().lower()
-                        )
-                    )
-                ):
-                    pass
-                else:
-                    return False, "MISSING_COORDINATES_FAIL_CLOSED"
+                return False, "MISSING_COORDINATES_FAIL_CLOSED"
             else:
                 dist = haversine_distance_miles(
                     task.latitude, task.longitude, biz.latitude, biz.longitude
@@ -236,40 +208,111 @@ class OvertureCandidateValidator:
         task_cat_norm = (task.category or "").strip().lower()
         canonical_target = CATEGORY_ALIASES.get(task_cat_norm, task_cat_norm)
 
-        # Canonical category hints
-        cat_hints = set()
-        if cat in OVERTURE_DIRECT_CATEGORIES or any(c in OVERTURE_DIRECT_CATEGORIES for c in cand_cats):
-            cat_hints.add("association")
-        if cat == "professional_association" or "professional_association" in cand_cats:
-            cat_hints.add("professional_association")
-        if cat == "non_governmental_organization" or "non_governmental_organization" in cand_cats:
-            cat_hints.add("non_profit")
-
-        # Facility hints
-        facility_hints = set()
-        if cat in EXCLUDED_FACILITY_CATEGORIES:
-            facility_hints.add(cat)
-
-        # Build raw metadata dict preserving alternate categories
-        meta = dict(biz.raw_data) if isinstance(biz.raw_data, dict) else {}
-        if raw_alts_list:
-            meta["alternate_categories"] = raw_alts_list
-        if biz.forge_industry:
-            meta["forge_industry"] = biz.forge_industry
-        if cat:
-            meta["category"] = cat
-
-        req = CandidateClassificationRequest(
-            name=name,
-            target_intent=canonical_target,
-            canonical_category_hints=cat_hints,
-            canonical_facility_hints=facility_hints,
-            negative_keywords=list(task.negative_keywords or []),
-            raw_metadata=meta,
+        is_association_target = (
+            canonical_target in (
+                "medical_association",
+                "scientific_society",
+                "professional_association",
+                "non_profit",
+                "association_or_organization",
+            )
+            or "association" in canonical_target
         )
 
-        decision = self.classifier.classify(req)
-        return decision.is_valid, decision.reason
+        if is_association_target:
+            # Canonical category hints
+            cat_hints = set()
+            if cat in OVERTURE_DIRECT_CATEGORIES or any(c in OVERTURE_DIRECT_CATEGORIES for c in cand_cats):
+                cat_hints.add("association")
+            if cat == "professional_association" or "professional_association" in cand_cats:
+                cat_hints.add("professional_association")
+            if cat == "non_governmental_organization" or "non_governmental_organization" in cand_cats:
+                cat_hints.add("non_profit")
+
+            # Facility hints
+            facility_hints = set()
+            if cat in EXCLUDED_FACILITY_CATEGORIES:
+                facility_hints.add(cat)
+
+            # Build raw metadata dict preserving alternate categories
+            meta = dict(biz.raw_data) if isinstance(biz.raw_data, dict) else {}
+            if raw_alts_list:
+                meta["alternate_categories"] = raw_alts_list
+            if biz.forge_industry:
+                meta["forge_industry"] = biz.forge_industry
+            if cat:
+                meta["category"] = cat
+
+            req = CandidateClassificationRequest(
+                name=name,
+                target_intent=canonical_target,
+                canonical_category_hints=cat_hints,
+                canonical_facility_hints=facility_hints,
+                negative_keywords=list(task.negative_keywords or []),
+                raw_metadata=meta,
+            )
+
+            decision = self.classifier.classify(req)
+            return decision.is_valid, decision.reason
+
+        # 4. Direct Overture POI Category Validation Path
+        is_supported_overture = (
+            canonical_target in _CATEGORY_TO_INDUSTRY
+            or canonical_target in _INDUSTRY_TO_CATEGORIES
+            or canonical_target in OVERTURE_DIRECT_CATEGORIES
+            or canonical_target in CANONICAL_CATEGORY_MAPPINGS
+            or canonical_target in ("general", "any", "all")
+        )
+        if not is_supported_overture:
+            return False, f"UNSUPPORTED_OVERTURE_CATEGORY ({canonical_target})"
+
+        # A. Facility exclusions
+        if self.FACILITY_PREFIX_PATTERN.search(name):
+            if canonical_target not in EXCLUDED_FACILITY_CATEGORIES:
+                return False, f"EXCLUDED_FACILITY_NAME ({name})"
+
+        if cat in EXCLUDED_FACILITY_CATEGORIES or any(c in EXCLUDED_FACILITY_CATEGORIES for c in cand_cats):
+            if canonical_target not in EXCLUDED_FACILITY_CATEGORIES:
+                return False, f"EXCLUDED_FACILITY_CATEGORY ({cat})"
+
+        # B. Mandatory negative keyword exclusions
+        neg_keywords = [
+            k.strip().lower() for k in (task.negative_keywords or []) if k.strip()
+        ]
+        if neg_keywords:
+            for neg in neg_keywords:
+                if neg in cand_cats:
+                    return False, f"EXCLUDED_BY_CATEGORY_KEYWORD ({neg})"
+                if re.search(r"\b" + re.escape(neg) + r"\b", name, re.IGNORECASE):
+                    return False, f"EXCLUDED_BY_NEGATIVE_KEYWORD ({neg})"
+
+        # C. Contradictory entity evidence fails closed
+        if isinstance(biz.raw_data, dict) and (
+            biz.raw_data.get("contradictory") is True
+            or biz.raw_data.get("is_facility") is True
+        ):
+            return False, f"CONTRADICTORY_ENTITY_EVIDENCE ({name})"
+
+        # D. Category evidence compatibility check
+        if canonical_target not in ("general", "any", "all"):
+            compatible_cats = {canonical_target}
+            if canonical_target in _INDUSTRY_TO_CATEGORIES:
+                compatible_cats.update(_INDUSTRY_TO_CATEGORIES[canonical_target])
+            if canonical_target in _CATEGORY_TO_INDUSTRY:
+                ind = _CATEGORY_TO_INDUSTRY[canonical_target]
+                compatible_cats.add(ind)
+                if ind in _INDUSTRY_TO_CATEGORIES:
+                    compatible_cats.update(_INDUSTRY_TO_CATEGORIES[ind])
+
+            has_compatible_cat = (
+                cat in compatible_cats
+                or any(c in compatible_cats for c in cand_cats)
+                or (biz.forge_industry and biz.forge_industry.lower().strip() in compatible_cats)
+            )
+            if not has_compatible_cat:
+                return False, f"INCOMPATIBLE_OVERTURE_CATEGORY (expected '{canonical_target}', found '{cat}')"
+
+        return True, None
 
 
 class OvertureDiscoveryProvider(IDiscoveryProvider):
