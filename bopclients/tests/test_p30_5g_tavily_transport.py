@@ -114,7 +114,7 @@ class TestP30_5G4C_TavilyTransport:
         assert body["search_depth"] == "basic"
         assert body["topic"] == "general"
         assert body["max_results"] == 10
-        assert body["country"] == "co"
+        assert body["country"] == "colombia"
         assert body["include_domains"] == ["sociedadescientificas.com"]
         assert body["exclude_domains"] == ["spam.com"]
         assert body["include_answer"] is False
@@ -414,3 +414,83 @@ class TestP30_5G4C_TavilyTransport:
         assert 'api_key: str = ""' in source
         # Ensure disabled by default
         assert "enabled: bool = False" in source
+
+    # 17. Country Parameter Contract Mapping & Safe Omission
+    def test_17_country_parameter_contract_mapping(self):
+        """Verifies country code mapping: CO->colombia, US->united states, unsupported->omitted."""
+        recorded_payloads = []
+
+        def mock_client(req: urllib.request.Request, timeout: float) -> bytes:
+            body = json.loads(req.data.decode("utf-8"))
+            recorded_payloads.append(body)
+            return json.dumps({"results": []}).encode("utf-8")
+
+        transport = TavilyWebSearchTransport(
+            api_key="tvly-mock-key",
+            enabled=True,
+            http_client=mock_client,
+        )
+
+        # A. Canonical CO variations -> "colombia"
+        for co_val in ["CO", "co", " Colombia ", "colombia"]:
+            transport.search("query test", country=co_val)
+            last = recorded_payloads[-1]
+            assert last.get("country") == "colombia", f"Expected 'colombia' for {co_val}, got {last.get('country')}"
+
+        # B. Canonical US variations -> "united states"
+        for us_val in ["US", "us", " USA ", "United States", "united states"]:
+            transport.search("query test", country=us_val)
+            last = recorded_payloads[-1]
+            assert last.get("country") == "united states", f"Expected 'united states' for {us_val}, got {last.get('country')}"
+
+        # C. Unsupported countries -> omitted from payload (do not send invalid codes to Tavily)
+        for unsupp in ["DE", "FR", "GB", "ES", "XYZ", "unknown"]:
+            transport.search("query test", country=unsupp)
+            last = recorded_payloads[-1]
+            assert "country" not in last, f"Expected 'country' to be omitted for unsupported '{unsupp}', got {last.get('country')}"
+
+        # D. None or empty string -> omitted from payload
+        for empty_val in [None, "", "   "]:
+            transport.search("query test", country=empty_val)
+            last = recorded_payloads[-1]
+            assert "country" not in last, f"Expected 'country' to be omitted for empty value, got {last.get('country')}"
+
+    # 18. Country Boost Does Not Bypass Candidate Classification
+    def test_18_country_boost_does_not_bypass_classification(self):
+        """Verifies that sending country='colombia' does not mark an unrelated entity as verified."""
+        def mock_client(req, timeout) -> bytes:
+            # Return an entity that is unrelated (e.g., a hardware store)
+            resp = {
+                "results": [
+                    {
+                        "title": "Ferretería El Tornillo | Materiales de Construcción",
+                        "url": "https://ferreteriaeltornillo.com",
+                        "content": "Venta de herramientas y tornillos en Colombia.",
+                    }
+                ]
+            }
+            return json.dumps(resp).encode("utf-8")
+
+        transport = TavilyWebSearchTransport(
+            api_key="tvly-mock-key",
+            enabled=True,
+            http_client=mock_client,
+        )
+
+        provider = WebSearchDiscoveryProvider(
+            transport=transport,
+            enabled=True,
+            authorized_tenants={"tenant-123"},
+        )
+
+        task = DiscoveryTask(
+            provider="web_search",
+            category="medical_association",
+            country="CO",
+            query="asociaciones medicas cali",
+            metadata={"organization_id": "tenant-123"},
+        )
+
+        # Classification must reject the hardware store despite country='colombia' boost
+        candidates = provider.discover(task)
+        assert len(candidates) == 0

@@ -30,6 +30,15 @@ class TavilyWebSearchTransport(IWebSearchTransport):
     DEFAULT_ENDPOINT = "https://api.tavily.com/search"
     MAX_RESULTS_PER_REQUEST = 20
 
+    # Supported Tavily country names mapping from standard ISO alpha-2 codes or full names
+    SUPPORTED_COUNTRY_MAP: Dict[str, str] = {
+        "co": "colombia",
+        "colombia": "colombia",
+        "us": "united states",
+        "usa": "united states",
+        "united states": "united states",
+    }
+
     def __init__(
         self,
         api_key: str = "",
@@ -93,7 +102,10 @@ class TavilyWebSearchTransport(IWebSearchTransport):
         }
 
         if country:
-            payload["country"] = country.strip().lower()
+            norm_country = country.strip().lower()
+            tavily_country = self.SUPPORTED_COUNTRY_MAP.get(norm_country)
+            if tavily_country:
+                payload["country"] = tavily_country
 
         if self.include_domains:
             payload["include_domains"] = list(self.include_domains)
@@ -135,17 +147,29 @@ class TavilyWebSearchTransport(IWebSearchTransport):
             with urllib.request.urlopen(req, timeout=self.timeout_seconds) as response:
                 return response.read()
         except urllib.error.HTTPError as e:
+            err_detail = ""
+            try:
+                raw_err = e.read()
+                if raw_err:
+                    err_json = json.loads(raw_err.decode("utf-8"))
+                    if isinstance(err_json, dict):
+                        detail_val = err_json.get("detail") or err_json.get("message")
+                        if detail_val:
+                            err_detail = f": {detail_val}"
+            except Exception:
+                pass
+
             if e.code in (401, 403):
                 raise DiscoveryExecutionError(
-                    f"Tavily authentication failed: invalid or unauthorized API key (HTTP {e.code})"
+                    f"Tavily authentication failed: invalid or unauthorized API key (HTTP {e.code}){err_detail}"
                 )
             elif e.code == 429:
                 raise DiscoveryExecutionError(
-                    "Tavily rate limit or quota exceeded (HTTP 429)"
+                    f"Tavily rate limit or quota exceeded (HTTP 429){err_detail}"
                 )
             else:
                 raise DiscoveryExecutionError(
-                    f"Tavily search request failed with HTTP {e.code}"
+                    f"Tavily search request failed with HTTP {e.code}{err_detail}"
                 )
         except urllib.error.URLError as e:
             if isinstance(e.reason, TimeoutError) or "timed out" in str(e.reason).lower():
