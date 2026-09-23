@@ -21,6 +21,19 @@ class RuleBasedSearchIntentParser(ISearchIntentParser):
         "canadá": "CA", "canada": "CA", "suiza": "CH", "argentina": "AR"
     }
 
+    _KNOWN_REGIONS = {
+        "florida": ("US", "FL"),
+        "fl": ("US", "FL"),
+        "new jersey": ("US", "NJ"),
+        "nj": ("US", "NJ"),
+        "california": ("US", "CA"),
+        "ca": ("US", "CA"),
+        "valle del cauca": ("CO", "VALLE"),
+        "valle": ("CO", "VALLE"),
+        "cundinamarca": ("CO", "CUNDINAMARCA"),
+        "antioquia": ("CO", "ANTIOQUIA"),
+    }
+
     _CATEGORY_KEYWORDS = {
         "dentist": "dentist", "dentists": "dentist", "dentista": "dentist", "dentistas": "dentist",
         "clínica dental": "dentist", "clinica dental": "dentist", "dental office": "dentist", "dental clinic": "dentist",
@@ -67,6 +80,25 @@ class RuleBasedSearchIntentParser(ISearchIntentParser):
         "farmacias": "pharmacy", "farmacia": "pharmacy", "pharmacies": "pharmacy", "pharmacy": "pharmacy",
         # Generic Health
         "servicios de salud": "healthcare", "sector salud": "healthcare", "salud": "healthcare",
+        # Construction / General Contractors
+        "construction company": "construction", "construction companies": "construction",
+        "construction": "construction", "construcción": "construction", "construccion": "construction",
+        "empresa de construcción": "construction", "empresas de construcción": "construction",
+        "empresa de construccion": "construction", "empresas de construccion": "construction",
+        "general contractor": "general_contractor", "general contractors": "general_contractor",
+        "contratista general": "general_contractor", "contratistas generales": "general_contractor",
+        "constructora": "construction", "constructoras": "construction",
+        # Industrial Distribution / Supplies
+        "industrial distributor": "industrial_distributor", "industrial distributors": "industrial_distributor",
+        "distribuidor industrial": "industrial_distributor", "distribuidores industriales": "industrial_distributor",
+        "distribución industrial": "industrial_distributor", "distribucion industrial": "industrial_distributor",
+        "suministros industriales": "industrial_supplies", "industrial supplies": "industrial_supplies",
+        "wholesale distributor": "wholesale_distributor", "distribuidor mayorista": "wholesale_distributor",
+        # B2B Software / Technology
+        "b2b software": "b2b_software", "software b2b": "b2b_software",
+        "software company": "b2b_software", "software companies": "b2b_software",
+        "empresa de software": "b2b_software", "empresas de software": "b2b_software",
+        "software": "b2b_software", "saas": "b2b_software",
     }
 
     @staticmethod
@@ -189,6 +221,17 @@ class RuleBasedSearchIntentParser(ISearchIntentParser):
                 if code not in countries:
                     countries.append(code)
 
+        # Extract Regions / States
+        regions: List[str] = []
+        for reg_name, (cntry, reg_code) in self._KNOWN_REGIONS.items():
+            if re.search(r'\b' + re.escape(reg_name) + r'\b', clean_query):
+                if reg_name == "new york" and "New York" in cities:
+                    continue
+                if reg_code not in regions:
+                    regions.append(reg_code)
+                if cntry not in countries:
+                    countries.append(cntry)
+
         # If cities found in known DB (e.g., Miami -> US), auto-infer country if not specified
         if cities and not countries:
             for city in cities:
@@ -238,6 +281,7 @@ class RuleBasedSearchIntentParser(ISearchIntentParser):
             industries=industries,
             business_categories=industries,
             countries=countries if countries else ["US"],
+            regions=regions,
             cities=cities,
             languages=languages,
             company_size_min=company_min,

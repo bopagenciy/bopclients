@@ -144,6 +144,23 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
     def name(self) -> str:
         return self.PROVIDER_NAME
 
+    @property
+    def capability(self):
+        from bopclients.domain.provider_capability import get_web_search_capability
+        return get_web_search_capability(enabled=self.enabled, authorized_tenants=self.authorized_tenants)
+
+    @property
+    def capabilities(self) -> dict:
+        return {
+            "supports_postal_code_us": True,
+            "supports_coordinates": False,
+            "supports_country_only": True,
+            "supports_state_region": True,
+            "supports_international_city_without_coords": True,
+            "supports_radius_miles_exact": False,
+            "supports_negative_filtering": True,
+        }
+
     def supports(self, task: DiscoveryTask) -> bool:
         """Verify whether task is intended for web_search/tavily and provider is currently enabled."""
         p_name = (task.provider or "").strip().lower()

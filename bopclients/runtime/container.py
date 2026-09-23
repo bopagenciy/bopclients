@@ -355,7 +355,21 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         campaign_repo=campaign_repo,
     )
     search_parser = RuleBasedSearchIntentParser()
-    search_planner = DefaultSearchPlanner(location_resolver=StaticLocationResolver())
+    from bopclients.domain.provider_capability import (
+        ProviderCapabilityRegistry,
+        get_overture_capability,
+        get_web_search_capability,
+    )
+    search_planner = DefaultSearchPlanner(
+        location_resolver=StaticLocationResolver(),
+        capability_registry=ProviderCapabilityRegistry({
+            "overture": get_overture_capability(enabled=True),
+            "web_search": get_web_search_capability(
+                enabled=settings.tavily_enabled,
+                authorized_tenants=authorized_web_tenants,
+            ),
+        }),
+    )
     search_service = SearchService(
         intent_parser=search_parser,
         search_planner=search_planner,

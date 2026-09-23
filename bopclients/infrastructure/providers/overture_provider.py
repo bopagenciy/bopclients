@@ -288,6 +288,11 @@ class OvertureDiscoveryProvider(IDiscoveryProvider):
         return "overture"
 
     @property
+    def capability(self):
+        from bopclients.domain.provider_capability import get_overture_capability
+        return get_overture_capability()
+
+    @property
     def capabilities(self) -> dict:
         return {
             "supports_postal_code_us": True,
