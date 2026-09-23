@@ -15,6 +15,36 @@ class ICPRepository(BaseTenantRepository, IICPRepository):
         icp.organization_id = org_id
         p = self._placeholder()
 
+        # Prepare description / metadata envelope
+        has_structured = bool(
+            getattr(icp, "target_organization_types", None)
+            or getattr(icp, "target_industries", None)
+            or getattr(icp, "target_business_activities", None)
+            or getattr(icp, "target_offerings", None)
+            or getattr(icp, "target_specializations", None)
+            or getattr(icp, "required_attributes", None)
+            or getattr(icp, "excluded_attributes", None)
+            or getattr(icp, "excluded_organization_types", None)
+            or getattr(icp, "tenant_offerings", None)
+        )
+        if has_structured:
+            envelope = {
+                "__icp_metadata__": True,
+                "user_description": icp.description,
+                "target_organization_types": icp.target_organization_types,
+                "target_industries": icp.target_industries,
+                "target_business_activities": icp.target_business_activities,
+                "target_offerings": icp.target_offerings,
+                "target_specializations": icp.target_specializations,
+                "required_attributes": icp.required_attributes,
+                "excluded_attributes": icp.excluded_attributes,
+                "excluded_organization_types": icp.excluded_organization_types,
+                "tenant_offerings": icp.tenant_offerings,
+            }
+            db_desc = json.dumps(envelope)
+        else:
+            db_desc = icp.description
+
         sql = f"""
         INSERT INTO ideal_customer_profiles (
             id, organization_id, name, description, industries, company_sizes,
@@ -28,7 +58,7 @@ class ICPRepository(BaseTenantRepository, IICPRepository):
                 icp.id,
                 org_id,
                 icp.name,
-                icp.description,
+                db_desc,
                 json.dumps(icp.industries),
                 json.dumps(icp.company_sizes),
                 json.dumps(icp.decision_maker_roles),
@@ -82,11 +112,35 @@ class ICPRepository(BaseTenantRepository, IICPRepository):
             for tm in tm_rows
         ]
 
+        raw_desc = r.get("description", "") or ""
+        user_desc = raw_desc
+        extra_fields = {}
+        if isinstance(raw_desc, str) and raw_desc.startswith('{"__icp_metadata__":'):
+            try:
+                env = json.loads(raw_desc)
+                if isinstance(env, dict) and env.get("__icp_metadata__"):
+                    user_desc = env.get("user_description", "")
+                    for attr in (
+                        "target_organization_types",
+                        "target_industries",
+                        "target_business_activities",
+                        "target_offerings",
+                        "target_specializations",
+                        "required_attributes",
+                        "excluded_attributes",
+                        "excluded_organization_types",
+                        "tenant_offerings",
+                    ):
+                        if attr in env:
+                            extra_fields[attr] = env[attr]
+            except Exception:
+                pass
+
         return IdealCustomerProfile(
             id=r["id"],
             organization_id=r["organization_id"],
             name=r["name"],
-            description=r.get("description", ""),
+            description=user_desc,
             industries=json.loads(r["industries"]) if r.get("industries") else [],
             company_sizes=json.loads(r["company_sizes"]) if r.get("company_sizes") else [],
             decision_maker_roles=json.loads(r["decision_maker_roles"]) if r.get("decision_maker_roles") else [],
@@ -97,6 +151,7 @@ class ICPRepository(BaseTenantRepository, IICPRepository):
             languages=json.loads(r["languages"]) if r.get("languages") else ["en"],
             target_markets=tms,
             created_at=r["created_at"],
+            **extra_fields,
         )
 
     def list_by_organization(self, org_id: str) -> List[IdealCustomerProfile]:

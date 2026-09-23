@@ -171,6 +171,43 @@ class SearchService:
                     intent.postal_codes = []
                     intent.radius_miles = None
 
+        # D. Structured General-Purpose ICP Context:
+        if hasattr(icp, "get_effective_organization_types"):
+            eff_org_types = icp.get_effective_organization_types()
+            if eff_org_types and not getattr(intent, "target_organization_types", None):
+                intent.target_organization_types = list(eff_org_types)
+
+        if hasattr(icp, "get_effective_business_activities"):
+            eff_acts = icp.get_effective_business_activities()
+            if eff_acts and not getattr(intent, "target_business_activities", None):
+                intent.target_business_activities = list(eff_acts)
+
+        if hasattr(icp, "get_effective_target_offerings"):
+            eff_offs = icp.get_effective_target_offerings()
+            if eff_offs and not getattr(intent, "target_offerings", None):
+                intent.target_offerings = list(eff_offs)
+
+        if hasattr(icp, "get_effective_specializations"):
+            eff_specs = icp.get_effective_specializations()
+            if eff_specs and not getattr(intent, "target_specializations", None):
+                intent.target_specializations = list(eff_specs)
+
+        if hasattr(icp, "get_effective_excluded_organization_types"):
+            eff_ex_orgs = icp.get_effective_excluded_organization_types()
+            if eff_ex_orgs:
+                intent.excluded_organization_types = list(eff_ex_orgs)
+                for ex in eff_ex_orgs:
+                    if ex not in intent.negative_keywords:
+                        intent.negative_keywords.append(ex)
+
+        if hasattr(icp, "get_effective_excluded_attributes"):
+            eff_ex_attrs = icp.get_effective_excluded_attributes()
+            if eff_ex_attrs:
+                intent.excluded_attributes = list(eff_ex_attrs)
+                for ex in eff_ex_attrs:
+                    if ex not in intent.negative_keywords:
+                        intent.negative_keywords.append(ex)
+
     def plan_search(self, intent: SearchIntent) -> SearchPlan:
         """Generate an executable SearchPlan without executing discovery (Dry Run / Plan Only)."""
         if intent.campaign_id and self.campaign_repo:

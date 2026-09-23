@@ -78,11 +78,19 @@ class CandidateClassificationRequest:
     """Standardized input for source-neutral candidate classification."""
 
     name: str
-    target_intent: str = "medical_association"  # e.g., "medical_association", "scientific_society", "professional_association", "non_profit"
+    target_intent: str = "medical_association"  # e.g., "medical_association", "scientific_society", "professional_association", "non_profit", "construction", "industrial_distributor", "b2b_software"
     canonical_category_hints: Set[str] = field(default_factory=set)
     canonical_facility_hints: Set[str] = field(default_factory=set)
     negative_keywords: List[str] = field(default_factory=list)
     raw_metadata: Dict[str, Any] = field(default_factory=dict)
+
+    # General-Purpose Structured Criteria (additive, backward-compatible):
+    target_organization_types: List[str] = field(default_factory=list)
+    target_business_activities: List[str] = field(default_factory=list)
+    target_offerings: List[str] = field(default_factory=list)
+    target_specializations: List[str] = field(default_factory=list)
+    excluded_organization_types: List[str] = field(default_factory=list)
+    excluded_attributes: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -105,7 +113,7 @@ class IOrganizationCandidateClassifier(ABC):
 
 
 class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
-    """Source-neutral organization candidate classifier implementing two-independent-signals policy."""
+    """Source-neutral organization candidate classifier implementing sector-aware verification."""
 
     FACILITY_PREFIX_PATTERN = re.compile(
         r"^(?:cl[íi]nica|hospital|sanatorio|centro m[ée]dico|consultorio|policl[íi]nica|farmacia|droguer[íi]a)\b",
@@ -127,6 +135,53 @@ class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
     PROFESSIONAL_ASSOC_PATTERN = re.compile(
         r"\b(?:colegio|colegios|gremio|gremios|profesional|profesionales|"
         r"professional|asociaci[oó]n|sociedad|federaci[oó]n)\b",
+        re.IGNORECASE,
+    )
+
+    # Sector: Construction Company
+    CONSTRUCTION_EVIDENCE_PATTERN = re.compile(
+        r"\b(?:constructora[s]?|construcci[oó]n|construcciones|construction|builders?|general\s+contractors?|"
+        r"contratista[s]?(?:\s+generales?)?|obras\s+civiles|ingenier[íi]a\s+civil|civil\s+engineering|"
+        r"edificaciones|infraestructura|urbanizaciones|desarrollos\s+urbanos|remodelaciones|"
+        r"commercial\s+construction|residential\s+construction|heavy\s+civil|contracting\s+services?|civil\s+works?)\b",
+        re.IGNORECASE,
+    )
+    REAL_ESTATE_NOISE_PATTERN = re.compile(
+        r"\b(?:inmobiliaria[s]?|inmobiliario[s]?|bienes\s+ra[íi]ces|real\s+estate|realtor[s]?|inmuebles|"
+        r"bienesraices|leasing\s+inmobiliario|corretaje\s+inmobiliario|propiedades|realty|property\s+management)\b",
+        re.IGNORECASE,
+    )
+
+    # Sector: Industrial Distributor
+    INDUSTRIAL_DIST_EVIDENCE_PATTERN = re.compile(
+        r"\b(?:distribuidora[s]?|distribuidor[es]?|distribuci[oó]n|distributor[s]?|distribution|mayorista[s]?|"
+        r"wholesale[rs]?|suministros?\s+industriales?|industrial\s+suppl(?:y|ies)|proveedor\s+industrial|"
+        r"industrial\s+provider|herramientas?\s+industriales?|industrial\s+tools?|abrasivos?|abrasives?|"
+        r"seguridad\s+industrial|safety\s+supplies?|epp|ppe|equipos?\s+industriales?|industrial\s+equipment|"
+        r"rodamientos|torniller[íi]a|v[aá]lvulas|ferreter[íi]a\s+industrial|industrial\s+hardware|"
+        r"mangueras\s+industriales|soldadura|welding\s+supplies)\b",
+        re.IGNORECASE,
+    )
+    RETAIL_STORE_NOISE_PATTERN = re.compile(
+        r"\b(?:supermercado[s]?|supermarket[s]?|tienda\s+de\s+ropa|clothing\s+store|boutique[s]?|zapater[íi]a[s]?|"
+        r"shoe\s+store|comercio\s+minorista|consumer\s+goods|department\s+store|tienda\s+por\s+departamentos)\b",
+        re.IGNORECASE,
+    )
+
+    # Sector: B2B Software Company
+    B2B_SOFTWARE_EVIDENCE_PATTERN = re.compile(
+        r"\b(?:software(?:\s+(?:development|developers?|engineers?|company|solutions?|empresarial|para\s+empresas))?|"
+        r"saas|b2b\s+software|cloud\s+services?|servicios\s+cloud|plataforma\s+(?:digital|cloud|de\s+software|saas)|"
+        r"desarrollo\s+de\s+software|desarrolladora\s+de\s+software|sistemas\s+de\s+informaci[oó]n|"
+        r"soluciones\s+tecnol[oó]gicas|erp|crm|api|enterprise\s+software|software\s+b2b|tech\s+solutions?|"
+        r"it\s+consulting|consultor[íi]a\s+(?:ti|it|de\s+software))\b",
+        re.IGNORECASE,
+    )
+    ELECTRONICS_RETAIL_NOISE_PATTERN = re.compile(
+        r"\b(?:tienda\s+de\s+(?:computadores|computadoras|electr[oó]nica|tecnolog[íi]a|celulares)|"
+        r"venta\s+de\s+(?:celulares|repuestos|computadores|computadoras|accesorios)|"
+        r"reparaci[oó]n\s+de\s+(?:computadores|celulares)|electronics?\s+store|computer\s+repair|"
+        r"phone\s+repair|cell\s+phone\s+store|retail\s+hardware|tienda\s+de\s+audio)\b",
         re.IGNORECASE,
     )
 
@@ -180,32 +235,71 @@ class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
             )
 
         target_norm = (request.target_intent or "").strip().lower()
-        is_association_target = target_norm in (
-            "medical_association",
-            "scientific_society",
-            "professional_association",
-            "non_profit",
+
+        # Build full candidate context for textual evidence analysis
+        context_parts = [name]
+        for h in request.canonical_category_hints:
+            context_parts.append(str(h))
+        if isinstance(request.raw_metadata, dict):
+            for k in ("title", "description", "snippet", "category", "industry", "forge_industry"):
+                val = request.raw_metadata.get(k)
+                if val and isinstance(val, str):
+                    context_parts.append(val)
+        full_text = " ".join(context_parts)
+
+        # Determine target sector
+        is_medical_assoc = target_norm in ("medical_association", "scientific_society")
+        is_prof_assoc = target_norm == "professional_association"
+        is_non_profit = target_norm == "non_profit"
+        is_explicit_assoc = any(ot in ("association", "society", "colegio", "federation", "gremio") for ot in request.target_organization_types)
+        is_general_assoc = target_norm in ("association", "society") or is_explicit_assoc
+
+        is_construction = (
+            target_norm in ("construction", "construction_company", "general_contractor", "builder", "obras_civiles", "civil_engineering", "contratista")
+            or any(act in ("construction", "contracting", "civil_engineering") for act in request.target_business_activities)
+            or any(ot in ("construction_company", "contractor", "builder") for ot in request.target_organization_types)
+            or any(ind in ("construction", "general_contractor", "civil_engineering") for ind in request.canonical_category_hints)
         )
 
-        # 1. Facility Prefix Exclusion
-        if self.FACILITY_PREFIX_PATTERN.search(name):
-            return ClassificationDecision(
-                status=CandidateClassificationStatus.REJECTED,
-                is_valid=False,
-                reason=f"EXCLUDED_FACILITY_NAME ({name})",
-            )
+        is_distribution = (
+            target_norm in ("industrial_distributor", "wholesale_distributor", "industrial_supplies", "industrial_tools", "abrasives", "safety_supplies", "distribuidor_industrial", "wholesale")
+            or any(act in ("distribution", "wholesale") for act in request.target_business_activities)
+            or any(ot in ("distributor", "wholesaler") for ot in request.target_organization_types)
+            or any(ind in ("industrial_distributor", "wholesale_distributor", "industrial_supplies") for ind in request.canonical_category_hints)
+        )
 
-        # 2. Canonical Facility Category Exclusion
-        if request.canonical_facility_hints:
-            hint_str = ", ".join(sorted(request.canonical_facility_hints))
-            return ClassificationDecision(
-                status=CandidateClassificationStatus.REJECTED,
-                is_valid=False,
-                reason=f"EXCLUDED_FACILITY_CATEGORY ({hint_str})",
-            )
+        is_software = (
+            target_norm in ("b2b_software", "software", "saas", "software_development", "technology_company", "technology", "tecnologia", "cloud_services", "it_consulting")
+            or any(act in ("software_development", "saas", "cloud_services") for act in request.target_business_activities)
+            or any(ot in ("software_company", "saas_company") for ot in request.target_organization_types)
+            or any(ind in ("software", "b2b_software", "saas", "technology") for ind in request.canonical_category_hints)
+        )
 
-        # 3. Contradictory Entity Evidence (fails closed)
-        if is_association_target:
+        is_any_association = is_medical_assoc or is_prof_assoc or is_non_profit or is_general_assoc
+
+        # ---------------------------------------------------------
+        # 1. Association Target Facility and Contradiction Gates
+        # ---------------------------------------------------------
+        if is_any_association or any(ot in ("clinic", "hospital") for ot in request.excluded_organization_types):
+            # Facility Prefix Exclusion
+            if self.FACILITY_PREFIX_PATTERN.search(name):
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.REJECTED,
+                    is_valid=False,
+                    reason=f"EXCLUDED_FACILITY_NAME ({name})",
+                )
+
+            # Canonical Facility Category Exclusion
+            if request.canonical_facility_hints:
+                hint_str = ", ".join(sorted(request.canonical_facility_hints))
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.REJECTED,
+                    is_valid=False,
+                    reason=f"EXCLUDED_FACILITY_CATEGORY ({hint_str})",
+                )
+
+        if is_any_association:
+            # Contradictory Entity Evidence (fails closed)
             if isinstance(request.raw_metadata, dict):
                 if (
                     request.raw_metadata.get("contradictory") is True
@@ -216,7 +310,6 @@ class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
                         is_valid=False,
                         reason=f"CONTRADICTORY_ENTITY_EVIDENCE ({name})",
                     )
-                # Check alternate category facility contradictions
                 alts = request.raw_metadata.get("alternate_categories") or []
                 if isinstance(alts, list):
                     alt_lower = [str(a).lower().strip() for a in alts]
@@ -227,7 +320,7 @@ class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
                             reason=f"CONTRADICTORY_ENTITY_EVIDENCE (category claims association but alternates include facility {alts})",
                         )
 
-            # Dual-nature contradictory naming e.g. "Asociación y Clínica..."
+            # Dual-nature contradictory naming
             if re.search(r"\b(?:asociaci[oó]n|sociedad)\s+(?:y|e)\s+(?:cl[íi]nica|hospital|consultorio)\b", name, re.IGNORECASE):
                 return ClassificationDecision(
                     status=CandidateClassificationStatus.REJECTED,
@@ -235,60 +328,182 @@ class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
                     reason=f"CONTRADICTORY_ENTITY_EVIDENCE ({name})",
                 )
 
-        # 4. Negative Keyword Exclusions
-        is_genuine = self.is_genuine_association_name(name, request.canonical_category_hints)
+        # ---------------------------------------------------------
+        # 2. Negative Keyword and Excluded Attribute Gates (Universal)
+        # ---------------------------------------------------------
+        is_genuine_assoc = self.is_genuine_association_name(name, request.canonical_category_hints)
         neg_keywords = [k.strip().lower() for k in (request.negative_keywords or []) if k.strip()]
-        if neg_keywords:
-            for neg in neg_keywords:
-                # Direct category hint exclusion
-                if neg in request.canonical_category_hints:
+        for ex_attr in (request.excluded_attributes or []):
+            clean_ex = ex_attr.strip().lower()
+            if clean_ex and clean_ex not in neg_keywords:
+                neg_keywords.append(clean_ex)
+
+        for neg in neg_keywords:
+            if neg in request.canonical_category_hints:
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.REJECTED,
+                    is_valid=False,
+                    reason=f"EXCLUDED_BY_CATEGORY_KEYWORD ({neg})",
+                )
+            if re.search(r"\b" + re.escape(neg) + r"\b", full_text, re.IGNORECASE):
+                # Clinical/hospital terminology in genuine association names does NOT exclude them
+                if is_any_association and is_genuine_assoc and neg in ("clinic", "clínica", "clinica", "hospital", "hospitales", "medical_office"):
+                    continue
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.REJECTED,
+                    is_valid=False,
+                    reason=f"EXCLUDED_BY_NEGATIVE_KEYWORD ({neg})",
+                )
+
+        # Check explicit excluded organization types
+        for ex_org in (request.excluded_organization_types or []):
+            ex_norm = ex_org.strip().lower()
+            if ex_norm in ("real_estate", "inmobiliaria"):
+                if self.REAL_ESTATE_NOISE_PATTERN.search(full_text):
                     return ClassificationDecision(
                         status=CandidateClassificationStatus.REJECTED,
                         is_valid=False,
-                        reason=f"EXCLUDED_BY_CATEGORY_KEYWORD ({neg})",
+                        reason=f"EXCLUDED_REAL_ESTATE_AGENCY ({name})",
                     )
-
-                # Name keyword matching
-                if re.search(r"\b" + re.escape(neg) + r"\b", name, re.IGNORECASE):
-                    # Clinical/hospital terminology in genuine association names does NOT exclude them
-                    if is_genuine:
-                        continue
+            elif ex_norm in ("retail", "retail_store"):
+                if self.RETAIL_STORE_NOISE_PATTERN.search(full_text):
                     return ClassificationDecision(
                         status=CandidateClassificationStatus.REJECTED,
                         is_valid=False,
-                        reason=f"EXCLUDED_BY_NEGATIVE_KEYWORD ({neg})",
+                        reason=f"EXCLUDED_RETAIL_STORE ({name})",
+                    )
+            elif ex_norm in ("electronics_store", "tienda_electronica"):
+                if self.ELECTRONICS_RETAIL_NOISE_PATTERN.search(full_text):
+                    return ClassificationDecision(
+                        status=CandidateClassificationStatus.REJECTED,
+                        is_valid=False,
+                        reason=f"EXCLUDED_ELECTRONICS_RETAILER ({name})",
                     )
 
-        # 5. Organization-Type Evidence (Two-Independent-Signals: Pillar 1)
-        if is_association_target and not is_genuine:
+        # ---------------------------------------------------------
+        # 3. Sector-Specific Classification Policies
+        # ---------------------------------------------------------
+
+        # --- Policy A: Association Organizations ---
+        if is_any_association:
+            # Pillar 1: Organization-Type Evidence
+            if not is_genuine_assoc:
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.REJECTED,
+                    is_valid=False,
+                    reason=f"NOT_AN_ASSOCIATION ({name})",
+                )
+
+            # Pillar 2: Sector Specialization
+            if is_medical_assoc:
+                if not self.has_medical_or_scientific_specialization(name, request.canonical_category_hints, request.raw_metadata):
+                    return ClassificationDecision(
+                        status=CandidateClassificationStatus.REJECTED,
+                        is_valid=False,
+                        reason=f"UNVERIFIED_MEDICAL_SPECIALIZATION ({name})",
+                    )
+            elif is_prof_assoc:
+                has_prof_name = bool(self.PROFESSIONAL_ASSOC_PATTERN.search(name))
+                has_prof_hint = "professional_association" in request.canonical_category_hints
+                if not (has_prof_name or has_prof_hint):
+                    return ClassificationDecision(
+                        status=CandidateClassificationStatus.REJECTED,
+                        is_valid=False,
+                        reason=f"NOT_A_PROFESSIONAL_ASSOCIATION ({name})",
+                    )
+
             return ClassificationDecision(
-                status=CandidateClassificationStatus.REJECTED,
-                is_valid=False,
-                reason=f"NOT_AN_ASSOCIATION ({name})",
+                status=CandidateClassificationStatus.ACCEPTED_CANDIDATE,
+                is_valid=True,
+                reason=None,
+                details={"target_intent": target_norm, "name": name, "sector": "association"},
             )
 
-        # 6. Sector Specialization (Two-Independent-Signals: Pillar 2)
-        if target_norm in ("medical_association", "scientific_society"):
-            if not self.has_medical_or_scientific_specialization(name, request.canonical_category_hints, request.raw_metadata):
+        # --- Policy B: Construction Companies ---
+        if is_construction:
+            # Noise exclusion: Real estate agency
+            if self.REAL_ESTATE_NOISE_PATTERN.search(full_text):
+                # If name explicitly indicates real estate rather than contracting
+                if self.REAL_ESTATE_NOISE_PATTERN.search(name) or not self.CONSTRUCTION_EVIDENCE_PATTERN.search(name):
+                    return ClassificationDecision(
+                        status=CandidateClassificationStatus.REJECTED,
+                        is_valid=False,
+                        reason=f"EXCLUDED_REAL_ESTATE_AGENCY ({name})",
+                    )
+
+            # Positive evidence: construction company or contracting activity
+            if self.CONSTRUCTION_EVIDENCE_PATTERN.search(full_text):
                 return ClassificationDecision(
-                    status=CandidateClassificationStatus.REJECTED,
-                    is_valid=False,
-                    reason=f"UNVERIFIED_MEDICAL_SPECIALIZATION ({name})",
-                )
-        elif target_norm == "professional_association":
-            has_prof_name = bool(self.PROFESSIONAL_ASSOC_PATTERN.search(name))
-            has_prof_hint = "professional_association" in request.canonical_category_hints
-            if not (has_prof_name or has_prof_hint):
-                return ClassificationDecision(
-                    status=CandidateClassificationStatus.REJECTED,
-                    is_valid=False,
-                    reason=f"NOT_A_PROFESSIONAL_ASSOCIATION ({name})",
+                    status=CandidateClassificationStatus.ACCEPTED_CANDIDATE,
+                    is_valid=True,
+                    reason=None,
+                    details={"target_intent": target_norm, "name": name, "sector": "construction"},
                 )
 
-        # All gates passed -> Accepted as candidate
+            return ClassificationDecision(
+                status=CandidateClassificationStatus.INSUFFICIENT_EVIDENCE,
+                is_valid=False,
+                reason=f"INSUFFICIENT_EVIDENCE_FOR_CONSTRUCTION ({name})",
+                details={"target_intent": target_norm, "name": name},
+            )
+
+        # --- Policy C: Industrial Distributors ---
+        if is_distribution:
+            # Noise exclusion: Unrelated retail store
+            if self.RETAIL_STORE_NOISE_PATTERN.search(full_text):
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.REJECTED,
+                    is_valid=False,
+                    reason=f"EXCLUDED_RETAIL_STORE ({name})",
+                )
+
+            # Positive evidence: wholesale/distribution or industrial supplies/tools/safety
+            if self.INDUSTRIAL_DIST_EVIDENCE_PATTERN.search(full_text):
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.ACCEPTED_CANDIDATE,
+                    is_valid=True,
+                    reason=None,
+                    details={"target_intent": target_norm, "name": name, "sector": "industrial_distribution"},
+                )
+
+            return ClassificationDecision(
+                status=CandidateClassificationStatus.INSUFFICIENT_EVIDENCE,
+                is_valid=False,
+                reason=f"INSUFFICIENT_EVIDENCE_FOR_INDUSTRIAL_DISTRIBUTION ({name})",
+                details={"target_intent": target_norm, "name": name},
+            )
+
+        # --- Policy D: B2B Software Companies ---
+        if is_software:
+            # Noise exclusion: Electronics retailer / computer repair shop
+            if self.ELECTRONICS_RETAIL_NOISE_PATTERN.search(full_text):
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.REJECTED,
+                    is_valid=False,
+                    reason=f"EXCLUDED_ELECTRONICS_RETAILER ({name})",
+                )
+
+            # Positive evidence: B2B software, SaaS, software development, cloud platform
+            if self.B2B_SOFTWARE_EVIDENCE_PATTERN.search(full_text):
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.ACCEPTED_CANDIDATE,
+                    is_valid=True,
+                    reason=None,
+                    details={"target_intent": target_norm, "name": name, "sector": "b2b_software"},
+                )
+
+            return ClassificationDecision(
+                status=CandidateClassificationStatus.INSUFFICIENT_EVIDENCE,
+                is_valid=False,
+                reason=f"INSUFFICIENT_EVIDENCE_FOR_B2B_SOFTWARE ({name})",
+                details={"target_intent": target_norm, "name": name},
+            )
+
+        # --- Policy E: General / Unspecified Intent Fallback ---
+        # When evidence is insufficient, return INSUFFICIENT_EVIDENCE rather than inventing a match
         return ClassificationDecision(
-            status=CandidateClassificationStatus.ACCEPTED_CANDIDATE,
-            is_valid=True,
-            reason=None,
+            status=CandidateClassificationStatus.INSUFFICIENT_EVIDENCE,
+            is_valid=False,
+            reason=f"INSUFFICIENT_EVIDENCE ({name})",
             details={"target_intent": target_norm, "name": name},
         )

@@ -408,7 +408,7 @@ async def execute_discovery(
             )
             for t in plan_req.tasks if hasattr(plan_req, "tasks") and plan_req.tasks
         ]
-        # If tasks were empty in search_plan, construct via planner
+        # If tasks were empty in search_plan, construct via planner using campaign context and intent parsing
         if not tasks:
             raw_q = getattr(plan_req, "raw_query", None)
             if not raw_q:
@@ -416,28 +416,52 @@ async def execute_discovery(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="search_plan must contain tasks or a valid raw_query.",
                 )
-            intent = SearchIntent(
-                organization_id=org_id,
+            intent = container.search_service.parse_search_intent(
+                org_id=org_id,
                 campaign_id=camp_id,
-                target_market_id=getattr(plan_req, "target_market_id", None),
                 raw_query=raw_q,
-                industries=getattr(plan_req, "industries", []) or [],
-                business_categories=getattr(plan_req, "business_categories", []) or [],
-                countries=getattr(plan_req, "countries", []) or [],
-                regions=getattr(plan_req, "regions", []) or [],
-                cities=getattr(plan_req, "cities", []) or [],
-                radius_miles=getattr(plan_req, "radius_miles", None),
-                languages=getattr(plan_req, "languages", []) or [],
-                company_size_min=getattr(plan_req, "company_size_min", None),
-                company_size_max=getattr(plan_req, "company_size_max", None),
-                company_sizes=getattr(plan_req, "company_sizes", []) or [],
-                decision_maker_roles=getattr(plan_req, "decision_maker_roles", []) or [],
-                keywords=getattr(plan_req, "keywords", []) or [],
-                negative_keywords=getattr(plan_req, "negative_keywords", []) or [],
-                services_to_offer=getattr(plan_req, "services_to_offer", []) or [],
-                desired_signals=getattr(plan_req, "desired_signals", []) or [],
-                max_results=getattr(plan_req, "max_results", 100) or 100,
+                target_market_id=getattr(plan_req, "target_market_id", None),
             )
+            # Overlay any explicit plan_req criteria provided by caller while preserving campaign ICP defaults
+            if getattr(plan_req, "industries", None):
+                intent.industries = list(plan_req.industries)
+            if getattr(plan_req, "business_categories", None):
+                intent.business_categories = list(plan_req.business_categories)
+            if getattr(plan_req, "countries", None):
+                intent.countries = list(plan_req.countries)
+            if getattr(plan_req, "regions", None):
+                intent.regions = list(plan_req.regions)
+            if getattr(plan_req, "cities", None):
+                intent.cities = list(plan_req.cities)
+            if getattr(plan_req, "radius_miles", None) is not None:
+                intent.radius_miles = float(plan_req.radius_miles)
+            if getattr(plan_req, "languages", None):
+                intent.languages = list(plan_req.languages)
+            if getattr(plan_req, "company_size_min", None) is not None:
+                intent.company_size_min = plan_req.company_size_min
+            if getattr(plan_req, "company_size_max", None) is not None:
+                intent.company_size_max = plan_req.company_size_max
+            if getattr(plan_req, "company_sizes", None):
+                intent.company_sizes = list(plan_req.company_sizes)
+            if getattr(plan_req, "decision_maker_roles", None):
+                intent.decision_maker_roles = list(plan_req.decision_maker_roles)
+            if getattr(plan_req, "keywords", None):
+                for kw in plan_req.keywords:
+                    if kw not in intent.keywords:
+                        intent.keywords.append(kw)
+            if getattr(plan_req, "negative_keywords", None):
+                for nk in plan_req.negative_keywords:
+                    if nk not in intent.negative_keywords:
+                        intent.negative_keywords.append(nk)
+            if getattr(plan_req, "services_to_offer", None):
+                intent.services_to_offer = list(plan_req.services_to_offer)
+            if getattr(plan_req, "desired_signals", None):
+                for sig in plan_req.desired_signals:
+                    if sig not in intent.desired_signals:
+                        intent.desired_signals.append(sig)
+            if getattr(plan_req, "max_results", None):
+                intent.max_results = int(plan_req.max_results)
+
             plan = container.search_service.plan_search(intent)
         else:
             icp = container.icp_repo.get_by_id(org_id, camp.icp_id) if (camp.icp_id and getattr(container, "icp_repo", None)) else None

@@ -46,6 +46,14 @@ class SearchIntent:
 
     services_to_offer: List[str] = field(default_factory=list)
 
+    # General-Purpose Structured Criteria:
+    target_organization_types: List[str] = field(default_factory=list)
+    target_business_activities: List[str] = field(default_factory=list)
+    target_offerings: List[str] = field(default_factory=list)
+    target_specializations: List[str] = field(default_factory=list)
+    excluded_organization_types: List[str] = field(default_factory=list)
+    excluded_attributes: List[str] = field(default_factory=list)
+
     max_results: int = 100
 
     created_at: str = field(
