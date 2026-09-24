@@ -352,6 +352,55 @@ export interface DiscoveryExecutionResult {
   errors: string[];
 }
 
+export interface DiscoveryCandidateSummary {
+  candidate_id: string;
+  name: string;
+  website_url?: string | null;
+  category?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  geographic_scope?: string | null;
+  classification_status?: string | null;
+  classification_details?: Record<string, any> | null;
+  title?: string | null;
+  snippet?: string | null;
+  source?: string | null;
+  // Structured Candidate Qualification
+  qualification_status?: 'SEARCH_MATCH' | 'READY_FOR_COMMERCIAL_REVIEW' | 'INSUFFICIENT_EVIDENCE' | 'REJECTED' | string | null;
+  entity_archetype?: string | null;
+  geographic_evidence_status?: string | null;
+  current_activity_status?: string | null;
+  source_url?: string | null;
+  source_host?: string | null;
+  organization_website?: string | null;
+  is_commercial_review_ready?: boolean | null;
+  qualification_reasons?: string[] | null;
+  missing_evidence?: string[] | null;
+}
+
+export interface DiscoveryPreviewRequest {
+  campaign_id?: string | null;
+  raw_query?: string | null;
+  search_plan?: SearchPlan | null;
+  provider?: string;
+}
+
+export interface DiscoveryPreviewResponse {
+  status: 'completed' | 'partial' | 'failed' | string;
+  organization_id: string;
+  campaign_id?: string | null;
+  provider: string;
+  tasks_executed: number;
+  candidates_count: number;
+  candidates: DiscoveryCandidateSummary[];
+  prospects_inserted: number;
+  sources_inserted: number;
+  database_writes: number;
+  warnings: string[];
+  errors: string[];
+}
+
 export interface LeadScoreDetail {
   prospect_id: string;
   organization_id: string;

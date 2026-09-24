@@ -42,6 +42,8 @@ import type {
   ResearchRun,
   PaginatedResponse,
   ProspectIntelligenceResponse,
+  DiscoveryPreviewRequest,
+  DiscoveryPreviewResponse,
 } from './types';
 
 export interface FetchOptions extends RequestInit {
@@ -448,5 +450,14 @@ export async function listProspectResearchRuns(
       page: 1,
       page_size: limit,
     },
+  });
+}
+
+export async function previewDiscovery(
+  payload: DiscoveryPreviewRequest
+): Promise<DiscoveryPreviewResponse> {
+  return apiClient<DiscoveryPreviewResponse>('/api/v1/discovery/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   });
 }

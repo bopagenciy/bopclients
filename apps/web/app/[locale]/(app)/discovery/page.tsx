@@ -21,12 +21,19 @@ import {
   ExternalLink,
   Layers,
   Users,
+  Search,
+  Globe,
+  X,
+  Info,
 } from 'lucide-react';
 import {
   SearchIntent,
   SearchPlan,
   DiscoveryExecutionResult,
   DiscoveredProspectSummary,
+  DiscoveryPreviewRequest,
+  DiscoveryPreviewResponse,
+  DiscoveryCandidateSummary,
 } from '@/lib/api/types';
 
 interface CampaignItem {
@@ -72,6 +79,46 @@ function formatApiError(err: any, fallbackMessage: string): string {
   return msg;
 }
 
+function getQualificationBadge(status?: string | null) {
+  switch (status) {
+    case 'READY_FOR_COMMERCIAL_REVIEW':
+      return {
+        variant: 'success' as const,
+        labelKey: 'discovery.status_ready',
+        fallback: 'Ready for Commercial Review',
+        className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30',
+      };
+    case 'SEARCH_MATCH':
+      return {
+        variant: 'warning' as const,
+        labelKey: 'discovery.status_search_match',
+        fallback: 'Search Match (Requires Qualification)',
+        className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30',
+      };
+    case 'INSUFFICIENT_EVIDENCE':
+      return {
+        variant: 'outline' as const,
+        labelKey: 'discovery.status_insufficient',
+        fallback: 'Insufficient Evidence',
+        className: 'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/30',
+      };
+    case 'REJECTED':
+      return {
+        variant: 'danger' as const,
+        labelKey: 'discovery.status_rejected',
+        fallback: 'Rejected',
+        className: 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/30',
+      };
+    default:
+      return {
+        variant: 'outline' as const,
+        labelKey: null,
+        fallback: status || 'Unknown Status',
+        className: '',
+      };
+  }
+}
+
 export default function DiscoveryPage() {
   const { t, locale } = useI18n();
   const { activeOrg } = useAuth();
@@ -100,6 +147,23 @@ export default function DiscoveryPage() {
 
   const [executing, setExecuting] = useState(false);
   const [executionResult, setExecutionResult] = useState<DiscoveryExecutionResult | null>(null);
+
+  // Ephemeral Controlled Preview States (Phase P30.5G.5G)
+  const [previewing, setPreviewing] = useState(false);
+  const [previewResult, setPreviewResult] = useState<DiscoveryPreviewResponse | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // Guard against race conditions and stale in-flight preview responses
+  const selectedCampaignRef = React.useRef(selectedCampaignId);
+  useEffect(() => {
+    selectedCampaignRef.current = selectedCampaignId;
+  }, [selectedCampaignId]);
+
+  // Invalidate preview results when campaign or active organization changes
+  useEffect(() => {
+    setPreviewResult(null);
+    setPreviewError(null);
+  }, [selectedCampaignId, activeOrg]);
 
   const [error, setError] = useState<string | null>(null);
 
@@ -253,6 +317,59 @@ export default function DiscoveryPage() {
     }
   };
 
+  // Controlled Web Search Preview (ephemeral, 0 writes)
+  const handlePreview = async (usePlan: boolean = false) => {
+    if (!selectedCampaignId) return;
+
+    const requestCampaignId = selectedCampaignId;
+    setPreviewing(true);
+    setPreviewError(null);
+    setPreviewResult(null);
+
+    try {
+      const payload: DiscoveryPreviewRequest = {
+        campaign_id: requestCampaignId,
+        raw_query: !usePlan && prompt.trim() ? prompt.trim() : undefined,
+        search_plan: usePlan && plan ? plan : undefined,
+      };
+
+      const res = await fetch('/api/proxy/api/v1/discovery/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include',
+      });
+
+      const data: DiscoveryPreviewResponse = await res.json().catch(() => null);
+
+      // Discard response if selected campaign changed while request was in-flight
+      if (selectedCampaignRef.current !== requestCampaignId) {
+        return;
+      }
+
+      if (!res.ok) {
+        const msg = formatApiError(data, `Preview request failed (${res.status})`);
+        setPreviewError(msg);
+        return;
+      }
+
+      if (!data) {
+        setPreviewError('Failed to parse preview response');
+        return;
+      }
+
+      setPreviewResult(data);
+    } catch (err: any) {
+      if (selectedCampaignRef.current === requestCampaignId) {
+        setPreviewError(err.message || 'Error executing discovery preview');
+      }
+    } finally {
+      if (selectedCampaignRef.current === requestCampaignId) {
+        setPreviewing(false);
+      }
+    }
+  };
+
   // Result table columns
   const prospectColumns: Column<DiscoveredProspectSummary>[] = [
     {
@@ -383,7 +500,27 @@ export default function DiscoveryPage() {
             </div>
           </div>
 
-          <div className="flex justify-end">
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              data-testid="web-search-preview-button"
+              disabled={previewing || !selectedCampaignId}
+              onClick={() => handlePreview(false)}
+            >
+              {previewing ? (
+                <>
+                  <div className="animate-spin h-3.5 w-3.5 border-2 border-surface border-t-transparent rounded-full mr-2" />
+                  {t('discovery.previewing')}
+                </>
+              ) : (
+                <>
+                  <Search className="w-3.5 h-3.5 mr-1.5 text-brand-gold" />
+                  {t('discovery.preview_button')}
+                </>
+              )}
+            </Button>
             <PermissionGate permission="campaign.create">
               <Button type="submit" size="sm" disabled={parsing || !prompt.trim()}>
                 {parsing ? (
@@ -402,6 +539,321 @@ export default function DiscoveryPage() {
           </div>
         </form>
       </div>
+
+      {/* Preview Error State */}
+      {previewError && (
+        <ErrorState
+          message={previewError}
+          onRetry={() => setPreviewError(null)}
+        />
+      )}
+
+      {/* Controlled Discovery Preview Results Panel */}
+      {previewResult && (
+        <div
+          data-testid="discovery-preview-panel"
+          className="p-5 rounded-lg border border-border bg-surface space-y-4 animate-in fade-in duration-200"
+        >
+          {/* Panel Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-border pb-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Search className="w-5 h-5 text-brand-gold" />
+                <h2 className="text-base font-bold text-foreground">
+                  {t('discovery.preview_title')}
+                </h2>
+                <Badge
+                  size="sm"
+                  variant={
+                    previewResult.status === 'completed'
+                      ? 'success'
+                      : previewResult.status === 'failed'
+                      ? 'danger'
+                      : 'warning'
+                  }
+                >
+                  {previewResult.status === 'completed'
+                    ? t('discovery.status_completed')
+                    : previewResult.status === 'failed'
+                    ? t('discovery.status_failed')
+                    : t('discovery.status_partial')}
+                </Badge>
+                <Badge
+                  size="sm"
+                  variant="outline"
+                  className="text-brand-gold border-brand-gold/30 bg-brand-gold/5 font-mono text-[10px]"
+                >
+                  {t('discovery.zero_writes_badge')}
+                </Badge>
+              </div>
+              <p className="text-xs text-foreground-muted mt-1">
+                {t('discovery.preview_subtitle')}
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setPreviewResult(null);
+                  setPreviewError(null);
+                }}
+                className="text-xs text-foreground-muted hover:text-foreground"
+              >
+                <X className="w-3.5 h-3.5 mr-1" />
+                {t('discovery.clear_preview')}
+              </Button>
+            </div>
+          </div>
+
+          {/* Ephemeral Notice Banner */}
+          <div className="p-3 bg-surface-subtle border border-border/80 rounded-md text-xs text-foreground-muted flex items-start gap-2">
+            <Info className="w-4 h-4 text-brand-gold shrink-0 mt-0.5" />
+            <span>{t('discovery.preview_disclaimer')}</span>
+          </div>
+
+          {/* Context Bar */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs bg-surface-subtle/50 p-2.5 rounded-md border border-border/60">
+            <div>
+              <span className="text-foreground-muted block text-[11px]">{t('discovery.selected_campaign_label')}:</span>
+              <span className="font-semibold text-foreground truncate block">
+                {campaigns.find((c) => c.id === previewResult.campaign_id)?.name || previewResult.campaign_id || '—'}
+              </span>
+            </div>
+            <div>
+              <span className="text-foreground-muted block text-[11px]">{t('discovery.provider_label')}:</span>
+              <span className="font-mono text-foreground">{previewResult.provider}</span>
+            </div>
+            <div>
+              <span className="text-foreground-muted block text-[11px]">Tasks Executed:</span>
+              <span className="font-bold text-foreground">{previewResult.tasks_executed}</span>
+            </div>
+            <div>
+              <span className="text-foreground-muted block text-[11px]">Candidates Found:</span>
+              <span className="font-bold text-foreground">{previewResult.candidates_count}</span>
+            </div>
+          </div>
+
+          {/* Errors Banner (Envelope failure or task errors) */}
+          {previewResult.errors && previewResult.errors.length > 0 && (
+            <div data-testid="preview-errors-alert" className="p-3 bg-rose-50 dark:bg-rose-950/20 border border-rose-200 dark:border-rose-900/40 rounded-md space-y-1 text-xs">
+              <div className="flex items-center gap-1.5 text-rose-700 dark:text-rose-400 font-semibold">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{t('discovery.preview_failed_title')} ({previewResult.errors.length})</span>
+              </div>
+              <ul className="text-rose-700/90 dark:text-rose-400/90 space-y-1 pl-5 list-disc text-[11px]">
+                {previewResult.errors.map((err, idx) => (
+                  <li key={idx}>{err}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Warnings Banner */}
+          {previewResult.warnings && previewResult.warnings.length > 0 && (
+            <div data-testid="preview-warnings-alert" className="p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-900/40 rounded-md space-y-1 text-xs text-amber-800 dark:text-amber-400">
+              <div className="flex items-center gap-1.5 font-semibold">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+                <span>{t('discovery.warnings_title')} ({previewResult.warnings.length})</span>
+              </div>
+              <ul className="space-y-0.5 pl-5 list-disc text-[11px]">
+                {previewResult.warnings.map((w, idx) => (
+                  <li key={idx}>{w}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {/* Empty Candidates State (Only when not failed) */}
+          {previewResult.status !== 'failed' && previewResult.candidates.length === 0 && (
+            <div data-testid="preview-empty-state" className="py-8 text-center border border-dashed border-border rounded-lg bg-surface-subtle/30 space-y-2">
+              <Search className="w-6 h-6 text-foreground-muted mx-auto opacity-50" />
+              <p className="text-xs font-medium text-foreground">
+                {t('discovery.preview_empty')}
+              </p>
+            </div>
+          )}
+
+          {/* Candidates Cards List */}
+          {previewResult.candidates.length > 0 && (
+            <div className="space-y-3 pt-1">
+              <h3 className="text-xs font-bold text-foreground">
+                Candidates Discovered ({previewResult.candidates.length})
+              </h3>
+              <div className="space-y-3">
+                {previewResult.candidates.map((candidate, idx) => {
+                  const badge = getQualificationBadge(candidate.qualification_status);
+                  const badgeText = badge.labelKey ? t(badge.labelKey) : badge.fallback;
+                  const hasOfficialWebsite = Boolean(candidate.organization_website && candidate.organization_website !== 'UNKNOWN');
+
+                  return (
+                    <div
+                      key={candidate.candidate_id || idx}
+                      data-testid={`candidate-card-${candidate.candidate_id || idx}`}
+                      className="p-4 rounded-lg border border-border bg-surface-subtle/40 hover:border-border/80 transition-all space-y-3"
+                    >
+                      {/* Card Top Row: Name, Archetype, Classification, Qualification Badge */}
+                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-sm text-foreground">
+                              {candidate.name}
+                            </span>
+                            {candidate.entity_archetype && (
+                              <Badge size="sm" variant="outline" className="font-mono text-[10px] bg-surface">
+                                {t('discovery.archetype_label')}: {candidate.entity_archetype}
+                              </Badge>
+                            )}
+                            {(candidate.category || candidate.classification_status) && (
+                              <Badge size="sm" variant="default" className="text-[10px]">
+                                {candidate.category || candidate.classification_status}
+                              </Badge>
+                            )}
+                          </div>
+
+                          {candidate.title && candidate.title !== candidate.name && (
+                            <p className="text-xs text-foreground-muted italic line-clamp-1">
+                              {candidate.title}
+                            </p>
+                          )}
+                        </div>
+
+                        <div className="shrink-0">
+                          <Badge
+                            size="sm"
+                            variant={badge.variant}
+                            className={badge.className}
+                          >
+                            {badgeText}
+                          </Badge>
+                        </div>
+                      </div>
+
+                      {/* Card Evidence & Provenance Details Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs pt-1 border-t border-border/50">
+                        {/* Official Website vs Unknown */}
+                        <div>
+                          <span className="text-foreground-muted block text-[11px] mb-0.5">
+                            {t('discovery.official_website_label')}:
+                          </span>
+                          {hasOfficialWebsite ? (
+                            <a
+                              href={candidate.organization_website!}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-brand-gold hover:underline inline-flex items-center gap-1 font-mono text-[11px]"
+                            >
+                              <Globe className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{candidate.organization_website}</span>
+                              <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                            </a>
+                          ) : (
+                            <span className="text-amber-600 dark:text-amber-400 text-[11px] italic flex items-center gap-1">
+                              <AlertTriangle className="w-3 h-3 shrink-0" />
+                              {t('discovery.official_website_unknown')}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Source Provenance Link */}
+                        <div>
+                          <span className="text-foreground-muted block text-[11px] mb-0.5">
+                            {t('discovery.source_provenance_label')}:
+                          </span>
+                          {candidate.source_url ? (
+                            <a
+                              href={candidate.source_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-foreground hover:text-brand-gold inline-flex items-center gap-1 font-mono text-[11px] truncate max-w-full"
+                            >
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                              <span className="truncate">{candidate.source_host || candidate.source_url}</span>
+                            </a>
+                          ) : (
+                            <span className="text-foreground-muted text-[11px]">—</span>
+                          )}
+                        </div>
+
+                        {/* Geographic Evidence */}
+                        <div>
+                          <span className="text-foreground-muted block text-[11px] mb-0.5">
+                            {t('discovery.geo_evidence_label')}:
+                          </span>
+                          <span className="text-foreground font-mono text-[11px]">
+                            {candidate.geographic_evidence_status || 'UNKNOWN'}
+                            {[candidate.city, candidate.state, candidate.country].filter(Boolean).length > 0 && (
+                              <span className="text-foreground-muted font-sans ml-1">
+                                ({[candidate.city, candidate.state, candidate.country].filter(Boolean).join(', ')})
+                              </span>
+                            )}
+                          </span>
+                        </div>
+
+                        {/* Current Activity Evidence */}
+                        <div>
+                          <span className="text-foreground-muted block text-[11px] mb-0.5">
+                            {t('discovery.current_activity_label')}:
+                          </span>
+                          <span className="text-foreground font-mono text-[11px]">
+                            {candidate.current_activity_status || 'UNKNOWN'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Excerpt Snippet */}
+                      {candidate.snippet && (
+                        <p className="text-xs text-foreground-muted bg-surface/60 p-2 rounded border border-border/40 line-clamp-3">
+                          &ldquo;{candidate.snippet}&rdquo;
+                        </p>
+                      )}
+
+                      {/* Qualification Reasons & Missing Evidence */}
+                      {((candidate.qualification_reasons && candidate.qualification_reasons.length > 0) ||
+                        (candidate.missing_evidence && candidate.missing_evidence.length > 0)) && (
+                        <div className="space-y-1.5 pt-1 border-t border-border/50 text-[11px]">
+                          {candidate.qualification_reasons && candidate.qualification_reasons.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-foreground-muted font-medium mr-1">
+                                {t('discovery.qualification_reasons_label')}:
+                              </span>
+                              {candidate.qualification_reasons.map((r, rIdx) => (
+                                <span
+                                  key={rIdx}
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[10px]"
+                                >
+                                  {r}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+
+                          {candidate.missing_evidence && candidate.missing_evidence.length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1">
+                              <span className="text-amber-600 dark:text-amber-400 font-medium mr-1">
+                                {t('discovery.missing_evidence_label')}:
+                              </span>
+                              {candidate.missing_evidence.map((m, mIdx) => (
+                                <span
+                                  key={mIdx}
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 font-mono text-[10px] border border-amber-500/20"
+                                >
+                                  {m}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Step 2: Parsed Search Intent Preview */}
       {intent && (
@@ -566,7 +1018,27 @@ export default function DiscoveryPage() {
             ))}
           </div>
 
-          <div className="flex justify-end pt-2">
+          <div className="flex items-center justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              data-testid="plan-search-preview-button"
+              disabled={previewing || !selectedCampaignId}
+              onClick={() => handlePreview(true)}
+            >
+              {previewing ? (
+                <>
+                  <div className="animate-spin h-3.5 w-3.5 border-2 border-surface border-t-transparent rounded-full mr-2" />
+                  {t('discovery.previewing')}
+                </>
+              ) : (
+                <>
+                  <Search className="w-3.5 h-3.5 mr-1.5 text-brand-gold" />
+                  {t('discovery.preview_button')}
+                </>
+              )}
+            </Button>
             <PermissionGate permission="campaign.create">
               <Button
                 size="sm"
