@@ -15,6 +15,7 @@ from bopclients.api.schemas.discovery import (
     DiscoveredProspectSummary,
     DiscoveryPreviewRequest,
     DiscoveryPreviewResponse,
+    DiscoveryPreviewDiagnostics,
     DiscoveryCandidateSummary,
 )
 from bopclients.api.dependencies import require_permission, get_container, get_tenant_context
@@ -687,6 +688,12 @@ async def preview_discovery(
 
     warning_msgs = [w.message for w in result.warnings]
 
+    diagnostics_obj = None
+    if getattr(result, "diagnostics", None):
+        d_dict = dict(result.diagnostics)
+        d_dict["candidates_returned_to_preview"] = len(candidate_summaries)
+        diagnostics_obj = DiscoveryPreviewDiagnostics(**d_dict)
+
     return DiscoveryPreviewResponse(
         status=exec_status,
         organization_id=org_id,
@@ -700,4 +707,5 @@ async def preview_discovery(
         database_writes=0,
         warnings=warning_msgs,
         errors=result.errors or [],
+        diagnostics=diagnostics_obj,
     )

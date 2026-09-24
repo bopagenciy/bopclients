@@ -386,6 +386,16 @@ export interface DiscoveryPreviewRequest {
   provider?: string;
 }
 
+export interface DiscoveryPreviewDiagnostics {
+  provider_results_received: number;
+  results_missing_required_fields: number;
+  results_rejected_by_classifier: number;
+  results_accepted_by_classifier: number;
+  directory_candidates_retained: number;
+  candidates_returned_to_preview: number;
+  rejection_reasons?: Record<string, number>;
+}
+
 export interface DiscoveryPreviewResponse {
   status: 'completed' | 'partial' | 'failed' | string;
   organization_id: string;
@@ -399,6 +409,7 @@ export interface DiscoveryPreviewResponse {
   database_writes: number;
   warnings: string[];
   errors: string[];
+  diagnostics?: DiscoveryPreviewDiagnostics | null;
 }
 
 export interface LeadScoreDetail {

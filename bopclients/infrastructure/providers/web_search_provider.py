@@ -148,6 +148,7 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
         self.authorized_tenants = set(authorized_tenants or [])
         self.max_queries_per_run = max_queries_per_run
         self.max_results_per_query = max_results_per_query
+        self.last_diagnostics: Optional[Dict[str, Any]] = None
 
     @property
     def name(self) -> str:
@@ -267,10 +268,18 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
         web_data = response.get("web", {})
         results = web_data.get("results", []) if isinstance(web_data, dict) else []
 
+        provider_results_received = len(results) if isinstance(results, list) else 0
+        results_missing_required_fields = 0
+        results_rejected_by_classifier = 0
+        results_accepted_by_classifier = 0
+        directory_candidates_retained = 0
+        rejection_reasons: Dict[str, int] = {}
+
         discovered: List[DiscoveredBusiness] = []
 
         for item in results:
             if not isinstance(item, dict):
+                results_missing_required_fields += 1
                 continue
 
             raw_title = str(item.get("title") or "").strip()
@@ -278,6 +287,7 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
             snippet = str(item.get("description") or "").strip()
 
             if not raw_title or not url:
+                results_missing_required_fields += 1
                 continue
 
             # Clean name from page title (e.g., strip " | Inicio", " - Inicio", etc.)
@@ -304,7 +314,22 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
 
             decision = self._classifier.classify(req)
             if not decision.is_valid:
+                results_rejected_by_classifier += 1
+                reason_str = str(decision.reason or "").upper()
+                if "EXCLUDED_FACILITY" in reason_str or "CONTRADICTORY_ENTITY_EVIDENCE" in reason_str:
+                    code = "EXCLUDED_FACILITY"
+                elif "NEGATIVE_KEYWORD" in reason_str or "CATEGORY_KEYWORD" in reason_str:
+                    code = "NEGATIVE_KEYWORD_MATCH"
+                elif "NOT_AN_ASSOCIATION" in reason_str or "NOT_A_PROFESSIONAL_ASSOCIATION" in reason_str or "MISSING_ORGANIZATION_NAME" in reason_str:
+                    code = "MISSING_ORGANIZATION_MARKER"
+                elif "UNVERIFIED_MEDICAL_SPECIALIZATION" in reason_str or "INSUFFICIENT_EVIDENCE" in reason_str or "SECTOR" in reason_str:
+                    code = "MISSING_SECTOR_MATCH"
+                else:
+                    code = "OTHER_CLASSIFICATION_REJECTION"
+                rejection_reasons[code] = rejection_reasons.get(code, 0) + 1
                 continue
+
+            results_accepted_by_classifier += 1
 
             # Determine structured candidate qualification
             qual = self._qualifier.qualify(
@@ -316,6 +341,9 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
                 snippet=snippet,
                 task=task,
             )
+
+            if qual.entity_archetype == EntityArchetype.DIRECTORY_LISTING:
+                directory_candidates_retained += 1
 
             # Determine institutional geography truthfully
             geo_scope = self.determine_geographic_scope(
@@ -367,5 +395,19 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
                 },
             )
             discovered.append(biz)
+
+        diagnostics = {
+            "provider_results_received": provider_results_received,
+            "results_missing_required_fields": results_missing_required_fields,
+            "results_rejected_by_classifier": results_rejected_by_classifier,
+            "results_accepted_by_classifier": results_accepted_by_classifier,
+            "directory_candidates_retained": directory_candidates_retained,
+            "candidates_returned_to_preview": len(discovered),
+            "rejection_reasons": rejection_reasons,
+        }
+        if not isinstance(task.metadata, dict):
+            task.metadata = {}
+        task.metadata["diagnostics"] = diagnostics
+        self.last_diagnostics = diagnostics
 
         return discovered

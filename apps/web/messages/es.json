@@ -282,6 +282,26 @@
         "b2b_software": "Software B2B",
         "restaurant": "Restaurante"
       }
+    },
+    "diagnostics": {
+      "title": "Diagnóstico del Embudo de Búsqueda",
+      "provider_results_received": "Resultados recibidos",
+      "results_missing_fields": "Sin campos requeridos",
+      "results_rejected": "Resultados descartados",
+      "results_accepted": "Coincidencias aceptadas",
+      "directory_retained": "Directorios retenidos",
+      "candidates_returned": "Candidatos mostrados",
+      "rejection_reasons_title": "Motivos de descarte",
+      "not_available": "No disponible",
+      "zero_results_notice": "El motor de búsqueda no devolvió resultados para esta consulta.",
+      "reasons": {
+        "EXCLUDED_FACILITY": "Centro o clínica excluida",
+        "NEGATIVE_KEYWORD_MATCH": "Término negativo coincidente",
+        "MISSING_ORGANIZATION_MARKER": "Sin indicador de organización",
+        "MISSING_SECTOR_MATCH": "Especialidad no verificada",
+        "MISSING_TITLE_OR_URL": "Título o URL faltante",
+        "OTHER_CLASSIFICATION_REJECTION": "Otro descarte de clasificación"
+      }
     }
   },
   "campaigns": {

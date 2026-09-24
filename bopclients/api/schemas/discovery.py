@@ -194,6 +194,18 @@ class DiscoveryPreviewRequest(BaseModel):
     provider: str = Field(default="web_search", description="Discovery provider ('web_search' or 'overture')")
 
 
+class DiscoveryPreviewDiagnostics(BaseModel):
+    """Aggregate ephemeral diagnostics for discovery preview execution."""
+
+    provider_results_received: int = Field(default=0, description="Total raw results returned by provider")
+    results_missing_required_fields: int = Field(default=0, description="Results dropped due to missing title or URL")
+    results_rejected_by_classifier: int = Field(default=0, description="Results rejected by candidate classifier")
+    results_accepted_by_classifier: int = Field(default=0, description="Results accepted by candidate classifier")
+    directory_candidates_retained: int = Field(default=0, description="Directory listing candidates retained as SEARCH_MATCH")
+    candidates_returned_to_preview: int = Field(default=0, description="Total candidates returned in preview payload")
+    rejection_reasons: Dict[str, int] = Field(default_factory=dict, description="Rejection counts grouped by stable reason code")
+
+
 class DiscoveryPreviewResponse(BaseModel):
     """Outcome of running discovery in preview mode with zero persistence."""
 
@@ -209,3 +221,6 @@ class DiscoveryPreviewResponse(BaseModel):
     database_writes: int = 0
     warnings: List[str] = Field(default_factory=list)
     errors: List[str] = Field(default_factory=list)
+    diagnostics: Optional[DiscoveryPreviewDiagnostics] = Field(
+        default=None, description="Optional ephemeral preview funnel diagnostics"
+    )

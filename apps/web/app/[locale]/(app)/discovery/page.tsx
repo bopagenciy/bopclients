@@ -25,6 +25,7 @@ import {
   Globe,
   X,
   Info,
+  Activity,
 } from 'lucide-react';
 import {
   SearchIntent,
@@ -136,6 +137,13 @@ function formatSectorOrClassification(
     return formatEnumFallback(classificationStatus);
   }
   return '';
+}
+
+function formatRejectionReason(t: (k: string, p?: any) => string, reasonKey: string): string {
+  const key = `discovery.diagnostics.reasons.${reasonKey}`;
+  const translated = t(key);
+  if (translated !== key) return translated;
+  return formatEnumFallback(reasonKey);
 }
 
 function getQualificationBadge(status?: string | null) {
@@ -721,6 +729,75 @@ export default function DiscoveryPage() {
                   <li key={idx}>{w}</li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {/* Funnel Diagnostics Panel (P30.5G.5H.3C) */}
+          {previewResult.status !== 'failed' && (
+            <div
+              data-testid="preview-diagnostics-panel"
+              className="p-3 bg-surface-subtle/50 rounded-lg border border-border/70 space-y-2 text-xs"
+            >
+              <div className="flex items-center justify-between">
+                <span className="font-semibold text-foreground flex items-center gap-1.5">
+                  <Activity className="w-3.5 h-3.5 text-brand-gold" />
+                  {t('discovery.diagnostics.title')}
+                </span>
+                {!previewResult.diagnostics && (
+                  <span className="text-[11px] text-foreground-muted font-mono italic">
+                    {t('discovery.diagnostics.not_available')}
+                  </span>
+                )}
+              </div>
+
+              {previewResult.diagnostics ? (
+                <div className="space-y-2.5">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px]">
+                    <div className="p-2 rounded bg-surface border border-border/40">
+                      <span className="text-foreground-muted block">{t('discovery.diagnostics.provider_results_received')}</span>
+                      <span className="font-bold text-foreground text-sm font-mono">{previewResult.diagnostics.provider_results_received}</span>
+                    </div>
+                    <div className="p-2 rounded bg-surface border border-border/40">
+                      <span className="text-foreground-muted block">{t('discovery.diagnostics.results_rejected')}</span>
+                      <span className="font-bold text-amber-600 dark:text-amber-400 text-sm font-mono">{previewResult.diagnostics.results_rejected_by_classifier}</span>
+                    </div>
+                    <div className="p-2 rounded bg-surface border border-border/40">
+                      <span className="text-foreground-muted block">{t('discovery.diagnostics.results_accepted')}</span>
+                      <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">{previewResult.diagnostics.results_accepted_by_classifier}</span>
+                    </div>
+                    <div className="p-2 rounded bg-surface border border-border/40">
+                      <span className="text-foreground-muted block">{t('discovery.diagnostics.candidates_returned')}</span>
+                      <span className="font-bold text-foreground text-sm font-mono">{previewResult.diagnostics.candidates_returned_to_preview}</span>
+                    </div>
+                  </div>
+
+                  {previewResult.diagnostics.provider_results_received === 0 && (
+                    <p className="text-[11px] text-foreground-muted italic text-center">
+                      {t('discovery.diagnostics.zero_results_notice')}
+                    </p>
+                  )}
+
+                  {previewResult.diagnostics.rejection_reasons && Object.keys(previewResult.diagnostics.rejection_reasons).length > 0 && (
+                    <div className="pt-1.5 border-t border-border/40 space-y-1">
+                      <span className="text-[11px] font-medium text-foreground-muted block">
+                        {t('discovery.diagnostics.rejection_reasons_title')}:
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {Object.entries(previewResult.diagnostics.rejection_reasons).map(([code, count]) => (
+                          <span
+                            key={code}
+                            data-testid={`rejection-reason-${code}`}
+                            className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-500/20 text-[10px]"
+                          >
+                            <span>{formatRejectionReason(t, code)}:</span>
+                            <span className="font-mono font-bold">{count}</span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
           )}
 

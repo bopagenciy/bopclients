@@ -84,6 +84,7 @@ class SearchExecutionResult:
     candidates: List[Dict[str, Any]] = field(default_factory=list)
     warnings: List[SearchWarning] = field(default_factory=list)
     errors: List[str] = field(default_factory=list)
+    diagnostics: Optional[Dict[str, Any]] = None
     executed_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

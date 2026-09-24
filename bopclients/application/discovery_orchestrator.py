@@ -380,6 +380,34 @@ class DiscoveryOrchestrator:
                     )
                 )
 
+        # Collect preview funnel diagnostics if provided by discovery task
+        preview_diagnostics: Optional[Dict[str, Any]] = None
+        for task in plan.tasks:
+            if isinstance(task.metadata, dict) and "diagnostics" in task.metadata:
+                d = task.metadata["diagnostics"]
+                if preview_diagnostics is None:
+                    preview_diagnostics = {
+                        "provider_results_received": d.get("provider_results_received", 0),
+                        "results_missing_required_fields": d.get("results_missing_required_fields", 0),
+                        "results_rejected_by_classifier": d.get("results_rejected_by_classifier", 0),
+                        "results_accepted_by_classifier": d.get("results_accepted_by_classifier", 0),
+                        "directory_candidates_retained": d.get("directory_candidates_retained", 0),
+                        "candidates_returned_to_preview": len(candidates),
+                        "rejection_reasons": dict(d.get("rejection_reasons") or {}),
+                    }
+                else:
+                    preview_diagnostics["provider_results_received"] += d.get("provider_results_received", 0)
+                    preview_diagnostics["results_missing_required_fields"] += d.get("results_missing_required_fields", 0)
+                    preview_diagnostics["results_rejected_by_classifier"] += d.get("results_rejected_by_classifier", 0)
+                    preview_diagnostics["results_accepted_by_classifier"] += d.get("results_accepted_by_classifier", 0)
+                    preview_diagnostics["directory_candidates_retained"] += d.get("directory_candidates_retained", 0)
+                    preview_diagnostics["candidates_returned_to_preview"] = len(candidates)
+                    for r_code, r_cnt in (d.get("rejection_reasons") or {}).items():
+                        preview_diagnostics["rejection_reasons"][r_code] = preview_diagnostics["rejection_reasons"].get(r_code, 0) + r_cnt
+
+        if preview_diagnostics is not None:
+            preview_diagnostics["candidates_returned_to_preview"] = len(candidates)
+
         end_time = datetime.now(timezone.utc).isoformat()
 
         return SearchExecutionResult(
@@ -398,5 +426,6 @@ class DiscoveryOrchestrator:
             candidates=candidates,  # Transient candidate list
             warnings=execution_warnings,
             errors=execution_errors,
+            diagnostics=preview_diagnostics,
             executed_at=end_time,
         )

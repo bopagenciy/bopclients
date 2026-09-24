@@ -282,6 +282,26 @@
         "b2b_software": "B2B Software",
         "restaurant": "Restaurant"
       }
+    },
+    "diagnostics": {
+      "title": "Search Funnel Diagnostics",
+      "provider_results_received": "Results Received",
+      "results_missing_fields": "Missing Required Fields",
+      "results_rejected": "Results Discarded (Filtered)",
+      "results_accepted": "Matches Accepted",
+      "directory_retained": "Directories Retained",
+      "candidates_returned": "Candidates Displayed",
+      "rejection_reasons_title": "Rejection Reasons",
+      "not_available": "Not available",
+      "zero_results_notice": "The search engine returned zero results for this query.",
+      "reasons": {
+        "EXCLUDED_FACILITY": "Excluded Medical Facility",
+        "NEGATIVE_KEYWORD_MATCH": "Negative Keyword Match",
+        "MISSING_ORGANIZATION_MARKER": "Missing Organization Marker",
+        "MISSING_SECTOR_MATCH": "Unverified Sector Specialization",
+        "MISSING_TITLE_OR_URL": "Missing Title or URL",
+        "OTHER_CLASSIFICATION_REJECTION": "Other Classification Rejection"
+      }
     }
   },
   "campaigns": {
