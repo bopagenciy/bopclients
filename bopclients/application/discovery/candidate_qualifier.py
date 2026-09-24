@@ -66,6 +66,38 @@ class OrganizationCandidateQualifier:
         "bucaramanga": "santander",
     }
 
+    DIRECTORY_PATH_PATTERN = re.compile(
+        r"/(?:sociedades-afiliadas|empresas-afiliadas|asociaciones-afiliadas|entidades-afiliadas|"
+        r"asociaciones-miembro|sociedades-miembro|miembros-afiliados|miembros|members|afiliados|"
+        r"affiliates|directorio(?:-[\w-]+)?|directory|member-directory|nuestros-distribuidores|"
+        r"distribuidores|distributors|dealers|dealer-locator|partners|partner-directory|"
+        r"listado(?:-[\w-]+)?|catalogo-empresas|proveedores|suppliers)(?:/|$|\.html?|\.php)?",
+        re.IGNORECASE,
+    )
+
+    DIRECTORY_TITLE_PATTERN = re.compile(
+        r"\b(?:sociedades\s+afiliadas|empresas\s+afiliadas|asociaciones\s+afiliadas|"
+        r"organizaciones\s+afiliadas|entidades\s+afiliadas|asociaciones\s+miembro|"
+        r"sociedades\s+miembro|miembros\s+afiliados|directorio\s+(?:de|nacional|m[eé]dico|empresarial|comercial|profesional|institucional)|"
+        r"listado\s+de\s+(?:empresas|sociedades|asociaciones|miembros|contratistas|distribuidores|restaurantes|entidades)|"
+        r"gu[íi]a\s+de\s+(?:empresas|sociedades|asociaciones|distribuidores|restaurantes)|"
+        r"red\s+de\s+distribuidores|nuestros\s+distribuidores|distribuidores\s+autorizados|"
+        r"nuestros\s+socios|nuestros\s+aliados|nuestros\s+miembros|nuestros\s+contratistas|"
+        r"our\s+members|member\s+directory|affiliated\s+societies|authorized\s+dealers|dealer\s+locator|partner\s+directory)\b",
+        re.IGNORECASE,
+    )
+
+    DIRECTORY_SNIPPET_PATTERN = re.compile(
+        r"\b(?:listado\s+de\s+(?:empresas|sociedades|asociaciones|miembros|contratistas|distribuidores|restaurantes|entidades)|"
+        r"directorio\s+de\s+(?:empresas|sociedades|asociaciones|miembros|distribuidores|restaurantes)|"
+        r"consulte\s+(?:las|los)\s+(?:sociedades|empresas|miembros|asociaciones|distribuidores)|"
+        r"conozca\s+(?:nuestros?|a\s+nuestros?)\s+(?:distribuidores|aliados|miembros|afiliados|asociados)|"
+        r"en\s+esta\s+secci[oó]n\s+encontrar[aá]\s+(?:el\s+listado|las\s+sociedades|los\s+miembros)|"
+        r"relaci[oó]n\s+de\s+(?:sociedades|asociaciones|empresas|miembros)|"
+        r"directorio\s+telef[oó]nico\s+y\s+perfil)\b",
+        re.IGNORECASE,
+    )
+
     def qualify(
         self,
         candidate_name: str,
@@ -108,6 +140,7 @@ class OrganizationCandidateQualifier:
         geo_status = self._determine_geographic_status(
             combined_text=combined_text,
             task=task,
+            archetype=archetype,
         )
 
         # 4. Determine Current Activity Status
@@ -141,6 +174,11 @@ class OrganizationCandidateQualifier:
             else:
                 qualification_reasons.append("COMPATIBLE_ENTITY_ARCHETYPE")
 
+            if archetype == EntityArchetype.DIRECTORY_LISTING:
+                is_ready = False
+                if "UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY" not in missing_evidence:
+                    missing_evidence.append("UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY")
+
             # Gate B: Geographic satisfaction
             geo_ok, geo_err = self._check_geographic_satisfaction(geo_status, task)
             if not geo_ok:
@@ -162,6 +200,9 @@ class OrganizationCandidateQualifier:
                 missing_evidence.append("HISTORICAL_ARCHIVE_LACKS_CURRENT_ACTIVITY_EVIDENCE")
             elif activity_status == CurrentActivityStatus.CURRENT_ACTIVITY_EVIDENCED:
                 qualification_reasons.append("CURRENT_ACTIVITY_EVIDENCED")
+            elif task.metadata.get("require_current_activity", False):
+                is_ready = False
+                missing_evidence.append("CURRENT_ACTIVITY_EVIDENCE_REQUIRED")
 
             if is_ready:
                 q_status = CandidateQualificationStatus.READY_FOR_COMMERCIAL_REVIEW
@@ -199,10 +240,18 @@ class OrganizationCandidateQualifier:
     ) -> EntityArchetype:
         """Differentiate entity archetype using lexical, path, and source signals."""
         # 1. Directory Listing
-        if host in self.DIRECTORY_HOSTS or re.search(
-            r"\b(?:directorio|directorios|gu[íi]a de empresas|p[aá]ginas amarillas|listado de empresas|perfil en directorio)\b",
-            combined_text,
-        ):
+        is_directory = (
+            host in self.DIRECTORY_HOSTS
+            or bool(self.DIRECTORY_PATH_PATTERN.search(path or ""))
+            or bool(self.DIRECTORY_TITLE_PATTERN.search(raw_title or ""))
+            or bool(self.DIRECTORY_TITLE_PATTERN.search(candidate_name or ""))
+            or bool(self.DIRECTORY_SNIPPET_PATTERN.search(snippet or ""))
+            or bool(re.search(
+                r"\b(?:directorio|directorios|gu[íi]a de empresas|p[aá]ginas amarillas|listado de empresas|perfil en directorio)\b",
+                combined_text,
+            ))
+        )
+        if is_directory:
             return EntityArchetype.DIRECTORY_LISTING
 
         # 2. Historical Archive Reference
@@ -291,6 +340,9 @@ class OrganizationCandidateQualifier:
         if host in self.DIRECTORY_HOSTS or host in self.ARCHIVE_HOSTS:
             return "UNKNOWN"
 
+        if self.DIRECTORY_PATH_PATTERN.search(parsed_url.path or ""):
+            return "UNKNOWN"
+
         if not host:
             return "UNKNOWN"
 
@@ -301,8 +353,12 @@ class OrganizationCandidateQualifier:
         self,
         combined_text: str,
         task: DiscoveryTask,
+        archetype: Optional[EntityArchetype] = None,
     ) -> GeographicEvidenceStatus:
         """Classify candidate geographic evidence truthfully without invented GPS."""
+        if archetype == EntityArchetype.DIRECTORY_LISTING:
+            return GeographicEvidenceStatus.LOCATION_UNVERIFIED
+
         city_req = (task.city or "").strip().lower()
         region_req = (task.region or "").strip().lower()
         country_req = (task.country or "CO").strip().upper()
@@ -362,6 +418,9 @@ class OrganizationCandidateQualifier:
         self, target_norm: str, archetype: EntityArchetype
     ) -> Tuple[bool, str]:
         """Validate whether entity archetype satisfies the target ICP intent."""
+        if archetype == EntityArchetype.DIRECTORY_LISTING:
+            return False, "DIRECTORY_LISTING_NOT_ORGANIZATION"
+
         is_assoc_target = (
             target_norm in ("medical_association", "scientific_society", "professional_association", "association_or_organization")
             or "association" in target_norm

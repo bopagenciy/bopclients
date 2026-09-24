@@ -25,6 +25,10 @@ from bopclients.application.discovery.candidate_classifier import (
 from bopclients.application.discovery.candidate_qualifier import (
     OrganizationCandidateQualifier,
 )
+from bopclients.domain.candidate_qualification import (
+    EntityArchetype,
+    GeographicEvidenceStatus,
+)
 from bopclients.domain.exceptions import DiscoveryExecutionError, TenantAccessError
 
 
@@ -191,9 +195,16 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
         self.authorized_tenants.discard(organization_id)
 
     def determine_geographic_scope(
-        self, name: str, snippet: str, task: DiscoveryTask
+        self,
+        name: str,
+        snippet: str,
+        task: DiscoveryTask,
+        archetype: Optional[EntityArchetype] = None,
     ) -> GeographicScope:
         """Classify candidate geographic coverage truthfully without inventing coordinates."""
+        if archetype == EntityArchetype.DIRECTORY_LISTING:
+            return GeographicScope.LOCATION_UNVERIFIED
+
         combined_text = f"{name} {snippet}".strip()
 
         # Check for explicit regional evidence
@@ -295,9 +306,6 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
             if not decision.is_valid:
                 continue
 
-            # Determine institutional geography truthfully
-            geo_scope = self.determine_geographic_scope(clean_name, snippet, task)
-
             # Determine structured candidate qualification
             qual = self._qualifier.qualify(
                 candidate_name=clean_name,
@@ -309,9 +317,23 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
                 task=task,
             )
 
+            # Determine institutional geography truthfully
+            geo_scope = self.determine_geographic_scope(
+                clean_name, snippet, task, archetype=qual.entity_archetype
+            )
+
             # Generate stable synthetic external id from URL
             url_hash = hashlib.sha256(url.strip().lower().encode("utf-8")).hexdigest()[:16]
             ext_id = f"web-{url_hash}"
+
+            is_locally_evidenced = (
+                geo_scope == GeographicScope.REGIONAL_COVERAGE_EVIDENCED
+                and qual.entity_archetype != EntityArchetype.DIRECTORY_LISTING
+                and qual.geographic_evidence_status in (
+                    GeographicEvidenceStatus.VERIFIED_LOCAL_PRESENCE,
+                    GeographicEvidenceStatus.VERIFIED_REGIONAL_PRESENCE,
+                )
+            )
 
             biz = DiscoveredBusiness(
                 overture_id=ext_id,
@@ -320,8 +342,8 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
                 category=canonical_target,
                 latitude=None,  # Zero invented coordinates
                 longitude=None,  # Zero invented coordinates
-                city=task.city if geo_scope == GeographicScope.REGIONAL_COVERAGE_EVIDENCED else None,
-                state=task.region if geo_scope == GeographicScope.REGIONAL_COVERAGE_EVIDENCED else None,
+                city=task.city if is_locally_evidenced else None,
+                state=task.region if is_locally_evidenced else None,
                 raw_data={
                     "title": raw_title,
                     "snippet": snippet,
