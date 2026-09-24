@@ -147,9 +147,11 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
       'discovery.selected_campaign_label',
       'discovery.clear_preview',
       'discovery.classification_label',
+      'discovery.candidates_found',
+      'discovery.candidates_discovered',
     ];
 
-    it('all 24 preview keys exist in both en.json and es.json with 100% parity', () => {
+    it('all preview keys exist in both en.json and es.json with 100% parity', () => {
       for (const key of requiredPreviewKeys) {
         const enVal = translate('en', key);
         const esVal = translate('es', key);
@@ -519,7 +521,8 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
       const card = container.querySelector('[data-testid="candidate-card-cand-dir-01"]');
       expect(card).not.toBeNull();
       expect(card?.textContent).toContain('Directorio Médico de Colombia');
-      expect(card?.textContent).toContain('INDUSTRY_DIRECTORY');
+      expect(card?.textContent).toContain('Industry Directory');
+      expect(card?.textContent).not.toContain('INDUSTRY_DIRECTORY');
       expect(card?.textContent).toContain('Search Match (Requires Qualification)');
 
       // Unknown official website warning (source host only)
@@ -597,7 +600,8 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
       const card = container.querySelector('[data-testid="candidate-card-cand-assoc-02"]');
       expect(card).not.toBeNull();
       expect(card?.textContent).toContain('Sociedad Colombiana de Cardiología');
-      expect(card?.textContent).toContain('PROFESSIONAL_ASSOCIATION');
+      expect(card?.textContent).toContain('Professional Association');
+      expect(card?.textContent).not.toContain('PROFESSIONAL_ASSOCIATION');
       expect(card?.textContent).toContain('Ready for Commercial Review');
 
       // Verified official domain present
@@ -780,6 +784,312 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
 
       // Panel is dismissed
       expect(container.querySelector('[data-testid="discovery-preview-panel"]')).toBeNull();
+    });
+  });
+
+  // =========================================================================
+  // 8. PHASE P30.5G.5H.2: COMPREHENSIVE LOCALIZATION & PRESENTATION POLISH
+  // =========================================================================
+  describe('8. Phase P30.5G.5H.2: Comprehensive Localization and Presentation Polish', () => {
+    it('renders English preview labels and localized enums without raw enum leakage', async () => {
+      vi.spyOn(I18nContext, 'useI18n').mockReturnValue({
+        locale: 'en',
+        dictionary: enMessages,
+        t: (key: string, params?: Record<string, string | number>) => translate('en', key, params),
+      });
+
+      const mockResponse: DiscoveryPreviewResponse = {
+        status: 'completed',
+        organization_id: mockActiveOrg.bop_organization_id,
+        campaign_id: mockCampaigns[0].id,
+        provider: 'tavily',
+        tasks_executed: 1,
+        candidates_count: 1,
+        candidates: [
+          {
+            candidate_id: 'cand-dir-01',
+            name: 'Sociedades Afiliadas - Academia Nacional de Medicina',
+            entity_archetype: 'DIRECTORY_LISTING',
+            qualification_status: 'SEARCH_MATCH',
+            geographic_evidence_status: 'LOCATION_UNVERIFIED',
+            current_activity_status: 'CURRENT_STATUS_UNKNOWN',
+            source_url: 'https://anmedcolombia.org.co/sociedades-afiliadas/',
+            source_host: 'anmedcolombia.org.co',
+            organization_website: 'UNKNOWN',
+            is_commercial_review_ready: false,
+            qualification_reasons: [],
+            missing_evidence: ['DIRECTORY_LISTING_NOT_ORGANIZATION', 'UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY'],
+          },
+        ],
+        prospects_inserted: 0,
+        sources_inserted: 0,
+        database_writes: 0,
+        warnings: [],
+        errors: [],
+      };
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/v1/campaigns')) {
+          return { ok: true, status: 200, json: async () => ({ items: mockCampaigns, total: mockCampaigns.length }) };
+        }
+        if (url.includes('/api/v1/discovery/preview')) {
+          return { ok: true, status: 200, json: async () => mockResponse };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      await act(async () => {
+        root.render(<DiscoveryPage />);
+      });
+
+      const previewBtn = container.querySelector('[data-testid="web-search-preview-button"]') as HTMLButtonElement;
+      await act(async () => {
+        previewBtn.click();
+      });
+
+      const panel = container.querySelector('[data-testid="discovery-preview-panel"]');
+      expect(panel).not.toBeNull();
+
+      // Context bar English labels
+      expect(panel?.textContent).toContain('Tasks Executed:');
+      expect(panel?.textContent).toContain('Candidates Found:');
+      expect(panel?.textContent).toContain('Candidates Discovered (1)');
+
+      // Candidate card English localized enums
+      const card = container.querySelector('[data-testid="candidate-card-cand-dir-01"]');
+      expect(card).not.toBeNull();
+      expect(card?.textContent).toContain('Directory Listing');
+      expect(card?.textContent).toContain('Search Match (Requires Qualification)');
+      expect(card?.textContent).toContain('Location Unverified');
+      expect(card?.textContent).toContain('Current Status Unknown');
+
+      // Assert NO raw enum leakage in presentation badges and fields
+      expect(card?.textContent).not.toContain('Entity Archetype: DIRECTORY_LISTING');
+      expect(card?.textContent).not.toContain('LOCATION_UNVERIFIED');
+      expect(card?.textContent).not.toContain('CURRENT_STATUS_UNKNOWN');
+    });
+
+    it('renders Spanish preview labels and localized enums without raw enum leakage', async () => {
+      vi.spyOn(I18nContext, 'useI18n').mockReturnValue({
+        locale: 'es',
+        dictionary: esMessages,
+        t: (key: string, params?: Record<string, string | number>) => translate('es', key, params),
+      });
+
+      const mockResponse: DiscoveryPreviewResponse = {
+        status: 'completed',
+        organization_id: mockActiveOrg.bop_organization_id,
+        campaign_id: mockCampaigns[0].id,
+        provider: 'tavily',
+        tasks_executed: 1,
+        candidates_count: 1,
+        candidates: [
+          {
+            candidate_id: 'cand-dir-es-01',
+            name: 'Sociedades Afiliadas - Academia Nacional de Medicina',
+            entity_archetype: 'DIRECTORY_LISTING',
+            qualification_status: 'SEARCH_MATCH',
+            geographic_evidence_status: 'LOCATION_UNVERIFIED',
+            current_activity_status: 'CURRENT_STATUS_UNKNOWN',
+            source_url: 'https://anmedcolombia.org.co/sociedades-afiliadas/',
+            source_host: 'anmedcolombia.org.co',
+            organization_website: 'UNKNOWN',
+            is_commercial_review_ready: false,
+            qualification_reasons: [],
+            missing_evidence: ['DIRECTORY_LISTING_NOT_ORGANIZATION', 'UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY'],
+          },
+        ],
+        prospects_inserted: 0,
+        sources_inserted: 0,
+        database_writes: 0,
+        warnings: [],
+        errors: [],
+      };
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/v1/campaigns')) {
+          return { ok: true, status: 200, json: async () => ({ items: mockCampaigns, total: mockCampaigns.length }) };
+        }
+        if (url.includes('/api/v1/discovery/preview')) {
+          return { ok: true, status: 200, json: async () => mockResponse };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      await act(async () => {
+        root.render(<DiscoveryPage />);
+      });
+
+      const previewBtn = container.querySelector('[data-testid="web-search-preview-button"]') as HTMLButtonElement;
+      await act(async () => {
+        previewBtn.click();
+      });
+
+      const panel = container.querySelector('[data-testid="discovery-preview-panel"]');
+      expect(panel).not.toBeNull();
+
+      // Context bar Spanish labels
+      expect(panel?.textContent).toContain('Tareas Ejecutadas:');
+      expect(panel?.textContent).toContain('Candidatos Encontrados:');
+      expect(panel?.textContent).toContain('Candidatos Descubiertos (1)');
+
+      // Candidate card Spanish localized enums
+      const card = container.querySelector('[data-testid="candidate-card-cand-dir-es-01"]');
+      expect(card).not.toBeNull();
+      expect(card?.textContent).toContain('Directorio / Listado');
+      expect(card?.textContent).toContain('Coincidencia de Búsqueda (Requiere Calificación)');
+      expect(card?.textContent).toContain('Ubicación No Verificada');
+      expect(card?.textContent).toContain('Estado Actual Desconocido');
+
+      // Assert NO raw enum leakage in presentation badges and fields
+      expect(card?.textContent).not.toContain('Arquetipo de Entidad: DIRECTORY_LISTING');
+      expect(card?.textContent).not.toContain('LOCATION_UNVERIFIED');
+      expect(card?.textContent).not.toContain('CURRENT_STATUS_UNKNOWN');
+    });
+
+    it('renders READY_FOR_COMMERCIAL_REVIEW in Spanish without raw enum leakage', async () => {
+      vi.spyOn(I18nContext, 'useI18n').mockReturnValue({
+        locale: 'es',
+        dictionary: esMessages,
+        t: (key: string, params?: Record<string, string | number>) => translate('es', key, params),
+      });
+
+      const mockResponse: DiscoveryPreviewResponse = {
+        status: 'completed',
+        organization_id: mockActiveOrg.bop_organization_id,
+        campaign_id: mockCampaigns[0].id,
+        provider: 'tavily',
+        tasks_executed: 1,
+        candidates_count: 1,
+        candidates: [
+          {
+            candidate_id: 'cand-ready-es-01',
+            name: 'Sociedad Colombiana de Pediatría Regional Valle',
+            entity_archetype: 'PROFESSIONAL_ASSOCIATION',
+            qualification_status: 'READY_FOR_COMMERCIAL_REVIEW',
+            geographic_evidence_status: 'VERIFIED_LOCAL_PRESENCE',
+            current_activity_status: 'CURRENT_ACTIVITY_EVIDENCED',
+            source_url: 'https://scpvalle.org',
+            source_host: 'scpvalle.org',
+            organization_website: 'https://scpvalle.org',
+            city: 'Cali',
+            state: 'Valle del Cauca',
+            country: 'CO',
+            is_commercial_review_ready: true,
+            qualification_reasons: ['COMPATIBLE_ENTITY_ARCHETYPE'],
+            missing_evidence: [],
+          },
+        ],
+        prospects_inserted: 0,
+        sources_inserted: 0,
+        database_writes: 0,
+        warnings: [],
+        errors: [],
+      };
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/v1/campaigns')) {
+          return { ok: true, status: 200, json: async () => ({ items: mockCampaigns, total: mockCampaigns.length }) };
+        }
+        if (url.includes('/api/v1/discovery/preview')) {
+          return { ok: true, status: 200, json: async () => mockResponse };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      await act(async () => {
+        root.render(<DiscoveryPage />);
+      });
+
+      const previewBtn = container.querySelector('[data-testid="web-search-preview-button"]') as HTMLButtonElement;
+      await act(async () => {
+        previewBtn.click();
+      });
+
+      const card = container.querySelector('[data-testid="candidate-card-cand-ready-es-01"]');
+      expect(card).not.toBeNull();
+      expect(card?.textContent).toContain('Asociación Profesional');
+      expect(card?.textContent).toContain('Listo para Revisión Comercial');
+      expect(card?.textContent).toContain('Presencia Local Verificada');
+      expect(card?.textContent).toContain('Actividad Actual Evidenciada');
+
+      // Assert NO raw enum leakage
+      expect(card?.textContent).not.toContain('PROFESSIONAL_ASSOCIATION');
+      expect(card?.textContent).not.toContain('READY_FOR_COMMERCIAL_REVIEW');
+      expect(card?.textContent).not.toContain('VERIFIED_LOCAL_PRESENCE');
+      expect(card?.textContent).not.toContain('CURRENT_ACTIVITY_EVIDENCED');
+    });
+
+    it('gracefully formats unknown future enums with safe readable title-case fallback without crashing', async () => {
+      vi.spyOn(I18nContext, 'useI18n').mockReturnValue({
+        locale: 'en',
+        dictionary: enMessages,
+        t: (key: string, params?: Record<string, string | number>) => translate('en', key, params),
+      });
+
+      const mockResponse: DiscoveryPreviewResponse = {
+        status: 'completed',
+        organization_id: mockActiveOrg.bop_organization_id,
+        campaign_id: mockCampaigns[0].id,
+        provider: 'tavily',
+        tasks_executed: 1,
+        candidates_count: 1,
+        candidates: [
+          {
+            candidate_id: 'cand-future-01',
+            name: 'Future Tech Entity',
+            entity_archetype: 'CUSTOM_FUTURE_ARCHETYPE',
+            qualification_status: 'PROVISIONAL_NEEDS_VALIDATION',
+            geographic_evidence_status: 'FUTURE_GEO_VERIFICATION_TIER',
+            current_activity_status: 'UNKNOWN_ACTIVITY_MARKER',
+            source_url: 'https://futuretech.io',
+            source_host: 'futuretech.io',
+            organization_website: 'https://futuretech.io',
+            is_commercial_review_ready: false,
+            qualification_reasons: [],
+            missing_evidence: [],
+          },
+        ],
+        prospects_inserted: 0,
+        sources_inserted: 0,
+        database_writes: 0,
+        warnings: [],
+        errors: [],
+      };
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/v1/campaigns')) {
+          return { ok: true, status: 200, json: async () => ({ items: mockCampaigns, total: mockCampaigns.length }) };
+        }
+        if (url.includes('/api/v1/discovery/preview')) {
+          return { ok: true, status: 200, json: async () => mockResponse };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      await act(async () => {
+        root.render(<DiscoveryPage />);
+      });
+
+      const previewBtn = container.querySelector('[data-testid="web-search-preview-button"]') as HTMLButtonElement;
+      await act(async () => {
+        previewBtn.click();
+      });
+
+      const card = container.querySelector('[data-testid="candidate-card-cand-future-01"]');
+      expect(card).not.toBeNull();
+
+      // Safe readable title-case fallback
+      expect(card?.textContent).toContain('Custom Future Archetype');
+      expect(card?.textContent).toContain('Provisional Needs Validation');
+      expect(card?.textContent).toContain('Future Geo Verification Tier');
+      expect(card?.textContent).toContain('Unknown Activity Marker');
+
+      // No raw enum strings with underscores
+      expect(card?.textContent).not.toContain('CUSTOM_FUTURE_ARCHETYPE');
+      expect(card?.textContent).not.toContain('PROVISIONAL_NEEDS_VALIDATION');
+      expect(card?.textContent).not.toContain('FUTURE_GEO_VERIFICATION_TIER');
+      expect(card?.textContent).not.toContain('UNKNOWN_ACTIVITY_MARKER');
     });
   });
 });

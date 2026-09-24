@@ -233,7 +233,56 @@
     "provider_label": "Proveedor",
     "selected_campaign_label": "Campaña Seleccionada",
     "clear_preview": "Limpiar Vista Previa",
-    "classification_label": "Clasificación Sectorial"
+    "classification_label": "Clasificación Sectorial",
+    "candidates_found": "Candidatos Encontrados",
+    "candidates_discovered": "Candidatos Descubiertos ({count})",
+    "enums": {
+      "archetype": {
+        "INDEPENDENT_ORGANIZATION": "Organización Independiente",
+        "PROFESSIONAL_ASSOCIATION": "Asociación Profesional",
+        "DIRECTORY_LISTING": "Directorio / Listado",
+        "FEDERATION": "Federación / Organización Matriz",
+        "INTERNAL_PROGRAM": "Programa Académico Interno",
+        "HISTORICAL_REFERENCE": "Referencia de Archivo Histórico",
+        "STUDENT_ORGANIZATION": "Organización Estudiantil",
+        "COMMERCIAL_ENTERPRISE": "Empresa Comercial",
+        "ARTICLE_OR_PUBLICATION": "Artículo / Publicación",
+        "UNKNOWN": "Arquetipo Desconocido"
+      },
+      "geographic": {
+        "VERIFIED_LOCAL_PRESENCE": "Presencia Local Verificada",
+        "VERIFIED_REGIONAL_PRESENCE": "Presencia Regional Verificada",
+        "NATIONAL_SCOPE": "Alcance Nacional",
+        "LOCATION_UNVERIFIED": "Ubicación No Verificada",
+        "GEOGRAPHIC_MISMATCH": "Discrepancia Geográfica",
+        "UNKNOWN": "Evidencia de Ubicación Desconocida"
+      },
+      "activity": {
+        "CURRENT_ACTIVITY_EVIDENCED": "Actividad Actual Evidenciada",
+        "HISTORICAL_ACTIVITY_ONLY": "Solo Actividad Histórica",
+        "CURRENT_STATUS_UNKNOWN": "Estado Actual Desconocido",
+        "UNKNOWN": "Estado de Actividad Desconocido"
+      },
+      "qualification": {
+        "READY_FOR_COMMERCIAL_REVIEW": "Listo para Revisión Comercial",
+        "SEARCH_MATCH": "Coincidencia de Búsqueda (Requiere Calificación)",
+        "INSUFFICIENT_EVIDENCE": "Evidencia Insuficiente",
+        "REJECTED": "Rechazado",
+        "UNKNOWN": "Estado de Calificación Desconocido"
+      },
+      "classification": {
+        "ACCEPTED_CANDIDATE": "Candidato Aceptado",
+        "REJECTED": "Rechazado",
+        "INSUFFICIENT_EVIDENCE": "Evidencia Insuficiente"
+      },
+      "sector": {
+        "medical_association": "Asociación Médica",
+        "construction": "Construcción",
+        "industrial_distributor": "Distribuidor Industrial",
+        "b2b_software": "Software B2B",
+        "restaurant": "Restaurante"
+      }
+    }
   },
   "campaigns": {
     "title": "Campañas de Prospección",

@@ -79,6 +79,65 @@ function formatApiError(err: any, fallbackMessage: string): string {
   return msg;
 }
 
+function formatEnumFallback(value: string): string {
+  if (!value) return '';
+  return value
+    .toLowerCase()
+    .split('_')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
+
+function formatEntityArchetype(t: (k: string, p?: any) => string, archetype?: string | null): string {
+  if (!archetype) return t('discovery.enums.archetype.UNKNOWN');
+  const key = `discovery.enums.archetype.${archetype}`;
+  const translated = t(key);
+  if (translated === key) {
+    return formatEnumFallback(archetype);
+  }
+  return translated;
+}
+
+function formatGeographicStatus(t: (k: string, p?: any) => string, status?: string | null): string {
+  if (!status) return t('discovery.enums.geographic.UNKNOWN');
+  const key = `discovery.enums.geographic.${status}`;
+  const translated = t(key);
+  if (translated === key) {
+    return formatEnumFallback(status);
+  }
+  return translated;
+}
+
+function formatActivityStatus(t: (k: string, p?: any) => string, status?: string | null): string {
+  if (!status) return t('discovery.enums.activity.UNKNOWN');
+  const key = `discovery.enums.activity.${status}`;
+  const translated = t(key);
+  if (translated === key) {
+    return formatEnumFallback(status);
+  }
+  return translated;
+}
+
+function formatSectorOrClassification(
+  t: (k: string, p?: any) => string,
+  category?: string | null,
+  classificationStatus?: string | null
+): string {
+  if (category) {
+    const key = `discovery.enums.sector.${category}`;
+    const translated = t(key);
+    if (translated !== key) return translated;
+    return formatEnumFallback(category);
+  }
+  if (classificationStatus) {
+    const key = `discovery.enums.classification.${classificationStatus}`;
+    const translated = t(key);
+    if (translated !== key) return translated;
+    return formatEnumFallback(classificationStatus);
+  }
+  return '';
+}
+
 function getQualificationBadge(status?: string | null) {
   switch (status) {
     case 'READY_FOR_COMMERCIAL_REVIEW':
@@ -112,8 +171,8 @@ function getQualificationBadge(status?: string | null) {
     default:
       return {
         variant: 'outline' as const,
-        labelKey: null,
-        fallback: status || 'Unknown Status',
+        labelKey: status ? `discovery.enums.qualification.${status}` : null,
+        fallback: status ? formatEnumFallback(status) : 'Unknown Status',
         className: '',
       };
   }
@@ -626,11 +685,11 @@ export default function DiscoveryPage() {
               <span className="font-mono text-foreground">{previewResult.provider}</span>
             </div>
             <div>
-              <span className="text-foreground-muted block text-[11px]">Tasks Executed:</span>
+              <span className="text-foreground-muted block text-[11px]">{t('discovery.tasks_executed')}:</span>
               <span className="font-bold text-foreground">{previewResult.tasks_executed}</span>
             </div>
             <div>
-              <span className="text-foreground-muted block text-[11px]">Candidates Found:</span>
+              <span className="text-foreground-muted block text-[11px]">{t('discovery.candidates_found')}:</span>
               <span className="font-bold text-foreground">{previewResult.candidates_count}</span>
             </div>
           </div>
@@ -679,12 +738,14 @@ export default function DiscoveryPage() {
           {previewResult.candidates.length > 0 && (
             <div className="space-y-3 pt-1">
               <h3 className="text-xs font-bold text-foreground">
-                Candidates Discovered ({previewResult.candidates.length})
+                {t('discovery.candidates_discovered', { count: previewResult.candidates.length })}
               </h3>
               <div className="space-y-3">
                 {previewResult.candidates.map((candidate, idx) => {
                   const badge = getQualificationBadge(candidate.qualification_status);
-                  const badgeText = badge.labelKey ? t(badge.labelKey) : badge.fallback;
+                  const badgeText = badge.labelKey
+                    ? (t(badge.labelKey) !== badge.labelKey ? t(badge.labelKey) : badge.fallback)
+                    : badge.fallback;
                   const hasOfficialWebsite = Boolean(candidate.organization_website && candidate.organization_website !== 'UNKNOWN');
 
                   return (
@@ -702,12 +763,12 @@ export default function DiscoveryPage() {
                             </span>
                             {candidate.entity_archetype && (
                               <Badge size="sm" variant="outline" className="font-mono text-[10px] bg-surface">
-                                {t('discovery.archetype_label')}: {candidate.entity_archetype}
+                                {t('discovery.archetype_label')}: {formatEntityArchetype(t, candidate.entity_archetype)}
                               </Badge>
                             )}
                             {(candidate.category || candidate.classification_status) && (
                               <Badge size="sm" variant="default" className="text-[10px]">
-                                {candidate.category || candidate.classification_status}
+                                {formatSectorOrClassification(t, candidate.category, candidate.classification_status)}
                               </Badge>
                             )}
                           </div>
@@ -781,8 +842,8 @@ export default function DiscoveryPage() {
                           <span className="text-foreground-muted block text-[11px] mb-0.5">
                             {t('discovery.geo_evidence_label')}:
                           </span>
-                          <span className="text-foreground font-mono text-[11px]">
-                            {candidate.geographic_evidence_status || 'UNKNOWN'}
+                          <span className="text-foreground text-[11px]">
+                            {formatGeographicStatus(t, candidate.geographic_evidence_status)}
                             {[candidate.city, candidate.state, candidate.country].filter(Boolean).length > 0 && (
                               <span className="text-foreground-muted font-sans ml-1">
                                 ({[candidate.city, candidate.state, candidate.country].filter(Boolean).join(', ')})
@@ -796,8 +857,8 @@ export default function DiscoveryPage() {
                           <span className="text-foreground-muted block text-[11px] mb-0.5">
                             {t('discovery.current_activity_label')}:
                           </span>
-                          <span className="text-foreground font-mono text-[11px]">
-                            {candidate.current_activity_status || 'UNKNOWN'}
+                          <span className="text-foreground text-[11px]">
+                            {formatActivityStatus(t, candidate.current_activity_status)}
                           </span>
                         </div>
                       </div>
