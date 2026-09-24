@@ -354,6 +354,17 @@ class DiscoveryOrchestrator:
                         "title": biz.raw_data.get("title") if biz.raw_data else None,
                         "snippet": biz.raw_data.get("snippet") if biz.raw_data else None,
                         "source": p_name,
+                        # Structured Candidate Qualification:
+                        "qualification_status": biz.raw_data.get("qualification_status") if biz.raw_data else None,
+                        "entity_archetype": biz.raw_data.get("entity_archetype") if biz.raw_data else None,
+                        "geographic_evidence_status": biz.raw_data.get("geographic_evidence_status") if biz.raw_data else None,
+                        "current_activity_status": biz.raw_data.get("current_activity_status") if biz.raw_data else None,
+                        "source_url": biz.raw_data.get("source_url") if biz.raw_data else None,
+                        "source_host": biz.raw_data.get("source_host") if biz.raw_data else None,
+                        "organization_website": biz.raw_data.get("organization_website") if biz.raw_data else None,
+                        "is_commercial_review_ready": biz.raw_data.get("is_commercial_review_ready") if biz.raw_data else None,
+                        "qualification_reasons": biz.raw_data.get("qualification_reasons") if biz.raw_data else None,
+                        "missing_evidence": biz.raw_data.get("missing_evidence") if biz.raw_data else None,
                     }
                     candidates.append(candidate_info)
 

@@ -22,6 +22,9 @@ from bopclients.application.discovery.candidate_classifier import (
     IOrganizationCandidateClassifier,
     OrganizationCandidateClassifier,
 )
+from bopclients.application.discovery.candidate_qualifier import (
+    OrganizationCandidateQualifier,
+)
 from bopclients.domain.exceptions import DiscoveryExecutionError, TenantAccessError
 
 
@@ -128,6 +131,7 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
         self,
         transport: Optional[IWebSearchTransport] = None,
         classifier: Optional[IOrganizationCandidateClassifier] = None,
+        qualifier: Optional[OrganizationCandidateQualifier] = None,
         enabled: bool = False,
         authorized_tenants: Optional[Set[str]] = None,
         max_queries_per_run: int = MAX_QUERIES_PER_RUN,
@@ -135,6 +139,7 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
     ):
         self._transport = transport or OfflineFixtureWebSearchTransport()
         self._classifier = classifier or OrganizationCandidateClassifier()
+        self._qualifier = qualifier or OrganizationCandidateQualifier()
         self.enabled = enabled
         self.authorized_tenants = set(authorized_tenants or [])
         self.max_queries_per_run = max_queries_per_run
@@ -293,6 +298,17 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
             # Determine institutional geography truthfully
             geo_scope = self.determine_geographic_scope(clean_name, snippet, task)
 
+            # Determine structured candidate qualification
+            qual = self._qualifier.qualify(
+                candidate_name=clean_name,
+                target_intent=canonical_target,
+                base_classification=decision,
+                raw_title=raw_title,
+                url=url,
+                snippet=snippet,
+                task=task,
+            )
+
             # Generate stable synthetic external id from URL
             url_hash = hashlib.sha256(url.strip().lower().encode("utf-8")).hexdigest()[:16]
             ext_id = f"web-{url_hash}"
@@ -315,6 +331,17 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
                     "geographic_scope": geo_scope.value,
                     "classification_status": decision.status.value,
                     "classification_details": decision.details,
+                    # Structured candidate qualification fields:
+                    "qualification_status": qual.qualification_status.value,
+                    "entity_archetype": qual.entity_archetype.value,
+                    "geographic_evidence_status": qual.geographic_evidence_status.value,
+                    "current_activity_status": qual.current_activity_status.value,
+                    "source_url": qual.source_url,
+                    "source_host": qual.source_host,
+                    "organization_website": qual.organization_website,
+                    "is_commercial_review_ready": qual.is_commercial_review_ready,
+                    "qualification_reasons": qual.qualification_reasons,
+                    "missing_evidence": qual.missing_evidence,
                 },
             )
             discovered.append(biz)

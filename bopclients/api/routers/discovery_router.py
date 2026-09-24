@@ -665,6 +665,16 @@ async def preview_discovery(
             title=c.get("title"),
             snippet=c.get("snippet"),
             source=c.get("source"),
+            qualification_status=c.get("qualification_status"),
+            entity_archetype=c.get("entity_archetype"),
+            geographic_evidence_status=c.get("geographic_evidence_status"),
+            current_activity_status=c.get("current_activity_status"),
+            source_url=c.get("source_url"),
+            source_host=c.get("source_host"),
+            organization_website=c.get("organization_website"),
+            is_commercial_review_ready=c.get("is_commercial_review_ready"),
+            qualification_reasons=c.get("qualification_reasons"),
+            missing_evidence=c.get("missing_evidence"),
         )
         for c in (result.candidates or [])
     ]

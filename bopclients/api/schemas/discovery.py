@@ -170,6 +170,17 @@ class DiscoveryCandidateSummary(BaseModel):
     title: Optional[str] = None
     snippet: Optional[str] = None
     source: Optional[str] = None
+    # Structured Candidate Qualification:
+    qualification_status: Optional[str] = None
+    entity_archetype: Optional[str] = None
+    geographic_evidence_status: Optional[str] = None
+    current_activity_status: Optional[str] = None
+    source_url: Optional[str] = None
+    source_host: Optional[str] = None
+    organization_website: Optional[str] = None
+    is_commercial_review_ready: Optional[bool] = None
+    qualification_reasons: Optional[List[str]] = None
+    missing_evidence: Optional[List[str]] = None
 
 
 class DiscoveryPreviewRequest(BaseModel):
