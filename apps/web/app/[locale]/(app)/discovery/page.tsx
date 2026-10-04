@@ -83,10 +83,43 @@ function formatApiError(err: any, fallbackMessage: string): string {
 function formatEnumFallback(value: string): string {
   if (!value) return '';
   return value
-    .toLowerCase()
-    .split('_')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .split(' ')
+    .map((part) => {
+      const isParenthesized = part.startsWith('(') && part.endsWith(')');
+      const clean = isParenthesized ? part.slice(1, -1) : part;
+      const formatted = clean
+        .toLowerCase()
+        .split('_')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
+      return isParenthesized ? `(${formatted})` : formatted;
+    })
     .join(' ');
+}
+
+function formatQualificationReason(t: (k: string, p?: any) => string, reason?: string | null): string {
+  if (!reason) return '';
+  const key = `discovery.enums.qualification_reasons.${reason}`;
+  const translated = t(key);
+  if (translated !== key) return translated;
+  const missKey = `discovery.enums.missing_evidence.${reason}`;
+  const missTranslated = t(missKey);
+  if (missTranslated !== missKey) return missTranslated;
+  return formatEnumFallback(reason);
+}
+
+function formatMissingEvidence(t: (k: string, p?: any) => string, code?: string | null): string {
+  if (!code) return '';
+  const key = `discovery.enums.missing_evidence.${code}`;
+  const translated = t(key);
+  if (translated !== key) return translated;
+  const qualKey = `discovery.enums.qualification_reasons.${code}`;
+  const qualTranslated = t(qualKey);
+  if (qualTranslated !== qualKey) return qualTranslated;
+  const diagKey = `discovery.diagnostics.reasons.${code}`;
+  const diagTranslated = t(diagKey);
+  if (diagTranslated !== diagKey) return diagTranslated;
+  return formatEnumFallback(code);
 }
 
 function formatEntityArchetype(t: (k: string, p?: any) => string, archetype?: string | null): string {
@@ -959,9 +992,9 @@ export default function DiscoveryPage() {
                               {candidate.qualification_reasons.map((r, rIdx) => (
                                 <span
                                   key={rIdx}
-                                  className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-mono text-[10px]"
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-medium text-[10px]"
                                 >
-                                  {r}
+                                  {formatQualificationReason(t, r)}
                                 </span>
                               ))}
                             </div>
@@ -975,9 +1008,9 @@ export default function DiscoveryPage() {
                               {candidate.missing_evidence.map((m, mIdx) => (
                                 <span
                                   key={mIdx}
-                                  className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 font-mono text-[10px] border border-amber-500/20"
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-700 dark:text-amber-400 font-medium text-[10px] border border-amber-500/20"
                                 >
-                                  {m}
+                                  {formatMissingEvidence(t, m)}
                                 </span>
                               ))}
                             </div>

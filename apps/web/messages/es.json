@@ -281,6 +281,39 @@
         "industrial_distributor": "Distribuidor Industrial",
         "b2b_software": "Software B2B",
         "restaurant": "Restaurante"
+      },
+      "qualification_reasons": {
+        "COMPATIBLE_ENTITY_ARCHETYPE": "Tipo de organización compatible",
+        "GEOGRAPHIC_CRITERIA_SATISFIED": "Criterio geográfico cumplido",
+        "OFFICIAL_DOMAIN_IDENTIFIED": "Dominio oficial identificado",
+        "CURRENT_ACTIVITY_EVIDENCED": "Actividad actual evidenciada",
+        "READY_FOR_COMMERCIAL_REVIEW": "Listo para revisión comercial",
+        "SEARCH_MATCH_REQUIRES_ADDITIONAL_QUALIFICATION": "La coincidencia requiere calificación adicional"
+      },
+      "missing_evidence": {
+        "COMPATIBLE_ENTITY_ARCHETYPE": "Tipo de organización compatible",
+        "UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY": "La fuente agrupa varias organizaciones y la entidad individual no está resuelta",
+        "OFFICIAL_ORGANIZATION_WEBSITE_UNKNOWN": "Sitio web oficial de la organización sin verificar",
+        "LOCAL_PHYSICAL_PRESENCE_UNVERIFIED_FOR_NATIONAL_SCOPE": "Presencia física local sin verificar para una organización de alcance nacional",
+        "LOCATION_UNVERIFIED_FOR_TARGET_CITY": "Ubicación en la ciudad objetivo sin verificar",
+        "GEOGRAPHIC_MISMATCH_WITH_TARGET_CITY": "Discrepancia geográfica con la ciudad objetivo",
+        "HISTORICAL_ARCHIVE_LACKS_CURRENT_ACTIVITY_EVIDENCE": "Archivo histórico sin evidencia de actividad actual",
+        "CURRENT_ACTIVITY_EVIDENCE_REQUIRED": "Se requiere evidencia de actividad operativa actual",
+        "DIRECTORY_LISTING_NOT_ORGANIZATION": "Página de directorio, no una organización individual",
+        "INTERNAL_PROGRAM_NOT_ORGANIZATION": "Programa de formación académica, no una organización independiente",
+        "STUDENT_ORGANIZATION_EXCLUDED_FOR_PROFESSIONAL_TARGET": "Organización estudiantil excluida para campaña profesional",
+        "ARTICLE_OR_PUBLICATION_NOT_ORGANIZATION": "Artículo o publicación de noticias, no una organización",
+        "EDUCATIONAL_PROGRAM_NOT_CONTRACTOR": "Programa educativo, no un contratista comercial",
+        "ARTICLE_NOT_CONTRACTOR": "Artículo informativo, no un contratista comercial",
+        "PRODUCT_CATALOG_NOT_DISTRIBUTOR": "Catálogo de productos, no un distribuidor industrial",
+        "ACADEMIC_CLUB_NOT_B2B_COMPANY": "Club académico, no una empresa de software B2B",
+        "RECIPE_NOT_DINING_ESTABLISHMENT": "Receta o artículo gastronómico, no un restaurante",
+        "BASE_CLASSIFICATION_FAILED": "No cumple con los requisitos iniciales de clasificación sectorial",
+        "EXCLUDED_FACILITY": "Centro médico o clínica excluida",
+        "NEGATIVE_KEYWORD_MATCH": "Coincide con término excluido",
+        "MISSING_ORGANIZATION_MARKER": "Sin indicador verificado de organización",
+        "MISSING_SECTOR_MATCH": "Especialidad sectorial no verificada",
+        "MISSING_TITLE_OR_URL": "Falta título o dirección web"
       }
     },
     "diagnostics": {

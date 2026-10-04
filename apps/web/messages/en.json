@@ -281,6 +281,39 @@
         "industrial_distributor": "Industrial Distributor",
         "b2b_software": "B2B Software",
         "restaurant": "Restaurant"
+      },
+      "qualification_reasons": {
+        "COMPATIBLE_ENTITY_ARCHETYPE": "Compatible Organization Type",
+        "GEOGRAPHIC_CRITERIA_SATISFIED": "Geographic Criteria Satisfied",
+        "OFFICIAL_DOMAIN_IDENTIFIED": "Official Domain Identified",
+        "CURRENT_ACTIVITY_EVIDENCED": "Current Activity Evidenced",
+        "READY_FOR_COMMERCIAL_REVIEW": "Ready for Commercial Review",
+        "SEARCH_MATCH_REQUIRES_ADDITIONAL_QUALIFICATION": "Match Requires Additional Qualification"
+      },
+      "missing_evidence": {
+        "COMPATIBLE_ENTITY_ARCHETYPE": "Compatible Organization Type",
+        "UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY": "Source aggregates multiple entities; individual organization is unresolved",
+        "OFFICIAL_ORGANIZATION_WEBSITE_UNKNOWN": "Official organization website unverified",
+        "LOCAL_PHYSICAL_PRESENCE_UNVERIFIED_FOR_NATIONAL_SCOPE": "Local physical presence unverified for national-scope organization",
+        "LOCATION_UNVERIFIED_FOR_TARGET_CITY": "Location in target city unverified",
+        "GEOGRAPHIC_MISMATCH_WITH_TARGET_CITY": "Geographic mismatch with target city",
+        "HISTORICAL_ARCHIVE_LACKS_CURRENT_ACTIVITY_EVIDENCE": "Historical archive lacks evidence of current activity",
+        "CURRENT_ACTIVITY_EVIDENCE_REQUIRED": "Evidence of current operational activity required",
+        "DIRECTORY_LISTING_NOT_ORGANIZATION": "Directory listing page, not an individual organization",
+        "INTERNAL_PROGRAM_NOT_ORGANIZATION": "Academic training program, not an independent organization",
+        "STUDENT_ORGANIZATION_EXCLUDED_FOR_PROFESSIONAL_TARGET": "Student organization excluded for professional campaign",
+        "ARTICLE_OR_PUBLICATION_NOT_ORGANIZATION": "Article or news publication, not an organization",
+        "EDUCATIONAL_PROGRAM_NOT_CONTRACTOR": "Educational program, not a commercial contractor",
+        "ARTICLE_NOT_CONTRACTOR": "Informational article, not a commercial contractor",
+        "PRODUCT_CATALOG_NOT_DISTRIBUTOR": "Product catalog, not an industrial distributor",
+        "ACADEMIC_CLUB_NOT_B2B_COMPANY": "Academic club, not a B2B software company",
+        "RECIPE_NOT_DINING_ESTABLISHMENT": "Recipe or food article, not a dining establishment",
+        "BASE_CLASSIFICATION_FAILED": "Initial sector classification requirements not met",
+        "EXCLUDED_FACILITY": "Excluded medical facility or healthcare clinic",
+        "NEGATIVE_KEYWORD_MATCH": "Contains negative excluded keyword",
+        "MISSING_ORGANIZATION_MARKER": "Missing verified organization marker",
+        "MISSING_SECTOR_MATCH": "Unverified sector specialization",
+        "MISSING_TITLE_OR_URL": "Missing title or web address"
       }
     },
     "diagnostics": {

@@ -529,10 +529,13 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
       expect(card?.textContent).toContain('Official Website Unknown (Source Page Only)');
       expect(card?.textContent).toContain('directoriomedico.co');
 
-      // Qualification reasons & missing evidence
-      expect(card?.textContent).toContain('valid_organization_name');
-      expect(card?.textContent).toContain('no_official_domain_evidenced');
-      expect(card?.textContent).toContain('directory_aggregator_archetype');
+      // Qualification reasons & missing evidence (formatted without raw snake_case)
+      expect(card?.textContent).toContain('Valid Organization Name');
+      expect(card?.textContent).toContain('No Official Domain Evidenced');
+      expect(card?.textContent).toContain('Directory Aggregator Archetype');
+      expect(card?.textContent).not.toContain('valid_organization_name');
+      expect(card?.textContent).not.toContain('no_official_domain_evidenced');
+      expect(card?.textContent).not.toContain('directory_aggregator_archetype');
     });
 
     it('renders READY_FOR_COMMERCIAL_REVIEW with green badge and verified official website', async () => {
@@ -867,6 +870,10 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
       expect(card?.textContent).not.toContain('Entity Archetype: DIRECTORY_LISTING');
       expect(card?.textContent).not.toContain('LOCATION_UNVERIFIED');
       expect(card?.textContent).not.toContain('CURRENT_STATUS_UNKNOWN');
+      expect(card?.textContent).toContain('Directory listing page, not an individual organization');
+      expect(card?.textContent).toContain('Source aggregates multiple entities; individual organization is unresolved');
+      expect(card?.textContent).not.toContain('DIRECTORY_LISTING_NOT_ORGANIZATION');
+      expect(card?.textContent).not.toContain('UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY');
     });
 
     it('renders Spanish preview labels and localized enums without raw enum leakage', async () => {
@@ -945,6 +952,10 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
       expect(card?.textContent).not.toContain('Arquetipo de Entidad: DIRECTORY_LISTING');
       expect(card?.textContent).not.toContain('LOCATION_UNVERIFIED');
       expect(card?.textContent).not.toContain('CURRENT_STATUS_UNKNOWN');
+      expect(card?.textContent).toContain('Página de directorio, no una organización individual');
+      expect(card?.textContent).toContain('La fuente agrupa varias organizaciones y la entidad individual no está resuelta');
+      expect(card?.textContent).not.toContain('DIRECTORY_LISTING_NOT_ORGANIZATION');
+      expect(card?.textContent).not.toContain('UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY');
     });
 
     it('renders READY_FOR_COMMERCIAL_REVIEW in Spanish without raw enum leakage', async () => {
@@ -1018,6 +1029,8 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
       expect(card?.textContent).not.toContain('READY_FOR_COMMERCIAL_REVIEW');
       expect(card?.textContent).not.toContain('VERIFIED_LOCAL_PRESENCE');
       expect(card?.textContent).not.toContain('CURRENT_ACTIVITY_EVIDENCED');
+      expect(card?.textContent).toContain('Tipo de organización compatible');
+      expect(card?.textContent).not.toContain('COMPATIBLE_ENTITY_ARCHETYPE');
     });
 
     it('gracefully formats unknown future enums with safe readable title-case fallback without crashing', async () => {
@@ -1090,6 +1103,257 @@ describe('Phase P30.5G.5G: Qualification Preview UI Foundation Test Suite', () =
       expect(card?.textContent).not.toContain('PROVISIONAL_NEEDS_VALIDATION');
       expect(card?.textContent).not.toContain('FUTURE_GEO_VERIFICATION_TIER');
       expect(card?.textContent).not.toContain('UNKNOWN_ACTIVITY_MARKER');
+    });
+
+    it('translates all required qualification reasons and missing evidence in English', async () => {
+      vi.spyOn(I18nContext, 'useI18n').mockReturnValue({
+        locale: 'en',
+        dictionary: enMessages,
+        t: (key: string, params?: Record<string, string | number>) => translate('en', key, params),
+      });
+
+      const mockResponse: DiscoveryPreviewResponse = {
+        status: 'completed',
+        organization_id: mockActiveOrg.bop_organization_id,
+        campaign_id: mockCampaigns[0].id,
+        provider: 'tavily',
+        tasks_executed: 1,
+        candidates_count: 1,
+        candidates: [
+          {
+            candidate_id: 'cand-all-en-01',
+            name: 'Comprehensive Evidence Organization',
+            entity_archetype: 'PROFESSIONAL_ASSOCIATION',
+            qualification_status: 'SEARCH_MATCH',
+            geographic_evidence_status: 'LOCATION_UNVERIFIED',
+            current_activity_status: 'CURRENT_ACTIVITY_EVIDENCED',
+            source_url: 'https://example.org',
+            source_host: 'example.org',
+            organization_website: 'UNKNOWN',
+            is_commercial_review_ready: false,
+            qualification_reasons: [
+              'COMPATIBLE_ENTITY_ARCHETYPE',
+              'OFFICIAL_DOMAIN_IDENTIFIED',
+              'READY_FOR_COMMERCIAL_REVIEW',
+              'CURRENT_ACTIVITY_EVIDENCED',
+              'SEARCH_MATCH_REQUIRES_ADDITIONAL_QUALIFICATION',
+            ],
+            missing_evidence: [
+              'LOCAL_PHYSICAL_PRESENCE_UNVERIFIED_FOR_NATIONAL_SCOPE',
+              'OFFICIAL_ORGANIZATION_WEBSITE_UNKNOWN',
+              'UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY',
+              'LOCATION_UNVERIFIED_FOR_TARGET_CITY',
+            ],
+          },
+        ],
+        prospects_inserted: 0,
+        sources_inserted: 0,
+        database_writes: 0,
+        warnings: [],
+        errors: [],
+      };
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/v1/campaigns')) {
+          return { ok: true, status: 200, json: async () => ({ items: mockCampaigns, total: mockCampaigns.length }) };
+        }
+        if (url.includes('/api/v1/discovery/preview')) {
+          return { ok: true, status: 200, json: async () => mockResponse };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      await act(async () => {
+        root.render(<DiscoveryPage />);
+      });
+
+      const previewBtn = container.querySelector('[data-testid="web-search-preview-button"]') as HTMLButtonElement;
+      await act(async () => {
+        previewBtn.click();
+      });
+
+      const card = container.querySelector('[data-testid="candidate-card-cand-all-en-01"]');
+      expect(card).not.toBeNull();
+
+      // Check English localized qualification reasons
+      expect(card?.textContent).toContain('Compatible Organization Type');
+      expect(card?.textContent).toContain('Official Domain Identified');
+      expect(card?.textContent).toContain('Ready for Commercial Review');
+      expect(card?.textContent).toContain('Current Activity Evidenced');
+      expect(card?.textContent).toContain('Match Requires Additional Qualification');
+
+      // Check English localized missing evidence
+      expect(card?.textContent).toContain('Local physical presence unverified for national-scope organization');
+      expect(card?.textContent).toContain('Official organization website unverified');
+      expect(card?.textContent).toContain('Source aggregates multiple entities; individual organization is unresolved');
+      expect(card?.textContent).toContain('Location in target city unverified');
+
+      // Ensure NO raw codes visible
+      expect(card?.textContent).not.toContain('COMPATIBLE_ENTITY_ARCHETYPE');
+      expect(card?.textContent).not.toContain('LOCAL_PHYSICAL_PRESENCE_UNVERIFIED_FOR_NATIONAL_SCOPE');
+      expect(card?.textContent).not.toContain('OFFICIAL_ORGANIZATION_WEBSITE_UNKNOWN');
+      expect(card?.textContent).not.toContain('UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY');
+      expect(card?.textContent).not.toContain('LOCATION_UNVERIFIED_FOR_TARGET_CITY');
+    });
+
+    it('translates all required qualification reasons and missing evidence in Spanish', async () => {
+      vi.spyOn(I18nContext, 'useI18n').mockReturnValue({
+        locale: 'es',
+        dictionary: esMessages,
+        t: (key: string, params?: Record<string, string | number>) => translate('es', key, params),
+      });
+
+      const mockResponse: DiscoveryPreviewResponse = {
+        status: 'completed',
+        organization_id: mockActiveOrg.bop_organization_id,
+        campaign_id: mockCampaigns[0].id,
+        provider: 'tavily',
+        tasks_executed: 1,
+        candidates_count: 1,
+        candidates: [
+          {
+            candidate_id: 'cand-all-es-01',
+            name: 'Organización con Evidencia Completa',
+            entity_archetype: 'PROFESSIONAL_ASSOCIATION',
+            qualification_status: 'SEARCH_MATCH',
+            geographic_evidence_status: 'LOCATION_UNVERIFIED',
+            current_activity_status: 'CURRENT_ACTIVITY_EVIDENCED',
+            source_url: 'https://ejemplo.org',
+            source_host: 'ejemplo.org',
+            organization_website: 'UNKNOWN',
+            is_commercial_review_ready: false,
+            qualification_reasons: [
+              'COMPATIBLE_ENTITY_ARCHETYPE',
+              'OFFICIAL_DOMAIN_IDENTIFIED',
+              'READY_FOR_COMMERCIAL_REVIEW',
+              'CURRENT_ACTIVITY_EVIDENCED',
+              'SEARCH_MATCH_REQUIRES_ADDITIONAL_QUALIFICATION',
+            ],
+            missing_evidence: [
+              'LOCAL_PHYSICAL_PRESENCE_UNVERIFIED_FOR_NATIONAL_SCOPE',
+              'OFFICIAL_ORGANIZATION_WEBSITE_UNKNOWN',
+              'UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY',
+              'LOCATION_UNVERIFIED_FOR_TARGET_CITY',
+            ],
+          },
+        ],
+        prospects_inserted: 0,
+        sources_inserted: 0,
+        database_writes: 0,
+        warnings: [],
+        errors: [],
+      };
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/v1/campaigns')) {
+          return { ok: true, status: 200, json: async () => ({ items: mockCampaigns, total: mockCampaigns.length }) };
+        }
+        if (url.includes('/api/v1/discovery/preview')) {
+          return { ok: true, status: 200, json: async () => mockResponse };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      await act(async () => {
+        root.render(<DiscoveryPage />);
+      });
+
+      const previewBtn = container.querySelector('[data-testid="web-search-preview-button"]') as HTMLButtonElement;
+      await act(async () => {
+        previewBtn.click();
+      });
+
+      const card = container.querySelector('[data-testid="candidate-card-cand-all-es-01"]');
+      expect(card).not.toBeNull();
+
+      // Check Spanish localized qualification reasons
+      expect(card?.textContent).toContain('Tipo de organización compatible');
+      expect(card?.textContent).toContain('Dominio oficial identificado');
+      expect(card?.textContent).toContain('Listo para revisión comercial');
+      expect(card?.textContent).toContain('Actividad actual evidenciada');
+      expect(card?.textContent).toContain('La coincidencia requiere calificación adicional');
+
+      // Check Spanish localized missing evidence
+      expect(card?.textContent).toContain('Presencia física local sin verificar para una organización de alcance nacional');
+      expect(card?.textContent).toContain('Sitio web oficial de la organización sin verificar');
+      expect(card?.textContent).toContain('La fuente agrupa varias organizaciones y la entidad individual no está resuelta');
+      expect(card?.textContent).toContain('Ubicación en la ciudad objetivo sin verificar');
+
+      // Ensure NO raw codes visible
+      expect(card?.textContent).not.toContain('COMPATIBLE_ENTITY_ARCHETYPE');
+      expect(card?.textContent).not.toContain('LOCAL_PHYSICAL_PRESENCE_UNVERIFIED_FOR_NATIONAL_SCOPE');
+      expect(card?.textContent).not.toContain('OFFICIAL_ORGANIZATION_WEBSITE_UNKNOWN');
+      expect(card?.textContent).not.toContain('UNRESOLVED_COMPOSITE_DIRECTORY_ENTITY');
+      expect(card?.textContent).not.toContain('LOCATION_UNVERIFIED_FOR_TARGET_CITY');
+    });
+
+    it('falls back to readable title case for unknown future qualification reasons and missing evidence', async () => {
+      vi.spyOn(I18nContext, 'useI18n').mockReturnValue({
+        locale: 'en',
+        dictionary: enMessages,
+        t: (key: string, params?: Record<string, string | number>) => translate('en', key, params),
+      });
+
+      const mockResponse: DiscoveryPreviewResponse = {
+        status: 'completed',
+        organization_id: mockActiveOrg.bop_organization_id,
+        campaign_id: mockCampaigns[0].id,
+        provider: 'tavily',
+        tasks_executed: 1,
+        candidates_count: 1,
+        candidates: [
+          {
+            candidate_id: 'cand-unknown-evidence-01',
+            name: 'Unknown Evidence Entity',
+            entity_archetype: 'INDEPENDENT_ORGANIZATION',
+            qualification_status: 'SEARCH_MATCH',
+            geographic_evidence_status: 'LOCATION_UNVERIFIED',
+            current_activity_status: 'CURRENT_STATUS_UNKNOWN',
+            source_url: 'https://example.org',
+            source_host: 'example.org',
+            organization_website: 'https://example.org',
+            is_commercial_review_ready: false,
+            qualification_reasons: ['CUSTOM_NOVEL_REASON_EVIDENCED'],
+            missing_evidence: ['INCOMPATIBLE_ARCHETYPE (STUDENT_ORGANIZATION)', 'UNKNOWN_FUTURE_MISSING_PIECE'],
+          },
+        ],
+        prospects_inserted: 0,
+        sources_inserted: 0,
+        database_writes: 0,
+        warnings: [],
+        errors: [],
+      };
+
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        if (url.includes('/api/v1/campaigns')) {
+          return { ok: true, status: 200, json: async () => ({ items: mockCampaigns, total: mockCampaigns.length }) };
+        }
+        if (url.includes('/api/v1/discovery/preview')) {
+          return { ok: true, status: 200, json: async () => mockResponse };
+        }
+        return { ok: true, status: 200, json: async () => ({}) };
+      });
+
+      await act(async () => {
+        root.render(<DiscoveryPage />);
+      });
+
+      const previewBtn = container.querySelector('[data-testid="web-search-preview-button"]') as HTMLButtonElement;
+      await act(async () => {
+        previewBtn.click();
+      });
+
+      const card = container.querySelector('[data-testid="candidate-card-cand-unknown-evidence-01"]');
+      expect(card).not.toBeNull();
+
+      // Formatted in friendly title case without underscores
+      expect(card?.textContent).toContain('Custom Novel Reason Evidenced');
+      expect(card?.textContent).toContain('Incompatible Archetype (Student Organization)');
+      expect(card?.textContent).toContain('Unknown Future Missing Piece');
+
+      // No raw screaming snake case
+      expect(card?.textContent).not.toContain('CUSTOM_NOVEL_REASON_EVIDENCED');
+      expect(card?.textContent).not.toContain('UNKNOWN_FUTURE_MISSING_PIECE');
     });
   });
 });
