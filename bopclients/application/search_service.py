@@ -304,15 +304,238 @@ class SearchService:
 
         return self.orchestrator.preview_plan(search_plan)
 
+    def synthesize_preview_query(
+        self,
+        raw_query: Optional[str] = None,
+        campaign: Optional[Any] = None,
+        icp: Optional[Any] = None,
+        target_market: Optional[Any] = None,
+        category: Optional[str] = None,
+        city: Optional[str] = None,
+        region: Optional[str] = None,
+        country: Optional[str] = None,
+    ) -> str:
+        """Deterministically synthesize a concise, high-signal provider query from ICP, campaign, and geography.
+
+        Priority order:
+        A. Derive the strongest concise organization/sector concept from structured ICP metadata.
+        B. Add the most specific target geography (city -> region -> country).
+        C. Avoid long sentence-style queries and redundant geographic terms.
+        D. Safely fall back to raw_query if structured context is absent or incomplete.
+        """
+        clean_raw = (raw_query or "").strip()
+        # Strip common conversational noise prefixes and suffixes
+        for prefix in (
+            "por favor buscar", "por favor busque", "por favor busca", "por favor",
+            "buscar", "busque", "busca", "encuentra", "encontrar",
+            "please search for", "please search", "please find", "search for", "find",
+        ):
+            if clean_raw.lower().startswith(prefix):
+                clean_raw = clean_raw[len(prefix):].strip()
+                break
+        for suffix in ("muchas gracias", "gracias", "por favor", "thank you", "thanks", "please"):
+            if clean_raw.lower().endswith(suffix):
+                clean_raw = clean_raw[:-len(suffix)].strip()
+                break
+
+        # Step 1: Derive core sector / organization concept from structured ICP or Category
+        concept = None
+
+        if icp:
+            target_org_types = getattr(icp, "target_organization_types", None) or []
+            target_industries = getattr(icp, "target_industries", None) or []
+            target_specializations = getattr(icp, "target_specializations", None) or []
+            industries = getattr(icp, "industries", None) or []
+
+            # Filter generic industries like "salud", "healthcare", "general", "business"
+            specific_industries = [
+                ind.strip() for ind in (target_industries or industries)
+                if ind and ind.strip().lower() not in ("salud", "healthcare", "general", "business", "servicios", "services")
+            ]
+
+            is_assoc = (
+                any("asociaci" in ot.lower() or "sociedad" in ot.lower() or "association" in ot.lower() or "society" in ot.lower() for ot in target_org_types)
+                or any("asociaci" in ind.lower() or "sociedad" in ind.lower() or "association" in ind.lower() or "society" in ind.lower() for ind in specific_industries)
+                or category == "medical_association"
+            )
+
+            # Determine language context from target market, country, or raw query
+            tm_lang = (getattr(target_market, "language", None) or "").strip().lower()
+            tm_country = (getattr(target_market, "country", None) or country or "").strip().upper()
+            is_spanish = tm_lang.startswith("es") or tm_country == "CO" or any(w in clean_raw.lower() for w in ("asociaciones", "sociedades", "médicas", "en", "colombia"))
+
+            if is_assoc:
+                if is_spanish:
+                    concept = "asociaciones médicas"
+                else:
+                    concept = "medical associations"
+
+                if target_specializations:
+                    concept = f"{concept} {target_specializations[0].strip()}"
+            elif specific_industries:
+                primary = specific_industries[0]
+                org_types_str = " ".join(target_org_types).lower()
+                if "contractor" in org_types_str and "construction" in primary.lower():
+                    concept = "construction contractors"
+                elif "distributor" in org_types_str and "industrial" in primary.lower():
+                    concept = "industrial distributors"
+                elif "software" in primary.lower():
+                    concept = "B2B software companies"
+                elif "restaurant" in primary.lower():
+                    concept = "restaurants"
+                else:
+                    # General-purpose ICP handling: combine industry and organization type if complementary
+                    if target_org_types:
+                        first_ot = target_org_types[0].strip()
+                        if first_ot.lower() not in primary.lower():
+                            concept = f"{primary} {first_ot}".strip()
+                        else:
+                            concept = primary
+                    else:
+                        concept = primary
+            elif target_org_types:
+                concept = " ".join(target_org_types)
+
+        # Step 1.1: If no ICP concept, check structured category
+        if not concept and category:
+            cat_map = {
+                "medical_association": "asociaciones médicas" if (getattr(target_market, "country", None) or country or "").upper() == "CO" else "medical associations",
+                "construction": "construction contractors",
+                "industrial_distributor": "industrial distributors",
+                "b2b_software": "B2B software companies",
+                "restaurant": "restaurants",
+            }
+            if category in cat_map:
+                concept = cat_map[category]
+            elif category.strip():
+                concept = category.replace("_", " ")
+
+        # Step 1.2: Check if operator raw query provides a specific business target
+        raw_target = None
+        if clean_raw:
+            # Strip location phrases like "en Cali", "in Florida" from raw query
+            target_candidate = re.sub(
+                r"\b(?:en|in)\s+[a-záéíóúñ\s]+$", "", clean_raw, flags=re.IGNORECASE
+            ).strip()
+            # If target_candidate is specific (not just a generic entity descriptor)
+            generic_targets = {
+                "organizaciones", "empresas", "organizations", "companies",
+                "asociaciones", "asociacion", "sociedades", "sociedad",
+                "entidades", "entities"
+            }
+            if target_candidate and target_candidate.lower() not in generic_targets:
+                raw_target = target_candidate
+
+        # Prefer clear raw operator intent over an administrative or stale campaign title
+        if not concept:
+            if raw_target:
+                concept = raw_target
+            elif campaign and getattr(campaign, "name", None):
+                c_name = campaign.name.lower()
+                if "asociaciones médicas" in c_name or "asociación médica" in c_name:
+                    concept = "asociaciones médicas"
+                elif "medical association" in c_name:
+                    concept = "medical associations"
+                elif "construcci" in c_name or "construction" in c_name:
+                    concept = "construction contractors"
+                elif "distribuidor" in c_name or "distributor" in c_name:
+                    concept = "industrial distributors"
+                elif "software" in c_name:
+                    concept = "B2B software companies"
+                elif "restaurant" in c_name:
+                    concept = "restaurants"
+
+        # If still no concept derived from structured sources or operator target, fall back to clean raw query
+        if not concept:
+            if clean_raw:
+                concept = clean_raw
+            else:
+                concept = "organizations"
+
+        # Step 2: Determine target geography (city -> region -> country)
+        g_city = (getattr(target_market, "city", None) or city or "").strip()
+        g_region = (getattr(target_market, "region", None) or region or "").strip()
+        g_country = (getattr(target_market, "country", None) or country or "").strip()
+
+        if not target_market and not g_city and not g_region:
+            q_lower = clean_raw.lower()
+            if "cali" in q_lower:
+                g_city = "Cali"
+                if not g_region:
+                    g_region = "Valle del Cauca"
+            elif "medellin" in q_lower or "medellín" in q_lower:
+                g_city = "Medellín"
+                if not g_region:
+                    g_region = "Antioquia"
+            elif "bogota" in q_lower or "bogotá" in q_lower:
+                g_city = "Bogotá"
+                if not g_region:
+                    g_region = "Cundinamarca"
+            elif "miami" in q_lower:
+                g_city = "Miami"
+                if not g_region:
+                    g_region = "Florida"
+            elif "florida" in q_lower:
+                g_region = "Florida"
+            elif "new jersey" in q_lower:
+                g_region = "New Jersey"
+
+        if g_country.upper() == "CO":
+            g_country = "Colombia"
+
+        geo_target = ""
+        if g_city:
+            geo_target = g_city
+        elif g_region:
+            geo_target = g_region
+        elif g_country:
+            geo_target = g_country
+
+        # Step 3: Combine concept and geography avoiding duplicate or conflicting tokens
+        combined = concept.strip()
+        if geo_target:
+            # Strip trailing prepositional phrases or conflicting location tokens from concept
+            known_locations = {
+                "cali", "valle", "bogota", "bogotá", "medellin", "medellín",
+                "barranquilla", "cartagena", "miami", "florida", "new jersey",
+                "boston", "colombia"
+            }
+            geo_tokens_set = {t.lower().strip(" ,.-") for t in geo_target.split()}
+
+            # Remove conflicting locations from concept if present
+            concept_words = combined.split()
+            filtered_words = [
+                w for w in concept_words
+                if w.lower().strip(" ,.-") not in known_locations or w.lower().strip(" ,.-") in geo_tokens_set
+            ]
+            if filtered_words:
+                combined = " ".join(filtered_words)
+
+            concept_tokens = [t.lower().strip(" ,.-") for t in combined.split()]
+            geo_tokens = [t.lower().strip(" ,.-") for t in geo_target.split()]
+
+            # If all geo tokens already appear in concept, do not duplicate
+            if not all(gt in concept_tokens for gt in geo_tokens):
+                combined = f"{combined} {geo_target}".strip()
+
+        # Deduplicate adjacent identical words
+        words = combined.split()
+        deduped = []
+        for w in words:
+            if not deduped or w.lower() != deduped[-1].lower():
+                deduped.append(w)
+
+        return " ".join(deduped)
+
     def create_web_search_preview_plan(
         self,
         org_id: str,
         query: str,
         campaign_id: Optional[str] = None,
-        category: str = "medical_association",
-        country: str = "CO",
-        city: Optional[str] = "Cali",
-        region: Optional[str] = "Valle del Cauca",
+        category: Optional[str] = None,
+        country: Optional[str] = None,
+        city: Optional[str] = None,
+        region: Optional[str] = None,
         limit: int = 5,
         negative_keywords: Optional[List[str]] = None,
     ) -> SearchPlan:
@@ -320,18 +543,101 @@ class SearchService:
         import uuid
         from bopclients.application.search_dto import DiscoveryTask
 
+        campaign = None
+        icp = None
+        target_market = None
+
+        if campaign_id and self.campaign_repo:
+            campaign = self.campaign_repo.get_by_id(org_id, campaign_id)
+            if campaign and campaign.icp_id and self.icp_repo:
+                icp = self.icp_repo.get_by_id(org_id, campaign.icp_id)
+                if icp and getattr(icp, "target_markets", None):
+                    target_market = icp.target_markets[0]
+
+        # Synthesize concise, high-signal query
+        synthesized_query = self.synthesize_preview_query(
+            raw_query=query,
+            campaign=campaign,
+            icp=icp,
+            target_market=target_market,
+            category=category,
+            city=city,
+            region=region,
+            country=country,
+        )
+
+        # Resolve effective geography: ICP target_market takes highest precedence
+        if target_market:
+            eff_city = getattr(target_market, "city", None)
+            eff_region = getattr(target_market, "region", None)
+            eff_country = getattr(target_market, "country", None) or country or "CO"
+        else:
+            eff_city = city
+            eff_region = region
+            eff_country = country or "CO"
+
+            # If not explicitly provided, infer from query text
+            q_lower = query.lower()
+            if not eff_city:
+                if "cali" in q_lower:
+                    eff_city = "Cali"
+                    eff_region = eff_region or "Valle del Cauca"
+                elif "medellin" in q_lower or "medellín" in q_lower:
+                    eff_city = "Medellín"
+                    eff_region = eff_region or "Antioquia"
+                elif "bogota" in q_lower or "bogotá" in q_lower:
+                    eff_city = "Bogotá"
+                    eff_region = eff_region or "Cundinamarca"
+                elif "miami" in q_lower:
+                    eff_city = "Miami"
+                    eff_region = eff_region or "Florida"
+
+            if not eff_region:
+                if "florida" in q_lower:
+                    eff_region = "Florida"
+                elif "new jersey" in q_lower:
+                    eff_region = "New Jersey"
+
+        # Determine effective category
+        if category:
+            eff_category = category
+        elif icp:
+            norm_inds = [CategoryNormalizer.normalize(ind) for ind in (getattr(icp, "target_industries", None) or getattr(icp, "industries", None) or [])]
+            valid_norms = [n for n in norm_inds if n and n != "healthcare"]
+            eff_category = valid_norms[0] if valid_norms else "medical_association"
+        else:
+            eff_category = "medical_association"
+
         clamped_limit = min(max(1, limit), 5)
-        default_negs = ["hospital", "clinica", "clínica", "consultorio", "eps", "ips"]
-        negs = list(negative_keywords) if negative_keywords is not None else default_negs
+
+        # Negative keywords configuration
+        if negative_keywords is not None:
+            negs = list(negative_keywords)
+        elif eff_category in ("medical_association", "scientific_society") or "asociaci" in synthesized_query or "medical" in synthesized_query:
+            negs = ["hospital", "clinica", "clínica", "consultorio", "eps", "ips"]
+        elif eff_category in ("construction", "builder"):
+            negs = ["inmobiliaria", "real estate", "bienes raices"]
+        elif eff_category in ("industrial_distributor", "wholesale"):
+            negs = ["supermercado", "supermarket", "retail", "minorista"]
+        elif eff_category in ("b2b_software", "technology"):
+            negs = ["tienda", "reparacion", "celulares", "hardware"]
+        else:
+            negs = []
+
+        # Merge any excluded attributes configured on ICP
+        if icp and getattr(icp, "excluded_attributes", None):
+            for ex in icp.excluded_attributes:
+                if ex and ex.strip().lower() not in negs:
+                    negs.append(ex.strip().lower())
 
         task = DiscoveryTask(
             id=str(uuid.uuid4()),
             provider="web_search",
-            query=query.strip(),
-            category=category,
-            country=country,
-            city=city,
-            region=region,
+            query=synthesized_query,
+            category=eff_category,
+            country=eff_country,
+            city=eff_city,
+            region=eff_region,
             limit=clamped_limit,
             priority=1,
             negative_keywords=negs,

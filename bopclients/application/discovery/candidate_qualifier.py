@@ -83,18 +83,32 @@ class OrganizationCandidateQualifier:
         r"gu[íi]a\s+de\s+(?:empresas|sociedades|asociaciones|distribuidores|restaurantes)|"
         r"red\s+de\s+distribuidores|nuestros\s+distribuidores|distribuidores\s+autorizados|"
         r"nuestros\s+socios|nuestros\s+aliados|nuestros\s+miembros|nuestros\s+contratistas|"
-        r"our\s+members|member\s+directory|affiliated\s+societies|authorized\s+dealers|dealer\s+locator|partner\s+directory)\b",
+        r"our\s+members|member\s+directory|affiliated\s+societies|authorized\s+dealers|dealer\s+locator|partner\s+directory|"
+        r"top\s+(?:\d+\s+)?(?:software|tech|companies|contractors|builders|distributors|suppliers|restaurants)|"
+        r"directory\s+of\s+(?:companies|software|contractors|distributors|suppliers|members|associations)|"
+        r"guide\s+to\s+(?:companies|contractors|distributors|software)|"
+        r"list\s+of\s+(?:top\s+)?(?:companies|software|contractors|distributors))\b|"
+        r"\b(?:asociaciones\s+m[eé]dicas|sociedades\s+m[eé]dicas|sociedades\s+cient[íi]ficas|"
+        r"asociaciones\s+profesionales|colegios\s+profesionales|medical\s+associations|scientific\s+societies|"
+        r"empresas\s+de\s+construcci[oó]n|distribuidores\s+industriales|empresas\s+de\s+software|"
+        r"restaurantes\s+en)\s+(?:de\s+|en\s+)?[a-záéíóúñ\s]+(?:-|\||:|//|\bportal\b)",
         re.IGNORECASE,
     )
 
     DIRECTORY_SNIPPET_PATTERN = re.compile(
         r"\b(?:listado\s+de\s+(?:empresas|sociedades|asociaciones|miembros|contratistas|distribuidores|restaurantes|entidades)|"
-        r"directorio\s+de\s+(?:empresas|sociedades|asociaciones|miembros|distribuidores|restaurantes)|"
+        r"directorio\s+de\s+(?:empresas|sociedades|asociaciones|miembros|distribuidores|restaurantes|agremiaciones)|"
         r"consulte\s+(?:las|los)\s+(?:sociedades|empresas|miembros|asociaciones|distribuidores)|"
         r"conozca\s+(?:nuestros?|a\s+nuestros?)\s+(?:distribuidores|aliados|miembros|afiliados|asociados)|"
         r"en\s+esta\s+secci[oó]n\s+encontrar[aá]\s+(?:el\s+listado|las\s+sociedades|los\s+miembros)|"
         r"relaci[oó]n\s+de\s+(?:sociedades|asociaciones|empresas|miembros)|"
-        r"directorio\s+telef[oó]nico\s+y\s+perfil)\b",
+        r"directorio\s+telef[oó]nico\s+y\s+perfil|"
+        r"portal\s+(?:m[eé]dico|de\s+asociaciones|empresarial|de\s+empresas)|"
+        r"portal\s+con\s+el\s+listado|recopilaci[oó]n\s+de\s+asociaciones|"
+        r"top\s+(?:\d+\s+)?(?:software|tech|companies|contractors|distributors|platforms)|"
+        r"directory\s+of\s+(?:companies|software|contractors|distributors)|"
+        r"ranking\s+(?:and\s+list|of\s+companies|de\s+empresas))\b|"
+        r"(?:(?:\basociaci[oó]n\b|\bsociedad\b|\bfederaci[oó]n\b|\bcolegio\b).*?){3,}",
         re.IGNORECASE,
     )
 
@@ -295,11 +309,12 @@ class OrganizationCandidateQualifier:
         if has_article_path or has_article_text:
             return EntityArchetype.ARTICLE_OR_PUBLICATION
 
-        # 6. Federation / Umbrella Group
-        if re.search(
+        # 6. Federation / Umbrella Group (Must be attributable to the title/candidate entity itself, not merely mentioned in snippet)
+        title_entity = f"{candidate_name} {raw_title}".lower()
+        if not is_directory and re.search(
             r"\b(?:federaci[oó]n|federacion|confederaci[oó]n|confederacion|asociaci[oó]n de sociedades|"
             r"asociaci[oó]n de asociaciones|sociedad de sociedades|national federation)\b",
-            combined_text,
+            title_entity,
         ):
             return EntityArchetype.FEDERATION
 
