@@ -858,7 +858,7 @@ export default function DiscoveryPage() {
 
               {previewResult.diagnostics ? (
                 <div className="space-y-2.5">
-                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-[11px]">
+                  <div className={`grid grid-cols-2 ${typeof previewResult.diagnostics.source_records_bundled === 'number' && previewResult.diagnostics.source_records_bundled > 0 ? 'sm:grid-cols-3 md:grid-cols-6' : 'sm:grid-cols-5'} gap-2 text-center text-[11px]`}>
                     <div className="p-2 rounded bg-surface border border-border/40">
                       <span className="text-foreground-muted block">{t('discovery.diagnostics.provider_results_received')}</span>
                       <span className="font-bold text-foreground text-sm font-mono">{previewResult.diagnostics.provider_results_received}</span>
@@ -875,6 +875,12 @@ export default function DiscoveryPage() {
                       <span className="text-foreground-muted block">{t('discovery.diagnostics.duplicate_removed')}</span>
                       <span className="font-bold text-sky-600 dark:text-sky-400 text-sm font-mono">{previewResult.diagnostics.duplicate_candidates_removed || 0}</span>
                     </div>
+                    {typeof previewResult.diagnostics.source_records_bundled === 'number' && previewResult.diagnostics.source_records_bundled > 0 && (
+                      <div className="p-2 rounded bg-surface border border-border/40">
+                        <span className="text-foreground-muted block">{t('discovery.diagnostics.source_records_bundled')}</span>
+                        <span className="font-bold text-indigo-600 dark:text-indigo-400 text-sm font-mono">{previewResult.diagnostics.source_records_bundled}</span>
+                      </div>
+                    )}
                     <div className="p-2 rounded bg-surface border border-border/40">
                       <span className="text-foreground-muted block">{t('discovery.diagnostics.candidates_returned')}</span>
                       <span className="font-bold text-foreground text-sm font-mono">{previewResult.diagnostics.candidates_returned_to_preview}</span>
@@ -948,6 +954,12 @@ export default function DiscoveryPage() {
                             <span className="font-bold text-sm text-foreground">
                               {candidate.name}
                             </span>
+                            {candidate.sources_count && candidate.sources_count > 1 && (
+                              <Badge size="sm" variant="default" className="text-[10px] bg-brand-gold/15 text-brand-gold border-brand-gold/30 font-medium">
+                                <Layers className="w-3 h-3 mr-1" />
+                                {t('discovery.sources_found_label')}: {candidate.sources_count}
+                              </Badge>
+                            )}
                             {candidate.entity_archetype && (
                               <Badge size="sm" variant="outline" className="font-mono text-[10px] bg-surface">
                                 {t('discovery.archetype_label')}: {formatEntityArchetype(t, candidate.entity_archetype)}
@@ -1049,6 +1061,49 @@ export default function DiscoveryPage() {
                           </span>
                         </div>
                       </div>
+
+                      {/* Bundled Multi-Source Evidence Breakdown */}
+                      {candidate.sources && candidate.sources.length > 1 && (
+                        <div
+                          data-testid={`bundled-sources-${candidate.candidate_id || idx}`}
+                          className="pt-2 border-t border-border/50 space-y-1.5"
+                        >
+                          <span className="text-[11px] font-medium text-foreground-muted flex items-center gap-1.5">
+                            <Layers className="w-3 h-3 text-brand-gold" />
+                            {t('discovery.sources_found_label')} ({candidate.sources.length}):
+                          </span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                            {candidate.sources.map((s, sIdx) => {
+                              const sTypeKey = `discovery.source_types.${s.source_type}`;
+                              const sTypeLabel = t(sTypeKey) !== sTypeKey ? t(sTypeKey) : s.source_type;
+                              return (
+                                <div
+                                  key={sIdx}
+                                  data-testid={`candidate-source-item-${sIdx}`}
+                                  className="flex items-center justify-between p-1.5 rounded bg-surface border border-border/40 text-[11px]"
+                                >
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <Badge size="sm" variant="outline" className="text-[9px] px-1 py-0 shrink-0 font-mono">
+                                      {s.platform || sTypeLabel}
+                                    </Badge>
+                                    <span className="text-foreground-muted truncate font-mono text-[10px]">
+                                      {s.source_host || s.source_url}
+                                    </span>
+                                  </div>
+                                  <a
+                                    href={s.source_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-brand-gold hover:underline shrink-0 ml-1 p-0.5"
+                                  >
+                                    <ExternalLink className="w-3 h-3" />
+                                  </a>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
 
                       {/* Excerpt Snippet */}
                       {candidate.snippet && (

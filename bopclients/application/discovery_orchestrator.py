@@ -1,6 +1,6 @@
 """Discovery Orchestrator executing SearchPlans, deduplicating raw results, and updating ResearchRuns."""
 
-from typing import List, Dict, Set, Optional, Tuple
+from typing import List, Dict, Set, Optional, Tuple, Any
 from bopclients.domain.prospect import Prospect
 from bopclients.domain.research_run import ResearchRun
 from bopclients.domain.exceptions import DiscoveryExecutionError, TenantAccessError
@@ -409,12 +409,14 @@ class DiscoveryOrchestrator:
         # LEVEL 3: Consistent normalized organization identity AND compatible first-party host
         import re
         import urllib.parse
+        import unicodedata
 
         candidates: List[Dict[str, Any]] = []
         seen_exact_urls: Set[str] = set()
         seen_candidate_ids: Set[str] = set()
         seen_first_party_entities: Set[Tuple[str, str]] = set()  # (clean_name_key, clean_host)
         duplicate_candidates_removed = 0
+        source_records_bundled = 0
         final_candidate_cap = max_results_override or (10 if len(web_tasks) > 1 else 5)
 
         def _clean_name_key(n: str) -> str:
@@ -423,10 +425,154 @@ class DiscoveryOrchestrator:
             k = re.sub(r"[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ]", "", n.lower())
             return k
 
-        for cand in interleaved:
-            if len(candidates) >= final_candidate_cap:
-                break
+        def _clean_entity_name_for_bundling(name: str) -> str:
+            if not name:
+                return ""
+            cleaned = re.sub(r"\s*\(@?[a-zA-Z0-9_.-]+\)", "", name)
+            cleaned = re.sub(
+                r"\s+[-–—|/]\s*(?:facebook|twitter|instagram|linkedin|youtube|x|photos\s+and\s+videos|fotos\s+y\s+videos|inicio|home|perfil|profile)\b.*",
+                "",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+            cleaned = re.sub(r"\s+@([a-zA-Z0-9_.-]+)$", "", cleaned)
+            return cleaned.strip()
 
+        def _tokenize_entity_name(name: str) -> List[str]:
+            if not name:
+                return []
+            cleaned_name = _clean_entity_name_for_bundling(name)
+            normalized = unicodedata.normalize("NFKD", cleaned_name.lower())
+            ascii_text = "".join(c for c in normalized if not unicodedata.combining(c))
+            clean = re.sub(r"[^a-z0-9\s]", " ", ascii_text)
+            stopwords = {
+                "de", "del", "la", "el", "los", "las", "y", "en", "por", "para", "con",
+                "of", "the", "and", "in", "for", "at", "by", "un", "una", "unos", "unas",
+                "facebook", "twitter", "instagram", "linkedin", "youtube"
+            }
+            tokens = [t for t in clean.split() if t and t not in stopwords]
+            return tokens
+
+        def _determine_source_evidence(c: Dict[str, Any]) -> Dict[str, Any]:
+            c_url = (c.get("website_url") or c.get("source_url") or "").strip()
+            c_norm = c_url.lower().rstrip("/")
+            p = urllib.parse.urlparse(c_norm)
+            c_host = (p.netloc or "").lower().strip()
+            if c_host.startswith("www."):
+                c_host = c_host[4:]
+            c_arch = c.get("entity_archetype")
+            c_org_web = c.get("organization_website") or ""
+
+            social_domains = {
+                "facebook.com", "x.com", "twitter.com", "linkedin.com", "instagram.com", "youtube.com"
+            }
+            gov_domains = {
+                "gov.co", "valledelcauca.gov.co", "cali.gov.co", "bogota.gov.co",
+                "medellin.gov.co", "usa.gov", "nih.gov", "who.int", "paho.org"
+            }
+
+            c_platform = None
+            for sd in social_domains:
+                if c_host == sd or c_host.endswith(f".{sd}"):
+                    c_platform = sd
+                    break
+
+            if c_platform:
+                src_type = "SOCIAL_PROFILE"
+            elif any(c_host == gd or c_host.endswith(f".{gd}") for gd in gov_domains) or c_host.endswith(".gov") or c_host.endswith(".gov.co"):
+                src_type = "GOVERNMENT_SOURCE"
+            elif c_arch in ("DIRECTORY_LISTING", EntityArchetype.DIRECTORY_LISTING.value):
+                src_type = "DIRECTORY_LISTING"
+            elif c_org_web and c_org_web != "UNKNOWN":
+                p_org = urllib.parse.urlparse(c_org_web if "://" in c_org_web else f"https://{c_org_web}")
+                org_h = (p_org.netloc or "").lower().strip()
+                if org_h.startswith("www."):
+                    org_h = org_h[4:]
+                if org_h == c_host or c_host.endswith(f".{org_h}"):
+                    src_type = "OFFICIAL_WEBSITE"
+                else:
+                    src_type = "THIRD_PARTY_PAGE"
+            else:
+                src_type = "THIRD_PARTY_PAGE"
+
+            return {
+                "source_url": c_url,
+                "source_host": c_host,
+                "source_type": src_type,
+                "platform": c_platform,
+                "title": c.get("title") or c.get("name"),
+                "snippet": c.get("snippet"),
+            }
+
+        def _candidate_canonical_priority(c: Dict[str, Any]) -> int:
+            src = _determine_source_evidence(c)
+            st = src["source_type"]
+            if st == "OFFICIAL_WEBSITE":
+                return 100
+            if st == "GOVERNMENT_SOURCE":
+                return 60
+            if st == "SOCIAL_PROFILE":
+                plat = src.get("platform")
+                if plat == "linkedin.com":
+                    return 50
+                if plat in ("x.com", "twitter.com"):
+                    return 45
+                if plat == "facebook.com":
+                    return 40
+                return 35
+            if st == "THIRD_PARTY_PAGE":
+                return 20
+            return 10
+
+        def _can_bundle_candidates(cand_a: Dict[str, Any], cand_b: Dict[str, Any]) -> bool:
+            # 1. Country compatibility check
+            country_a = (cand_a.get("country") or "").strip().upper()
+            country_b = (cand_b.get("country") or "").strip().upper()
+            if country_a and country_b and country_a != country_b:
+                return False
+
+            # 2. Source evidence & Directory publisher exclusion
+            src_a = _determine_source_evidence(cand_a)
+            src_b = _determine_source_evidence(cand_b)
+            st_a = src_a["source_type"]
+            st_b = src_b["source_type"]
+            h_a = src_a["source_host"]
+            h_b = src_b["source_host"]
+
+            # Genuine directory listings must NEVER bundle with an organization
+            if st_a == "DIRECTORY_LISTING" or st_b == "DIRECTORY_LISTING":
+                return False
+
+            # 3. Archetype compatibility check (for non-social candidates)
+            arch_a = cand_a.get("entity_archetype")
+            arch_b = cand_b.get("entity_archetype")
+            if st_a != "SOCIAL_PROFILE" and st_b != "SOCIAL_PROFILE":
+                if arch_a and arch_b and arch_a != arch_b:
+                    return False
+
+            # 4. Normalized full institutional name token concordance
+            tokens_a = _tokenize_entity_name(cand_a.get("name") or "")
+            tokens_b = _tokenize_entity_name(cand_b.get("name") or "")
+
+            # Specificity threshold: must have >= 3 significant tokens
+            if len(tokens_a) < 3 or len(tokens_b) < 3:
+                return False
+
+            if tokens_a != tokens_b:
+                return False
+
+            # 5. Source & Anchor compatibility
+            has_official = (st_a == "OFFICIAL_WEBSITE" or st_b == "OFFICIAL_WEBSITE")
+            both_social = (st_a == "SOCIAL_PROFILE" and st_b == "SOCIAL_PROFILE")
+            same_first_party_domain = (bool(h_a) and h_a == h_b and not (h_a in SHARED_PLATFORM_HOSTS))
+            has_gov = (st_a == "GOVERNMENT_SOURCE" or st_b == "GOVERNMENT_SOURCE")
+
+            if has_official or both_social or same_first_party_domain or has_gov:
+                return True
+
+            return False
+
+        for cand in interleaved:
             c_id = cand.get("candidate_id") or ""
             raw_url = cand.get("website_url") or ""
             norm_url = raw_url.strip().lower().rstrip("/")
@@ -450,10 +596,6 @@ class DiscoveryOrchestrator:
                 continue
 
             # Level 3: First-party domain entity deduplication (/inicio vs /contacto on same site)
-            # Never collapse if host is in shared platform / directory hosts, archetype is directory,
-            # or if organization website is unknown or not verified as matching the candidate host.
-            # Safety does not depend solely on a finite blacklist of SHARED_PLATFORM_HOSTS:
-            # First-party status is opt-in and requires affirmative organization domain identity.
             org_web = cand.get("organization_website") or ""
             org_host = ""
             if org_web and org_web != "UNKNOWN":
@@ -487,7 +629,37 @@ class DiscoveryOrchestrator:
             if c_id:
                 seen_candidate_ids.add(c_id)
 
-            candidates.append(cand)
+            # STAGE 4: CROSS-SOURCE ENTITY BUNDLING & SOCIAL PROFILE AGGREGATION
+            cand_source = _determine_source_evidence(cand)
+            cand["sources"] = [cand_source]
+            cand["sources_count"] = 1
+
+            # Check if this candidate can bundle into an existing candidate
+            bundled = False
+            for existing in candidates:
+                if _can_bundle_candidates(existing, cand):
+                    bundled = True
+                    source_records_bundled += 1
+
+                    # Add new source to existing candidate's sources list if not already present
+                    if not any(s.get("source_url") == cand_source["source_url"] for s in existing.get("sources", [])):
+                        existing["sources"].append(cand_source)
+                        existing["sources_count"] = len(existing["sources"])
+
+                    # Canonical selection:
+                    # If incoming candidate has higher canonical priority (e.g. verified official website
+                    # while existing was social profile), upgrade canonical display fields
+                    if _candidate_canonical_priority(cand) > _candidate_canonical_priority(existing):
+                        merged_sources = existing["sources"]
+                        existing.update(cand)
+                        existing["sources"] = merged_sources
+                        existing["sources_count"] = len(merged_sources)
+
+                    break
+
+            if not bundled:
+                if len(candidates) < final_candidate_cap:
+                    candidates.append(cand)
 
         # Collect preview funnel diagnostics if provided by discovery task
         preview_diagnostics: Optional[Dict[str, Any]] = None
@@ -502,6 +674,7 @@ class DiscoveryOrchestrator:
                         "results_accepted_by_classifier": d.get("results_accepted_by_classifier", 0),
                         "directory_candidates_retained": d.get("directory_candidates_retained", 0),
                         "duplicate_candidates_removed": duplicate_candidates_removed,
+                        "source_records_bundled": source_records_bundled,
                         "candidates_returned_to_preview": len(candidates),
                         "rejection_reasons": dict(d.get("rejection_reasons") or {}),
                     }
@@ -512,6 +685,7 @@ class DiscoveryOrchestrator:
                     preview_diagnostics["results_accepted_by_classifier"] += d.get("results_accepted_by_classifier", 0)
                     preview_diagnostics["directory_candidates_retained"] += d.get("directory_candidates_retained", 0)
                     preview_diagnostics["duplicate_candidates_removed"] = duplicate_candidates_removed
+                    preview_diagnostics["source_records_bundled"] = source_records_bundled
                     preview_diagnostics["candidates_returned_to_preview"] = len(candidates)
                     for r_code, r_cnt in (d.get("rejection_reasons") or {}).items():
                         preview_diagnostics["rejection_reasons"][r_code] = preview_diagnostics["rejection_reasons"].get(r_code, 0) + r_cnt
@@ -519,6 +693,7 @@ class DiscoveryOrchestrator:
         if preview_diagnostics is not None:
             preview_diagnostics["candidates_returned_to_preview"] = len(candidates)
             preview_diagnostics["duplicate_candidates_removed"] = duplicate_candidates_removed
+            preview_diagnostics["source_records_bundled"] = source_records_bundled
 
         end_time = datetime.now(timezone.utc).isoformat()
         primary_query = executed_queries[0] if executed_queries else None

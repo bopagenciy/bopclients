@@ -328,6 +328,7 @@
       "results_accepted": "Matches Accepted",
       "directory_retained": "Directories Retained",
       "duplicate_removed": "Duplicates Removed",
+      "source_records_bundled": "Sources Bundled",
       "candidates_returned": "Candidates Displayed",
       "rejection_reasons_title": "Rejection Reasons",
       "not_available": "Not available",
@@ -340,6 +341,16 @@
         "MISSING_TITLE_OR_URL": "Missing Title or URL",
         "OTHER_CLASSIFICATION_REJECTION": "Other Classification Rejection"
       }
+    },
+    "sources_found_label": "Sources found",
+    "sources_count": "{count} sources",
+    "source_types": {
+      "OFFICIAL_WEBSITE": "Official Website",
+      "SOCIAL_PROFILE": "Social Profile",
+      "DIRECTORY_LISTING": "Directory Listing",
+      "GOVERNMENT_SOURCE": "Government Source",
+      "THIRD_PARTY_PAGE": "Third-Party Page",
+      "UNKNOWN": "External Source"
     }
   },
   "campaigns": {

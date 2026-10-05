@@ -328,6 +328,7 @@
       "results_accepted": "Coincidencias aceptadas",
       "directory_retained": "Directorios retenidos",
       "duplicate_removed": "Duplicados eliminados",
+      "source_records_bundled": "Fuentes unificadas",
       "candidates_returned": "Candidatos mostrados",
       "rejection_reasons_title": "Motivos de descarte",
       "not_available": "No disponible",
@@ -340,6 +341,16 @@
         "MISSING_TITLE_OR_URL": "Título o URL faltante",
         "OTHER_CLASSIFICATION_REJECTION": "Otro descarte de clasificación"
       }
+    },
+    "sources_found_label": "Fuentes encontradas",
+    "sources_count": "{count} fuentes",
+    "source_types": {
+      "OFFICIAL_WEBSITE": "Sitio Web Oficial",
+      "SOCIAL_PROFILE": "Perfil en Red Social",
+      "DIRECTORY_LISTING": "Listado en Directorio",
+      "GOVERNMENT_SOURCE": "Portal Gubernamental",
+      "THIRD_PARTY_PAGE": "Página de Terceros",
+      "UNKNOWN": "Fuente Externa"
     }
   },
   "campaigns": {

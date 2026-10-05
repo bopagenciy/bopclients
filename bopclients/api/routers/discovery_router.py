@@ -17,6 +17,7 @@ from bopclients.api.schemas.discovery import (
     DiscoveryPreviewResponse,
     DiscoveryPreviewDiagnostics,
     DiscoveryCandidateSummary,
+    CandidateSourceEvidence,
 )
 from bopclients.api.dependencies import require_permission, get_container, get_tenant_context
 from bopclients.domain.enums import MemberRole
@@ -677,6 +678,8 @@ async def preview_discovery(
             is_commercial_review_ready=c.get("is_commercial_review_ready"),
             qualification_reasons=c.get("qualification_reasons"),
             missing_evidence=c.get("missing_evidence"),
+            sources_count=c.get("sources_count", len(c.get("sources", [])) or 1),
+            sources=[CandidateSourceEvidence(**s) for s in c.get("sources", [])] if c.get("sources") else [],
         )
         for c in (result.candidates or [])
     ]

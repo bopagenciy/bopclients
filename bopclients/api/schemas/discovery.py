@@ -154,6 +154,17 @@ class DiscoveryExecutionResponse(BaseModel):
     errors: List[str] = Field(default_factory=list)
 
 
+class CandidateSourceEvidence(BaseModel):
+    """Provenance record for an individual source discovery attached to an entity bundle."""
+
+    source_url: str
+    source_host: str
+    source_type: str = "UNKNOWN"
+    platform: Optional[str] = None
+    title: Optional[str] = None
+    snippet: Optional[str] = None
+
+
 class DiscoveryCandidateSummary(BaseModel):
     """Summary of a candidate returned during preview without database persistence."""
 
@@ -181,6 +192,9 @@ class DiscoveryCandidateSummary(BaseModel):
     is_commercial_review_ready: Optional[bool] = None
     qualification_reasons: Optional[List[str]] = None
     missing_evidence: Optional[List[str]] = None
+    # Cross-Source Entity Bundling:
+    sources_count: int = 1
+    sources: List[CandidateSourceEvidence] = Field(default_factory=list)
 
 
 class DiscoveryPreviewRequest(BaseModel):
@@ -203,6 +217,7 @@ class DiscoveryPreviewDiagnostics(BaseModel):
     results_accepted_by_classifier: int = Field(default=0, description="Results accepted by candidate classifier")
     directory_candidates_retained: int = Field(default=0, description="Directory listing candidates retained as SEARCH_MATCH")
     duplicate_candidates_removed: int = Field(default=0, description="Duplicate candidate results eliminated during multi-query aggregation")
+    source_records_bundled: int = Field(default=0, description="Additional source records consolidated into entity bundles")
     candidates_returned_to_preview: int = Field(default=0, description="Total candidates returned in preview payload")
     rejection_reasons: Dict[str, int] = Field(default_factory=dict, description="Rejection counts grouped by stable reason code")
 

@@ -185,6 +185,12 @@ class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
         re.IGNORECASE,
     )
 
+    # Sector: Restaurant / Dining Establishment
+    RESTAURANT_EVIDENCE_PATTERN = re.compile(
+        r"\b(?:restaurante[s]?|restaurant[s]?|gastronom[íi]a|cocina|comida|asador|trattoria|pizzer[íi]a|bistro|caf[eé]|bar\s+y\s+restaurante|dining)\b",
+        re.IGNORECASE,
+    )
+
     def is_genuine_association_name(self, name: str, category_hints: Optional[Set[str]] = None) -> bool:
         """Evaluate whether name and hints establish institutional organization identity."""
         clean_name = (name or "").strip()
@@ -273,6 +279,13 @@ class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
             or any(act in ("software_development", "saas", "cloud_services") for act in request.target_business_activities)
             or any(ot in ("software_company", "saas_company") for ot in request.target_organization_types)
             or any(ind in ("software", "b2b_software", "saas", "technology") for ind in request.canonical_category_hints)
+        )
+
+        is_restaurant = (
+            target_norm in ("restaurant", "restaurants", "restaurante", "restaurantes", "gastronomia", "dining")
+            or any(act in ("restaurant", "dining", "food_service") for act in request.target_business_activities)
+            or any(ot in ("restaurant", "dining_establishment") for ot in request.target_organization_types)
+            or any(ind in ("restaurant", "restaurants", "food_and_beverage") for ind in request.canonical_category_hints)
         )
 
         is_any_association = is_medical_assoc or is_prof_assoc or is_non_profit or is_general_assoc
@@ -499,7 +512,25 @@ class OrganizationCandidateClassifier(IOrganizationCandidateClassifier):
                 details={"target_intent": target_norm, "name": name},
             )
 
-        # --- Policy E: General / Unspecified Intent Fallback ---
+        # --- Policy E: Restaurants ---
+        if is_restaurant:
+            # Positive evidence: restaurant, dining, gastronomy
+            if self.RESTAURANT_EVIDENCE_PATTERN.search(full_text):
+                return ClassificationDecision(
+                    status=CandidateClassificationStatus.ACCEPTED_CANDIDATE,
+                    is_valid=True,
+                    reason=None,
+                    details={"target_intent": target_norm, "name": name, "sector": "restaurant"},
+                )
+
+            return ClassificationDecision(
+                status=CandidateClassificationStatus.INSUFFICIENT_EVIDENCE,
+                is_valid=False,
+                reason=f"INSUFFICIENT_EVIDENCE_FOR_RESTAURANT ({name})",
+                details={"target_intent": target_norm, "name": name},
+            )
+
+        # --- Policy F: General / Unspecified Intent Fallback ---
         # When evidence is insufficient, return INSUFFICIENT_EVIDENCE rather than inventing a match
         return ClassificationDecision(
             status=CandidateClassificationStatus.INSUFFICIENT_EVIDENCE,

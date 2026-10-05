@@ -377,6 +377,17 @@ export interface DiscoveryCandidateSummary {
   is_commercial_review_ready?: boolean | null;
   qualification_reasons?: string[] | null;
   missing_evidence?: string[] | null;
+  sources_count?: number;
+  sources?: CandidateSourceEvidence[];
+}
+
+export interface CandidateSourceEvidence {
+  source_url: string;
+  source_host: string;
+  source_type: 'OFFICIAL_WEBSITE' | 'SOCIAL_PROFILE' | 'DIRECTORY_LISTING' | 'GOVERNMENT_SOURCE' | 'THIRD_PARTY_PAGE' | 'UNKNOWN' | string;
+  platform?: string | null;
+  title?: string | null;
+  snippet?: string | null;
 }
 
 export interface DiscoveryPreviewRequest {
@@ -393,6 +404,7 @@ export interface DiscoveryPreviewDiagnostics {
   results_accepted_by_classifier: number;
   directory_candidates_retained: number;
   duplicate_candidates_removed?: number;
+  source_records_bundled?: number;
   candidates_returned_to_preview: number;
   rejection_reasons?: Record<string, number>;
 }
