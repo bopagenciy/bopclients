@@ -287,13 +287,14 @@ class SearchService:
                 )
 
         # Budget and task validation for web search preview
+        MAX_PREVIEW_QUERIES = 2
         web_tasks = [
             t for t in search_plan.tasks
             if (t.provider or "").strip().lower() in ("web_search", "tavily")
         ]
-        if len(web_tasks) > 1:
+        if len(web_tasks) > MAX_PREVIEW_QUERIES:
             raise SearchPlanningError(
-                f"Controlled preview budget violation: Maximum 1 web search query allowed (received {len(web_tasks)})."
+                f"Controlled preview budget violation: Maximum {MAX_PREVIEW_QUERIES} web search queries allowed (received {len(web_tasks)})."
             )
 
         for wt in web_tasks:
@@ -527,6 +528,172 @@ class SearchService:
 
         return " ".join(deduped)
 
+    def synthesize_preview_queries(
+        self,
+        raw_query: Optional[str] = None,
+        campaign: Optional[Any] = None,
+        icp: Optional[Any] = None,
+        target_market: Optional[Any] = None,
+        category: Optional[str] = None,
+        city: Optional[str] = None,
+        region: Optional[str] = None,
+        country: Optional[str] = None,
+    ) -> List[str]:
+        """Synthesize up to 2 distinct, high-signal, complementary search queries from structured ICP and market context.
+
+        Query 1: Primary organization / industry concept + most specific approved geography (city).
+        Query 2: Secondary organization type, specialization, or alternative concept + city (or region).
+
+        Guarantees:
+        - Exactly 2 distinct queries when structured metadata contains complementary concepts.
+        - Exactly 1 query if structured metadata only supports one meaningful concept (no fake second query).
+        - No duplicate or near-identical queries after normalization.
+        - Never emit an empty query.
+        """
+        # Query 1 uses the primary deterministic synthesis
+        q1 = self.synthesize_preview_query(
+            raw_query=raw_query,
+            campaign=campaign,
+            icp=icp,
+            target_market=target_market,
+            category=category,
+            city=city,
+            region=region,
+            country=country,
+        )
+
+        clean_raw = (raw_query or "").strip()
+        queries = [q1]
+
+        # Determine target geography components
+        g_city = (getattr(target_market, "city", None) or city or "").strip()
+        g_region = (getattr(target_market, "region", None) or region or "").strip()
+        g_country = (getattr(target_market, "country", None) or country or "").strip()
+
+        if not target_market and not g_city and not g_region and clean_raw:
+            q_lower = clean_raw.lower()
+            if "cali" in q_lower:
+                g_city = "Cali"
+                if not g_region:
+                    g_region = "Valle del Cauca"
+            elif "medellin" in q_lower or "medellín" in q_lower:
+                g_city = "Medellín"
+                if not g_region:
+                    g_region = "Antioquia"
+            elif "bogota" in q_lower or "bogotá" in q_lower:
+                g_city = "Bogotá"
+                if not g_region:
+                    g_region = "Cundinamarca"
+            elif "miami" in q_lower:
+                g_city = "Miami"
+                if not g_region:
+                    g_region = "Florida"
+            elif "florida" in q_lower:
+                g_region = "Florida"
+            elif "new jersey" in q_lower:
+                g_region = "New Jersey"
+
+        # Determine language context
+        tm_lang = (getattr(target_market, "language", None) or "").strip().lower()
+        tm_country = (getattr(target_market, "country", None) or country or "").strip().upper()
+        is_spanish = tm_lang.startswith("es") or tm_country == "CO" or (clean_raw and any(w in clean_raw.lower() for w in ("asociaciones", "sociedades", "médicas", "en", "colombia")))
+
+        secondary_concept = None
+
+        if icp:
+            target_org_types = getattr(icp, "target_organization_types", None) or []
+            target_industries = getattr(icp, "target_industries", None) or []
+            target_specializations = getattr(icp, "target_specializations", None) or []
+            industries = getattr(icp, "industries", None) or []
+
+            specific_industries = [
+                ind.strip() for ind in (target_industries or industries)
+                if ind and ind.strip().lower() not in ("salud", "healthcare", "general", "business", "servicios", "services")
+            ]
+
+            is_assoc = (
+                any("asociaci" in ot.lower() or "sociedad" in ot.lower() or "association" in ot.lower() or "society" in ot.lower() for ot in target_org_types)
+                or any("asociaci" in ind.lower() or "sociedad" in ind.lower() or "association" in ind.lower() or "society" in ind.lower() for ind in specific_industries)
+                or category == "medical_association"
+            )
+
+            if is_assoc:
+                # Primary Q1 was "asociaciones médicas <geo>". Complementary Q2 explores "sociedades científicas <geo>" or specialization.
+                if target_specializations:
+                    spec = target_specializations[0].strip()
+                    secondary_concept = f"sociedades de {spec}" if is_spanish else f"{spec} medical societies"
+                elif len(target_org_types) > 1:
+                    second_ot = target_org_types[1].strip()
+                    secondary_concept = f"{second_ot} médicas" if is_spanish else f"{second_ot} medical"
+                else:
+                    secondary_concept = "sociedades científicas" if is_spanish else "medical societies"
+
+            elif specific_industries:
+                primary = specific_industries[0]
+                org_types_str = " ".join(target_org_types).lower()
+                if "contractor" in org_types_str and "construction" in primary.lower():
+                    # Q1: construction contractors. Q2: general contractors
+                    secondary_concept = "general contractors"
+                elif "distributor" in org_types_str and "industrial" in primary.lower():
+                    # Q1: industrial distributors. Q2: industrial supply companies
+                    secondary_concept = "industrial supply companies"
+                elif "software" in primary.lower():
+                    # Q1: B2B software companies. Q2: enterprise SaaS companies
+                    secondary_concept = "enterprise SaaS companies"
+                elif "restaurant" in primary.lower() or "restaurant" in org_types_str or "gastronom" in primary.lower():
+                    # Q1: restaurants. Q2: restaurantes gourmet
+                    secondary_concept = "restaurantes gourmet" if is_spanish else "fine dining restaurants"
+                elif len(target_org_types) > 1:
+                    second_ot = target_org_types[1].strip()
+                    secondary_concept = f"{primary} {second_ot}".strip()
+                elif target_specializations:
+                    spec = target_specializations[0].strip()
+                    secondary_concept = f"{spec} {primary}".strip()
+                elif len(specific_industries) > 1:
+                    secondary_concept = specific_industries[1]
+            elif len(target_org_types) > 1:
+                secondary_concept = target_org_types[1].strip()
+
+        # Check Category fallback for secondary concept if ICP didn't produce one
+        if not secondary_concept and category:
+            cat_sec_map = {
+                "medical_association": "sociedades científicas" if is_spanish else "scientific societies",
+                "construction": "general contractors",
+                "industrial_distributor": "industrial supply companies",
+                "b2b_software": "enterprise SaaS companies",
+                "restaurant": "restaurantes gourmet" if is_spanish else "fine dining restaurants",
+            }
+            secondary_concept = cat_sec_map.get(category)
+
+        # Check raw query if it explicitly contains alternative concept phrases (e.g., "y sociedades científicas")
+        if not secondary_concept and clean_raw:
+            alt_match = re.search(r"\by\s+([a-záéíóúñ\s]+?)\s+(?:en|in)\b", clean_raw, flags=re.IGNORECASE)
+            if alt_match:
+                candidate_alt = alt_match.group(1).strip()
+                if len(candidate_alt) > 3 and candidate_alt.lower() not in q1.lower():
+                    secondary_concept = candidate_alt
+
+        if secondary_concept:
+            geo_for_q2 = g_city or g_region or g_country
+            q2_raw = f"{secondary_concept.strip()} {geo_for_q2}".strip() if geo_for_q2 else secondary_concept.strip()
+
+            # Clean duplicate tokens in Q2
+            words = q2_raw.split()
+            deduped = []
+            for w in words:
+                if not deduped or w.lower() != deduped[-1].lower():
+                    deduped.append(w)
+            q2 = " ".join(deduped)
+
+            # Check normalization equality: never emit duplicate or near-identical queries
+            def _norm_q(text: str) -> str:
+                return re.sub(r"[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ]", "", text.lower())
+
+            if _norm_q(q2) != _norm_q(q1) and len(q2.strip()) > 0:
+                queries.append(q2)
+
+        return queries[:2]
+
     def create_web_search_preview_plan(
         self,
         org_id: str,
@@ -539,7 +706,7 @@ class SearchService:
         limit: int = 5,
         negative_keywords: Optional[List[str]] = None,
     ) -> SearchPlan:
-        """Construct a single-query, budget-bounded web search plan for controlled preview."""
+        """Construct a controlled, budget-bounded web search plan (up to 2 complementary queries) for preview."""
         import uuid
         from bopclients.application.search_dto import DiscoveryTask
 
@@ -554,8 +721,8 @@ class SearchService:
                 if icp and getattr(icp, "target_markets", None):
                     target_market = icp.target_markets[0]
 
-        # Synthesize concise, high-signal query
-        synthesized_query = self.synthesize_preview_query(
+        # Synthesize up to 2 distinct queries
+        synthesized_queries = self.synthesize_preview_queries(
             raw_query=query,
             campaign=campaign,
             icp=icp,
@@ -613,7 +780,7 @@ class SearchService:
         # Negative keywords configuration
         if negative_keywords is not None:
             negs = list(negative_keywords)
-        elif eff_category in ("medical_association", "scientific_society") or "asociaci" in synthesized_query or "medical" in synthesized_query:
+        elif eff_category in ("medical_association", "scientific_society") or any("asociaci" in sq or "medical" in sq for sq in synthesized_queries):
             negs = ["hospital", "clinica", "clínica", "consultorio", "eps", "ips"]
         elif eff_category in ("construction", "builder"):
             negs = ["inmobiliaria", "real estate", "bienes raices"]
@@ -630,24 +797,28 @@ class SearchService:
                 if ex and ex.strip().lower() not in negs:
                     negs.append(ex.strip().lower())
 
-        task = DiscoveryTask(
-            id=str(uuid.uuid4()),
-            provider="web_search",
-            query=synthesized_query,
-            category=eff_category,
-            country=eff_country,
-            city=eff_city,
-            region=eff_region,
-            limit=clamped_limit,
-            priority=1,
-            negative_keywords=negs,
-            metadata={"organization_id": org_id, "preview": True},
-        )
+        tasks: List[DiscoveryTask] = []
+        for priority_idx, sq in enumerate(synthesized_queries, start=1):
+            tasks.append(
+                DiscoveryTask(
+                    id=str(uuid.uuid4()),
+                    provider="web_search",
+                    query=sq,
+                    category=eff_category,
+                    country=eff_country,
+                    city=eff_city,
+                    region=eff_region,
+                    limit=clamped_limit,
+                    priority=priority_idx,
+                    negative_keywords=list(negs),
+                    metadata={"organization_id": org_id, "preview": True},
+                )
+            )
 
         return SearchPlan(
             id=str(uuid.uuid4()),
             organization_id=org_id,
             campaign_id=campaign_id,
             intent_id="web_preview",
-            tasks=[task],
+            tasks=tasks,
         )

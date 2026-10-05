@@ -392,6 +392,7 @@ export interface DiscoveryPreviewDiagnostics {
   results_rejected_by_classifier: number;
   results_accepted_by_classifier: number;
   directory_candidates_retained: number;
+  duplicate_candidates_removed?: number;
   candidates_returned_to_preview: number;
   rejection_reasons?: Record<string, number>;
 }
@@ -411,6 +412,7 @@ export interface DiscoveryPreviewResponse {
   errors: string[];
   diagnostics?: DiscoveryPreviewDiagnostics | null;
   executed_query?: string | null;
+  executed_queries?: string[] | null;
 }
 
 export interface LeadScoreDetail {

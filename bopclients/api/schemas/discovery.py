@@ -202,6 +202,7 @@ class DiscoveryPreviewDiagnostics(BaseModel):
     results_rejected_by_classifier: int = Field(default=0, description="Results rejected by candidate classifier")
     results_accepted_by_classifier: int = Field(default=0, description="Results accepted by candidate classifier")
     directory_candidates_retained: int = Field(default=0, description="Directory listing candidates retained as SEARCH_MATCH")
+    duplicate_candidates_removed: int = Field(default=0, description="Duplicate candidate results eliminated during multi-query aggregation")
     candidates_returned_to_preview: int = Field(default=0, description="Total candidates returned in preview payload")
     rejection_reasons: Dict[str, int] = Field(default_factory=dict, description="Rejection counts grouped by stable reason code")
 
@@ -225,5 +226,8 @@ class DiscoveryPreviewResponse(BaseModel):
         default=None, description="Optional ephemeral preview funnel diagnostics"
     )
     executed_query: Optional[str] = Field(
-        default=None, description="Actual synthesized query dispatched to the discovery provider"
+        default=None, description="Actual synthesized query dispatched to the discovery provider (primary or single)"
+    )
+    executed_queries: Optional[List[str]] = Field(
+        default=None, description="All synthesized queries dispatched to the discovery provider"
     )

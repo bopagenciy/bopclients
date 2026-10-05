@@ -612,12 +612,13 @@ async def preview_discovery(
                 detail="search_plan must contain tasks or a valid raw_query.",
             )
         else:
-            # Enforce budget: maximum 1 web search task, limit <= 5
+            # Enforce budget: maximum 2 web search tasks, limit <= 5
+            MAX_PREVIEW_QUERIES = 2
             web_tasks = [t for t in tasks if t.provider.lower() in ("web_search", "tavily")]
-            if len(web_tasks) > 1:
+            if len(web_tasks) > MAX_PREVIEW_QUERIES:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Controlled preview budget violation: Maximum 1 web search query allowed (received {len(web_tasks)}).",
+                    detail=f"Controlled preview budget violation: Maximum {MAX_PREVIEW_QUERIES} web search queries allowed (received {len(web_tasks)}).",
                 )
             for wt in web_tasks:
                 if wt.limit > 5:
@@ -709,4 +710,5 @@ async def preview_discovery(
         errors=result.errors or [],
         diagnostics=diagnostics_obj,
         executed_query=getattr(result, "executed_query", None),
+        executed_queries=getattr(result, "executed_queries", None),
     )

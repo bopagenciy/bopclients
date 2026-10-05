@@ -86,6 +86,7 @@ class SearchExecutionResult:
     errors: List[str] = field(default_factory=list)
     diagnostics: Optional[Dict[str, Any]] = None
     executed_query: Optional[str] = None
+    executed_queries: Optional[List[str]] = None
     executed_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

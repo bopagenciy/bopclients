@@ -449,4 +449,87 @@ describe('Phase P30.5G.5H.4C: Discovery Query Transparency UI Test Suite', () =>
     // Stale response must be discarded
     expect(container.querySelector('[data-testid="query-transparency-card"]')).toBeNull();
   });
+
+  it('Scenario G: Renders multiple executed queries with task count and badge identifiers', async () => {
+    vi.spyOn(I18nContext, 'useI18n').mockReturnValue({
+      locale: 'es',
+      dictionary: esMessages,
+      t: (key: string, params?: Record<string, string | number>) => translate('es', key, params),
+    });
+
+    const mockResponse: DiscoveryPreviewResponse = {
+      status: 'completed',
+      organization_id: mockActiveOrg.bop_organization_id,
+      campaign_id: mockCampaigns[0].id,
+      provider: 'web_search',
+      tasks_executed: 2,
+      candidates_count: 2,
+      candidates: [
+        {
+          candidate_id: 'c-1',
+          name: 'Sociedad Colombiana de Pediatría Regional Valle',
+          qualification_status: 'READY_FOR_COMMERCIAL_REVIEW',
+        },
+        {
+          candidate_id: 'c-2',
+          name: 'Sociedad Médica de Cali',
+          qualification_status: 'SEARCH_MATCH',
+        },
+      ],
+      executed_query: 'asociaciones médicas Cali',
+      executed_queries: [
+        'asociaciones médicas Cali',
+        'sociedades científicas Cali',
+      ],
+      diagnostics: {
+        provider_results_received: 10,
+        results_missing_required_fields: 0,
+        results_rejected_by_classifier: 4,
+        results_accepted_by_classifier: 6,
+        directory_candidates_retained: 1,
+        duplicate_candidates_removed: 1,
+        candidates_returned_to_preview: 2,
+      },
+      prospects_inserted: 0,
+      sources_inserted: 0,
+      database_writes: 0,
+      warnings: [],
+      errors: [],
+    };
+
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (url.includes('/api/v1/campaigns')) {
+        return { ok: true, status: 200, json: async () => ({ items: mockCampaigns, total: mockCampaigns.length }) };
+      }
+      if (url.includes('/api/v1/discovery/preview')) {
+        return { ok: true, status: 200, json: async () => mockResponse };
+      }
+      return { ok: true, status: 200, json: async () => ({}) };
+    });
+
+    await act(async () => {
+      root.render(<DiscoveryPage />);
+    });
+
+    const textarea = container.querySelector('textarea') as HTMLTextAreaElement;
+    await act(async () => {
+      setInputValue(textarea, 'Asociaciones médicas y sociedades científicas en Cali');
+    });
+
+    const previewBtn = container.querySelector('[data-testid="web-search-preview-button"]') as HTMLButtonElement;
+    await act(async () => {
+      previewBtn.click();
+    });
+
+    const execLabel = container.querySelector('[data-testid="executed-query-label"]');
+    expect(execLabel?.textContent).toContain('Consultas Enviadas al Buscador');
+
+    const queriesCount = container.querySelector('[data-testid="queries-executed-count"]');
+    expect(queriesCount?.textContent).toContain('2');
+
+    const item0 = container.querySelector('[data-testid="executed-query-item-0"]');
+    const item1 = container.querySelector('[data-testid="executed-query-item-1"]');
+    expect(item0?.textContent).toContain('asociaciones médicas Cali');
+    expect(item1?.textContent).toContain('sociedades científicas Cali');
+  });
 });

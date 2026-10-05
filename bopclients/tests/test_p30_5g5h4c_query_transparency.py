@@ -185,7 +185,7 @@ class TestQueryTransparency:
             campaign_id="camp_1",
         )
 
-        assert len(plan.tasks) == 1
+        assert 1 <= len(plan.tasks) <= 2
         synth_query = plan.tasks[0].query
         assert synth_query == "asociaciones médicas Cali"
         assert synth_query != raw_prompt
@@ -193,6 +193,8 @@ class TestQueryTransparency:
         result = mock_env["search_service"].preview_search("org_alpha", "camp_1", plan)
         assert result.executed_query == "asociaciones médicas Cali"
         assert result.executed_query == synth_query
+        assert result.executed_queries is not None
+        assert "asociaciones médicas Cali" in result.executed_queries
 
     def test_scenario_c_executed_query_is_none_if_no_tasks_executed(self, mock_env):
         """Scenario C: executed_query is None if no tasks executed."""

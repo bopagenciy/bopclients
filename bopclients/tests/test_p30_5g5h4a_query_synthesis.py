@@ -332,7 +332,7 @@ class TestQuerySynthesis:
         assert "medical associations" in query
         assert "Boston" in query
 
-    # Scenario L: Single query task budget preserved in preview plan
+    # Scenario L: Single/bounded query task budget preserved in preview plan
     def test_scenario_l_single_task_budget(self, search_service):
         plan = search_service.create_web_search_preview_plan(
             org_id="org-1",
@@ -344,7 +344,7 @@ class TestQuerySynthesis:
         )
 
         assert isinstance(plan, SearchPlan)
-        assert len(plan.tasks) == 1
+        assert 1 <= len(plan.tasks) <= 2
         assert plan.tasks[0].provider == "web_search"
         assert plan.tasks[0].query == "asociaciones médicas Cali"
 

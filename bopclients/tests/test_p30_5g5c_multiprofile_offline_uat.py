@@ -1110,7 +1110,7 @@ def test_plan_security_and_anti_tamper(uat_environment):
     assert resp_tav.status_code == 400
     assert "preview mode only" in resp_tav.text.lower()
 
-    # 3. Budget tampering in preview (>1 web search task)
+    # 3. Budget tampering in preview (>2 web search tasks)
     web_prov = env["container"].discovery_orchestrator.providers.get("web_search")
     orig_enabled = web_prov.enabled
     orig_auth = set(web_prov.authorized_tenants)
@@ -1141,12 +1141,22 @@ def test_plan_security_and_anti_tamper(uat_environment):
                             "limit": 5,
                         },
                     },
+                    {
+                        "task_id": str(uuid.uuid4()),
+                        "provider": "web_search",
+                        "priority": 1,
+                        "query_params": {
+                            "query": "query 3",
+                            "category": "construction",
+                            "limit": 5,
+                        },
+                    },
                 ]
             },
         }
         resp_prev_budget = client.post("/api/v1/discovery/preview", json=tampered_preview_payload, headers=headers)
         assert resp_prev_budget.status_code == 400
-        assert "maximum 1 web search query allowed" in resp_prev_budget.text.lower()
+        assert "maximum 2 web search queries allowed" in resp_prev_budget.text.lower()
 
         # 4. Budget tampering in preview (task limit > 5)
         tampered_preview_limit = {

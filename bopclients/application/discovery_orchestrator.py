@@ -268,13 +268,14 @@ class DiscoveryOrchestrator:
                 )
 
         # Web search / Tavily pilot constraints check:
+        MAX_PREVIEW_QUERIES = 2
         web_tasks = [
             t for t in plan.tasks
             if (t.provider or "").strip().lower() in ("web_search", "tavily")
         ]
-        if len(web_tasks) > 1:
+        if len(web_tasks) > MAX_PREVIEW_QUERIES:
             raise DiscoveryExecutionError(
-                f"Controlled preview budget violation: Maximum 1 web search query allowed (received {len(web_tasks)})."
+                f"Controlled preview budget violation: Maximum {MAX_PREVIEW_QUERIES} web search queries allowed (received {len(web_tasks)})."
             )
 
         for wt in web_tasks:
@@ -289,17 +290,32 @@ class DiscoveryOrchestrator:
             wt.metadata["organization_id"] = org_id
 
         total_raw = 0
-        candidates: List[Dict[str, Any]] = []
-        batch_seen_keys: Set[Tuple[str, str]] = set()
         execution_warnings: List[SearchWarning] = list(plan.warnings)
         execution_errors: List[str] = []
 
         tasks_total = len(plan.tasks)
         tasks_succeeded = 0
         tasks_failed = 0
-        executed_query: Optional[str] = None
+        executed_queries: List[str] = []
 
-        max_results_limit = max_results_override or 5
+        # Multi-task candidate aggregation buffer before fair presentation
+        task_candidates: List[List[Dict[str, Any]]] = []
+        max_task_candidates = 5
+
+        # Shared multi-tenant or directory hosts where multiple legitimate entities reside
+        from bopclients.application.discovery.candidate_qualifier import (
+            OrganizationCandidateQualifier,
+            EntityArchetype,
+        )
+        SHARED_PLATFORM_HOSTS = set(OrganizationCandidateQualifier.DIRECTORY_HOSTS) | set(
+            OrganizationCandidateQualifier.ARCHIVE_HOSTS
+        ) | {
+            "gov.co", "valledelcauca.gov.co", "cali.gov.co", "bogota.gov.co",
+            "medellin.gov.co", "usa.gov", "nih.gov", "who.int", "paho.org",
+            "medium.com", "blogspot.com", "wordpress.com", "wixsite.com",
+            "sites.google.com", "github.io", "github.com", "facebook.com",
+            "instagram.com", "twitter.com", "x.com", "linkedin.com", "youtube.com"
+        }
 
         for task in plan.tasks:
             p_name = (task.provider or "").strip().lower()
@@ -321,8 +337,8 @@ class DiscoveryOrchestrator:
                 continue
 
             try:
-                if executed_query is None and task.query:
-                    executed_query = task.query
+                if task.query and task.query not in executed_queries:
+                    executed_queries.append(task.query)
 
                 if p_name in ("web_search", "tavily"):
                     task.limit = min(task.limit or 5, 5)
@@ -331,18 +347,11 @@ class DiscoveryOrchestrator:
                 tasks_succeeded += 1
                 total_raw += len(discovered_batch)
 
+                this_task_list: List[Dict[str, Any]] = []
+
                 for biz in discovered_batch:
-                    if len(candidates) >= max_results_limit:
+                    if len(this_task_list) >= max_task_candidates:
                         break
-
-                    ext_id = biz.overture_id or ""
-                    norm_url = (biz.website_url or "").strip().lower().rstrip("/")
-                    batch_key = (ext_id, norm_url)
-
-                    if batch_key in batch_seen_keys and (ext_id or norm_url):
-                        continue
-                    if ext_id or norm_url:
-                        batch_seen_keys.add(batch_key)
 
                     candidate_info = {
                         "candidate_id": biz.overture_id,
@@ -370,7 +379,9 @@ class DiscoveryOrchestrator:
                         "qualification_reasons": biz.raw_data.get("qualification_reasons") if biz.raw_data else None,
                         "missing_evidence": biz.raw_data.get("missing_evidence") if biz.raw_data else None,
                     }
-                    candidates.append(candidate_info)
+                    this_task_list.append(candidate_info)
+
+                task_candidates.append(this_task_list)
 
             except Exception as task_err:
                 tasks_failed += 1
@@ -384,6 +395,100 @@ class DiscoveryOrchestrator:
                     )
                 )
 
+        # FAIR COMBINATION: Interleave results across tasks to ensure Query 2 is never starved
+        interleaved: List[Dict[str, Any]] = []
+        max_len = max((len(t) for t in task_candidates), default=0)
+        for i in range(max_len):
+            for t_list in task_candidates:
+                if i < len(t_list):
+                    interleaved.append(t_list[i])
+
+        # STAGED ENTITY-SAFE DEDUPLICATION:
+        # LEVEL 1: Exact normalized URL
+        # LEVEL 2: Existing external candidate_id
+        # LEVEL 3: Consistent normalized organization identity AND compatible first-party host
+        import re
+        import urllib.parse
+
+        candidates: List[Dict[str, Any]] = []
+        seen_exact_urls: Set[str] = set()
+        seen_candidate_ids: Set[str] = set()
+        seen_first_party_entities: Set[Tuple[str, str]] = set()  # (clean_name_key, clean_host)
+        duplicate_candidates_removed = 0
+        final_candidate_cap = max_results_override or (10 if len(web_tasks) > 1 else 5)
+
+        def _clean_name_key(n: str) -> str:
+            if not n:
+                return ""
+            k = re.sub(r"[^a-zA-Z0-9áéíóúñÁÉÍÓÚÑ]", "", n.lower())
+            return k
+
+        for cand in interleaved:
+            if len(candidates) >= final_candidate_cap:
+                break
+
+            c_id = cand.get("candidate_id") or ""
+            raw_url = cand.get("website_url") or ""
+            norm_url = raw_url.strip().lower().rstrip("/")
+            parsed = urllib.parse.urlparse(norm_url)
+            host = (parsed.netloc or "").lower().strip()
+            if host.startswith("www."):
+                host = host[4:]
+
+            c_name = cand.get("name") or ""
+            name_key = _clean_name_key(c_name)
+            arch = cand.get("entity_archetype")
+
+            # Level 1: Exact URL check
+            if norm_url and norm_url in seen_exact_urls:
+                duplicate_candidates_removed += 1
+                continue
+
+            # Level 2: Candidate external ID check
+            if c_id and c_id in seen_candidate_ids:
+                duplicate_candidates_removed += 1
+                continue
+
+            # Level 3: First-party domain entity deduplication (/inicio vs /contacto on same site)
+            # Never collapse if host is in shared platform / directory hosts, archetype is directory,
+            # or if organization website is unknown or not verified as matching the candidate host.
+            # Safety does not depend solely on a finite blacklist of SHARED_PLATFORM_HOSTS:
+            # First-party status is opt-in and requires affirmative organization domain identity.
+            org_web = cand.get("organization_website") or ""
+            org_host = ""
+            if org_web and org_web != "UNKNOWN":
+                parsed_org = urllib.parse.urlparse(org_web if "://" in org_web else f"https://{org_web}")
+                org_host = (parsed_org.netloc or "").lower().strip()
+                if org_host.startswith("www."):
+                    org_host = org_host[4:]
+
+            is_shared_platform = (
+                host in SHARED_PLATFORM_HOSTS
+                or any(host.endswith(f".{sph}") for sph in SHARED_PLATFORM_HOSTS)
+                or arch == EntityArchetype.DIRECTORY_LISTING.value
+                or arch == "DIRECTORY_LISTING"
+            )
+
+            is_verified_first_party = (
+                not is_shared_platform
+                and bool(org_host)
+                and (org_host == host or host.endswith(f".{org_host}"))
+            )
+
+            if is_verified_first_party and host and name_key:
+                first_party_key = (name_key, host)
+                if first_party_key in seen_first_party_entities:
+                    duplicate_candidates_removed += 1
+                    continue
+                seen_first_party_entities.add(first_party_key)
+
+            if norm_url:
+                seen_exact_urls.add(norm_url)
+            if c_id:
+                seen_candidate_ids.add(c_id)
+
+            candidates.append(cand)
+
         # Collect preview funnel diagnostics if provided by discovery task
         preview_diagnostics: Optional[Dict[str, Any]] = None
         for task in plan.tasks:
@@ -396,6 +501,7 @@ class DiscoveryOrchestrator:
                         "results_rejected_by_classifier": d.get("results_rejected_by_classifier", 0),
                         "results_accepted_by_classifier": d.get("results_accepted_by_classifier", 0),
                         "directory_candidates_retained": d.get("directory_candidates_retained", 0),
+                        "duplicate_candidates_removed": duplicate_candidates_removed,
                         "candidates_returned_to_preview": len(candidates),
                         "rejection_reasons": dict(d.get("rejection_reasons") or {}),
                     }
@@ -405,14 +511,17 @@ class DiscoveryOrchestrator:
                     preview_diagnostics["results_rejected_by_classifier"] += d.get("results_rejected_by_classifier", 0)
                     preview_diagnostics["results_accepted_by_classifier"] += d.get("results_accepted_by_classifier", 0)
                     preview_diagnostics["directory_candidates_retained"] += d.get("directory_candidates_retained", 0)
+                    preview_diagnostics["duplicate_candidates_removed"] = duplicate_candidates_removed
                     preview_diagnostics["candidates_returned_to_preview"] = len(candidates)
                     for r_code, r_cnt in (d.get("rejection_reasons") or {}).items():
                         preview_diagnostics["rejection_reasons"][r_code] = preview_diagnostics["rejection_reasons"].get(r_code, 0) + r_cnt
 
         if preview_diagnostics is not None:
             preview_diagnostics["candidates_returned_to_preview"] = len(candidates)
+            preview_diagnostics["duplicate_candidates_removed"] = duplicate_candidates_removed
 
         end_time = datetime.now(timezone.utc).isoformat()
+        primary_query = executed_queries[0] if executed_queries else None
 
         return SearchExecutionResult(
             plan_id=plan.id,
@@ -431,6 +540,7 @@ class DiscoveryOrchestrator:
             warnings=execution_warnings,
             errors=execution_errors,
             diagnostics=preview_diagnostics,
-            executed_query=executed_query,
+            executed_query=primary_query,
+            executed_queries=executed_queries if executed_queries else None,
             executed_at=end_time,
         )

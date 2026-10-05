@@ -740,7 +740,7 @@ export default function DiscoveryPage() {
             </div>
           </div>
 
-          {/* Query Transparency (Phase P30.5G.5H.4C) */}
+          {/* Query Transparency (Phase P30.5G.5H.4C & 5B) */}
           <div
             data-testid="query-transparency-card"
             className="p-3 bg-surface-subtle/50 rounded-lg border border-border/70 space-y-2 text-xs"
@@ -761,18 +761,49 @@ export default function DiscoveryPage() {
                 </p>
               </div>
               <div className="space-y-1">
-                <span
-                  data-testid="executed-query-label"
-                  className="text-foreground-muted font-medium block text-[11px]"
-                >
-                  {t('discovery.executed_query_label')}:
-                </span>
-                <p
-                  data-testid="executed-query-text"
-                  className="font-mono text-xs text-foreground bg-surface p-2 rounded border border-border/40 break-words"
-                >
-                  {previewResult.executed_query || t('discovery.diagnostics.not_available')}
-                </p>
+                <div className="flex items-center justify-between">
+                  <span
+                    data-testid="executed-query-label"
+                    className="text-foreground-muted font-medium block text-[11px]"
+                  >
+                    {previewResult.executed_queries && previewResult.executed_queries.length > 1
+                      ? `${t('discovery.executed_queries_label')}:`
+                      : `${t('discovery.executed_query_label')}:`}
+                  </span>
+                  {previewResult.tasks_executed > 0 && (
+                    <span
+                      data-testid="queries-executed-count"
+                      className="text-[10px] text-foreground-muted font-mono"
+                    >
+                      {t('discovery.queries_executed_label')}: {previewResult.tasks_executed}
+                    </span>
+                  )}
+                </div>
+                {previewResult.executed_queries && previewResult.executed_queries.length > 1 ? (
+                  <div data-testid="executed-queries-list" className="space-y-1.5">
+                    {previewResult.executed_queries.map((q, qIdx) => (
+                      <p
+                        key={qIdx}
+                        data-testid={`executed-query-item-${qIdx}`}
+                        className="font-mono text-xs text-foreground bg-surface p-2 rounded border border-border/40 break-words flex items-center justify-between gap-2"
+                      >
+                        <span>{q}</span>
+                        <span className="text-[10px] text-brand-gold font-mono px-1.5 py-0.5 rounded bg-brand-gold/10 flex-shrink-0">
+                          #{qIdx + 1}
+                        </span>
+                      </p>
+                    ))}
+                  </div>
+                ) : (
+                  <p
+                    data-testid="executed-query-text"
+                    className="font-mono text-xs text-foreground bg-surface p-2 rounded border border-border/40 break-words"
+                  >
+                    {previewResult.executed_query ||
+                      (previewResult.executed_queries && previewResult.executed_queries[0]) ||
+                      t('discovery.diagnostics.not_available')}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -807,7 +838,7 @@ export default function DiscoveryPage() {
             </div>
           )}
 
-          {/* Funnel Diagnostics Panel (P30.5G.5H.3C) */}
+          {/* Funnel Diagnostics Panel (P30.5G.5H.3C & 5B) */}
           {previewResult.status !== 'failed' && (
             <div
               data-testid="preview-diagnostics-panel"
@@ -827,7 +858,7 @@ export default function DiscoveryPage() {
 
               {previewResult.diagnostics ? (
                 <div className="space-y-2.5">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center text-[11px]">
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-center text-[11px]">
                     <div className="p-2 rounded bg-surface border border-border/40">
                       <span className="text-foreground-muted block">{t('discovery.diagnostics.provider_results_received')}</span>
                       <span className="font-bold text-foreground text-sm font-mono">{previewResult.diagnostics.provider_results_received}</span>
@@ -839,6 +870,10 @@ export default function DiscoveryPage() {
                     <div className="p-2 rounded bg-surface border border-border/40">
                       <span className="text-foreground-muted block">{t('discovery.diagnostics.results_accepted')}</span>
                       <span className="font-bold text-emerald-600 dark:text-emerald-400 text-sm font-mono">{previewResult.diagnostics.results_accepted_by_classifier}</span>
+                    </div>
+                    <div className="p-2 rounded bg-surface border border-border/40">
+                      <span className="text-foreground-muted block">{t('discovery.diagnostics.duplicate_removed')}</span>
+                      <span className="font-bold text-sky-600 dark:text-sky-400 text-sm font-mono">{previewResult.diagnostics.duplicate_candidates_removed || 0}</span>
                     </div>
                     <div className="p-2 rounded bg-surface border border-border/40">
                       <span className="text-foreground-muted block">{t('discovery.diagnostics.candidates_returned')}</span>
