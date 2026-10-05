@@ -252,6 +252,7 @@ export default function DiscoveryPage() {
   const [previewing, setPreviewing] = useState(false);
   const [previewResult, setPreviewResult] = useState<DiscoveryPreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [submittedQuery, setSubmittedQuery] = useState<string>('');
 
   // Guard against race conditions and stale in-flight preview responses
   const selectedCampaignRef = React.useRef(selectedCampaignId);
@@ -263,6 +264,7 @@ export default function DiscoveryPage() {
   useEffect(() => {
     setPreviewResult(null);
     setPreviewError(null);
+    setSubmittedQuery('');
   }, [selectedCampaignId, activeOrg]);
 
   const [error, setError] = useState<string | null>(null);
@@ -422,6 +424,7 @@ export default function DiscoveryPage() {
     if (!selectedCampaignId) return;
 
     const requestCampaignId = selectedCampaignId;
+    const submittedRaw = !usePlan && prompt.trim() ? prompt.trim() : (plan?.tasks?.[0]?.query_params?.query || prompt.trim() || '');
     setPreviewing(true);
     setPreviewError(null);
     setPreviewResult(null);
@@ -458,6 +461,7 @@ export default function DiscoveryPage() {
         return;
       }
 
+      setSubmittedQuery(submittedRaw);
       setPreviewResult(data);
     } catch (err: any) {
       if (selectedCampaignRef.current === requestCampaignId) {
@@ -698,6 +702,7 @@ export default function DiscoveryPage() {
                 onClick={() => {
                   setPreviewResult(null);
                   setPreviewError(null);
+                  setSubmittedQuery('');
                 }}
                 className="text-xs text-foreground-muted hover:text-foreground"
               >
@@ -732,6 +737,43 @@ export default function DiscoveryPage() {
             <div>
               <span className="text-foreground-muted block text-[11px]">{t('discovery.candidates_found')}:</span>
               <span className="font-bold text-foreground">{previewResult.candidates_count}</span>
+            </div>
+          </div>
+
+          {/* Query Transparency (Phase P30.5G.5H.4C) */}
+          <div
+            data-testid="query-transparency-card"
+            className="p-3 bg-surface-subtle/50 rounded-lg border border-border/70 space-y-2 text-xs"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <span
+                  data-testid="submitted-query-label"
+                  className="text-foreground-muted font-medium block text-[11px]"
+                >
+                  {t('discovery.submitted_query_label')}:
+                </span>
+                <p
+                  data-testid="submitted-query-text"
+                  className="font-mono text-xs text-foreground bg-surface p-2 rounded border border-border/40 break-words"
+                >
+                  {submittedQuery || t('discovery.diagnostics.not_available')}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <span
+                  data-testid="executed-query-label"
+                  className="text-foreground-muted font-medium block text-[11px]"
+                >
+                  {t('discovery.executed_query_label')}:
+                </span>
+                <p
+                  data-testid="executed-query-text"
+                  className="font-mono text-xs text-foreground bg-surface p-2 rounded border border-border/40 break-words"
+                >
+                  {previewResult.executed_query || t('discovery.diagnostics.not_available')}
+                </p>
+              </div>
             </div>
           </div>
 

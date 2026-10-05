@@ -233,6 +233,8 @@
     "provider_label": "Proveedor",
     "selected_campaign_label": "Campaña Seleccionada",
     "clear_preview": "Limpiar Vista Previa",
+    "submitted_query_label": "Tu Búsqueda",
+    "executed_query_label": "Consulta Enviada al Buscador",
     "classification_label": "Clasificación Sectorial",
     "candidates_found": "Candidatos Encontrados",
     "candidates_discovered": "Candidatos Descubiertos ({count})",

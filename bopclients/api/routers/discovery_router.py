@@ -708,4 +708,5 @@ async def preview_discovery(
         warnings=warning_msgs,
         errors=result.errors or [],
         diagnostics=diagnostics_obj,
+        executed_query=getattr(result, "executed_query", None),
     )

@@ -233,6 +233,8 @@
     "provider_label": "Provider",
     "selected_campaign_label": "Selected Campaign",
     "clear_preview": "Clear Preview",
+    "submitted_query_label": "Your Search",
+    "executed_query_label": "Query Sent to Search Provider",
     "classification_label": "Sector Classification",
     "candidates_found": "Candidates Found",
     "candidates_discovered": "Candidates Discovered ({count})",

@@ -410,6 +410,7 @@ export interface DiscoveryPreviewResponse {
   warnings: string[];
   errors: string[];
   diagnostics?: DiscoveryPreviewDiagnostics | null;
+  executed_query?: string | null;
 }
 
 export interface LeadScoreDetail {

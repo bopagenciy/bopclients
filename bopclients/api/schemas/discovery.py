@@ -224,3 +224,6 @@ class DiscoveryPreviewResponse(BaseModel):
     diagnostics: Optional[DiscoveryPreviewDiagnostics] = Field(
         default=None, description="Optional ephemeral preview funnel diagnostics"
     )
+    executed_query: Optional[str] = Field(
+        default=None, description="Actual synthesized query dispatched to the discovery provider"
+    )

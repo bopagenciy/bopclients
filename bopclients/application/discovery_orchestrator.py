@@ -297,6 +297,7 @@ class DiscoveryOrchestrator:
         tasks_total = len(plan.tasks)
         tasks_succeeded = 0
         tasks_failed = 0
+        executed_query: Optional[str] = None
 
         max_results_limit = max_results_override or 5
 
@@ -320,6 +321,9 @@ class DiscoveryOrchestrator:
                 continue
 
             try:
+                if executed_query is None and task.query:
+                    executed_query = task.query
+
                 if p_name in ("web_search", "tavily"):
                     task.limit = min(task.limit or 5, 5)
 
@@ -427,5 +431,6 @@ class DiscoveryOrchestrator:
             warnings=execution_warnings,
             errors=execution_errors,
             diagnostics=preview_diagnostics,
+            executed_query=executed_query,
             executed_at=end_time,
         )
