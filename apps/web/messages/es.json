@@ -351,6 +351,21 @@
       "GOVERNMENT_SOURCE": "Portal Gubernamental",
       "THIRD_PARTY_PAGE": "Página de Terceros",
       "UNKNOWN": "Fuente Externa"
+    },
+    "investigate_button": "Investigar Candidato",
+    "investigating": "Investigando...",
+    "investigation_title": "Investigación Dirigida de Candidato",
+    "investigation_objective_label": "Objetivo",
+    "investigation_query_label": "Consulta de Investigación",
+    "investigation_results_received": "Resultados Evaluados",
+    "investigation_sources_added": "{count} nuevas fuentes adjuntas",
+    "investigation_status_changed": "Estado actualizado a {status}",
+    "investigation_status_unchanged": "Estado se mantiene como {status}",
+    "investigation_badge": "Investigado",
+    "objectives": {
+      "OFFICIAL_WEBSITE": "Verificar Sitio Web Oficial",
+      "LOCAL_PRESENCE": "Verificar Presencia Local",
+      "CURRENT_ACTIVITY": "Verificar Actividad Operativa"
     }
   },
   "campaigns": {

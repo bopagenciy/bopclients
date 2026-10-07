@@ -35,6 +35,8 @@ import {
   DiscoveryPreviewRequest,
   DiscoveryPreviewResponse,
   DiscoveryCandidateSummary,
+  CandidateInvestigationRequest,
+  CandidateInvestigationResponse,
 } from '@/lib/api/types';
 
 interface CampaignItem {
@@ -254,6 +256,11 @@ export default function DiscoveryPage() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [submittedQuery, setSubmittedQuery] = useState<string>('');
 
+  // Ephemeral Candidate Investigation States (Phase P30.5G.5H.6B.1)
+  const [investigatingId, setInvestigatingId] = useState<string | null>(null);
+  const [investigationReports, setInvestigationReports] = useState<Record<string, CandidateInvestigationResponse>>({});
+  const [investigationErrors, setInvestigationErrors] = useState<Record<string, string>>({});
+
   // Guard against race conditions and stale in-flight preview responses
   const selectedCampaignRef = React.useRef(selectedCampaignId);
   useEffect(() => {
@@ -265,6 +272,8 @@ export default function DiscoveryPage() {
     setPreviewResult(null);
     setPreviewError(null);
     setSubmittedQuery('');
+    setInvestigationReports({});
+    setInvestigationErrors({});
   }, [selectedCampaignId, activeOrg]);
 
   const [error, setError] = useState<string | null>(null);
@@ -471,6 +480,95 @@ export default function DiscoveryPage() {
       if (selectedCampaignRef.current === requestCampaignId) {
         setPreviewing(false);
       }
+    }
+  };
+
+  // Controlled Candidate Investigation (ephemeral, 1 query budget, 0 writes)
+  const handleInvestigateCandidate = async (candidate: DiscoveryCandidateSummary) => {
+    const candName = candidate.name;
+    if (!candName) return;
+    const candId = candidate.candidate_id;
+    if (investigatingId) return; // Prevent concurrent requests
+
+    setInvestigatingId(candId);
+    setInvestigationErrors((prev) => {
+      const next = { ...prev };
+      delete next[candId];
+      return next;
+    });
+
+    try {
+      const payload: CandidateInvestigationRequest = {
+        candidate_id: candId,
+        candidate_name: candName,
+        entity_archetype: candidate.entity_archetype,
+        organization_website: candidate.organization_website,
+        category: candidate.category,
+        city: candidate.city,
+        state: candidate.state,
+        country: candidate.country || 'CO',
+        campaign_id: selectedCampaignId || undefined,
+        current_qualification_status: candidate.qualification_status || undefined,
+        geographic_evidence_status: candidate.geographic_evidence_status || undefined,
+        current_activity_status: candidate.current_activity_status || undefined,
+        qualification_reasons: candidate.qualification_reasons || [],
+        missing_evidence: candidate.missing_evidence || [],
+        sources: candidate.sources || [],
+        title: candidate.title,
+        snippet: candidate.snippet,
+      };
+
+      const res = await fetch('/api/proxy/api/v1/discovery/candidates/investigate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        credentials: 'include',
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => ({}));
+        throw new Error(formatApiError(errJson, `Investigation failed (${res.status})`));
+      }
+
+      const invData: CandidateInvestigationResponse = await res.json();
+
+      setInvestigationReports((prev) => ({
+        ...prev,
+        [candId]: invData,
+      }));
+
+      // Update candidate in memory inside previewResult
+      setPreviewResult((prev) => {
+        if (!prev) return prev;
+        const updatedCandidates = prev.candidates.map((c) => {
+          if (c.candidate_id === candId) {
+            return {
+              ...c,
+              qualification_status: invData.qualification_status,
+              qualification_reasons: invData.qualification_reasons,
+              missing_evidence: invData.missing_evidence,
+              is_commercial_review_ready: invData.is_commercial_review_ready,
+              organization_website: invData.organization_website,
+              geographic_evidence_status: invData.geographic_evidence_status,
+              current_activity_status: invData.current_activity_status,
+              sources_count: invData.sources_count,
+              sources: invData.sources,
+            };
+          }
+          return c;
+        });
+        return {
+          ...prev,
+          candidates: updatedCandidates,
+        };
+      });
+    } catch (err: any) {
+      setInvestigationErrors((prev) => ({
+        ...prev,
+        [candId]: err.message || 'Error investigating candidate',
+      }));
+    } finally {
+      setInvestigatingId(null);
     }
   };
 
@@ -1146,6 +1244,80 @@ export default function DiscoveryPage() {
                                 </span>
                               ))}
                             </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Ephemeral Investigation Report Banner (P30.5G.5H.6B.1) */}
+                      {investigationReports[candidate.candidate_id] && (
+                        <div
+                          data-testid={`investigation-report-${candidate.candidate_id || idx}`}
+                          className="mt-2 p-2.5 rounded border border-brand-gold/30 bg-brand-gold/5 space-y-1.5 text-[11px]"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-brand-gold flex items-center gap-1.5">
+                              <Badge size="sm" variant="default" className="bg-brand-gold text-slate-900 font-medium text-[10px]">
+                                {t('discovery.investigation_badge')}
+                              </Badge>
+                              <span>
+                                {t(`discovery.objectives.${investigationReports[candidate.candidate_id].investigation_objective}`) || investigationReports[candidate.candidate_id].investigation_objective}
+                              </span>
+                            </span>
+                            <span className="text-foreground-muted font-mono text-[10px]">
+                              {investigationReports[candidate.candidate_id].results_received} {t('discovery.investigation_results_received')}
+                            </span>
+                          </div>
+
+                          {investigationReports[candidate.candidate_id].investigation_query && (
+                            <div className="text-[10px] text-foreground-muted flex items-center gap-1 font-mono">
+                              <span className="font-semibold text-foreground">{t('discovery.investigation_query_label')}:</span>
+                              <span className="truncate">&ldquo;{investigationReports[candidate.candidate_id].investigation_query}&rdquo;</span>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between pt-1 border-t border-brand-gold/20 text-[10px]">
+                            <span className={investigationReports[candidate.candidate_id].qualification_changed ? "font-medium text-emerald-600 dark:text-emerald-400" : "text-foreground-muted"}>
+                              {investigationReports[candidate.candidate_id].qualification_changed
+                                ? t('discovery.investigation_status_changed', { status: getQualificationBadge(investigationReports[candidate.candidate_id].qualification_status).fallback })
+                                : t('discovery.investigation_status_unchanged', { status: getQualificationBadge(investigationReports[candidate.candidate_id].qualification_status).fallback })}
+                            </span>
+                            {investigationReports[candidate.candidate_id].new_sources_added > 0 && (
+                              <span className="text-foreground-muted">
+                                {t('discovery.investigation_sources_added', { count: investigationReports[candidate.candidate_id].new_sources_added })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Candidate Investigation Action (Operator Controlled, 1 query max) */}
+                      {candidate.qualification_status === 'SEARCH_MATCH' && (
+                        <div className="pt-2 flex items-center justify-between border-t border-border/40">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            data-testid={`investigate-candidate-btn-${candidate.candidate_id || idx}`}
+                            onClick={() => handleInvestigateCandidate(candidate)}
+                            disabled={investigatingId === candidate.candidate_id}
+                            className="text-xs border-brand-gold/40 text-brand-gold hover:bg-brand-gold/10 flex items-center gap-1.5"
+                          >
+                            {investigatingId === candidate.candidate_id ? (
+                              <>
+                                <RotateCcw className="w-3.5 h-3.5 animate-spin" />
+                                {t('discovery.investigating')}
+                              </>
+                            ) : (
+                              <>
+                                <Search className="w-3.5 h-3.5" />
+                                {t('discovery.investigate_button')}
+                              </>
+                            )}
+                          </Button>
+
+                          {investigationErrors[candidate.candidate_id] && (
+                            <span className="text-[10px] text-rose-500 max-w-[60%] truncate">
+                              {investigationErrors[candidate.candidate_id]}
+                            </span>
                           )}
                         </div>
                       )}

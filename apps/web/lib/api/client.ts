@@ -44,6 +44,8 @@ import type {
   ProspectIntelligenceResponse,
   DiscoveryPreviewRequest,
   DiscoveryPreviewResponse,
+  CandidateInvestigationRequest,
+  CandidateInvestigationResponse,
 } from './types';
 
 export interface FetchOptions extends RequestInit {
@@ -457,6 +459,15 @@ export async function previewDiscovery(
   payload: DiscoveryPreviewRequest
 ): Promise<DiscoveryPreviewResponse> {
   return apiClient<DiscoveryPreviewResponse>('/api/v1/discovery/preview', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function investigateCandidate(
+  payload: CandidateInvestigationRequest
+): Promise<CandidateInvestigationResponse> {
+  return apiClient<CandidateInvestigationResponse>('/api/v1/discovery/candidates/investigate', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

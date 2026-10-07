@@ -134,6 +134,7 @@ class RuntimeContainer:
     prospect_research_orchestrator: Optional[ProspectResearchOrchestrator] = None
     prospect_research_service: Optional[ProspectResearchService] = None
     research_worker: Optional[ResearchWorker] = None
+    candidate_investigation_service: Optional[Any] = None
 
     @classmethod
     def initialize(cls, settings: Optional[RuntimeSettings] = None, db: Optional[Any] = None) -> "RuntimeContainer":
@@ -417,6 +418,12 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         recovery_service=recovery_service,
     )
 
+    from bopclients.application.discovery.candidate_investigation_service import CandidateInvestigationService
+    candidate_investigation_service = CandidateInvestigationService(
+        providers=[discovery_provider, web_search_provider],
+        campaign_repo=campaign_repo,
+    )
+
     return RuntimeContainer(
         settings=settings,
         db=db,
@@ -466,6 +473,7 @@ def build_runtime_container(settings: Optional[RuntimeSettings] = None, db: Opti
         prospect_research_orchestrator=prospect_research_orchestrator,
         prospect_research_service=prospect_research_service,
         research_worker=research_worker,
+        candidate_investigation_service=candidate_investigation_service,
     )
 
 

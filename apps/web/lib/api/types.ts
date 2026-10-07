@@ -427,6 +427,53 @@ export interface DiscoveryPreviewResponse {
   executed_queries?: string[] | null;
 }
 
+export interface CandidateInvestigationRequest {
+  candidate_id?: string | null;
+  candidate_name: string;
+  entity_archetype?: string | null;
+  organization_website?: string | null;
+  category?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  campaign_id?: string | null;
+  target_intent?: string | null;
+  current_qualification_status?: string | null;
+  geographic_evidence_status?: string | null;
+  current_activity_status?: string | null;
+  qualification_reasons?: string[];
+  missing_evidence?: string[];
+  sources?: CandidateSourceEvidence[];
+  title?: string | null;
+  snippet?: string | null;
+  target_objective?: 'OFFICIAL_WEBSITE' | 'LOCAL_PRESENCE' | 'CURRENT_ACTIVITY' | string | null;
+}
+
+export interface CandidateInvestigationResponse {
+  status: 'completed' | 'failed' | string;
+  candidate_id: string;
+  candidate_name: string;
+  investigation_objective: 'OFFICIAL_WEBSITE' | 'LOCAL_PRESENCE' | 'CURRENT_ACTIVITY' | string;
+  investigation_query?: string | null;
+  results_received: number;
+  previous_qualification_status: string;
+  qualification_status: string;
+  qualification_changed: boolean;
+  is_commercial_review_ready: boolean;
+  qualification_reasons: string[];
+  missing_evidence: string[];
+  entity_archetype?: string | null;
+  organization_website?: string | null;
+  geographic_evidence_status?: string | null;
+  current_activity_status?: string | null;
+  sources_count: number;
+  sources: CandidateSourceEvidence[];
+  new_sources_added: number;
+  database_writes: number;
+  warnings: string[];
+  errors: string[];
+}
+
 export interface LeadScoreDetail {
   prospect_id: string;
   organization_id: string;

@@ -351,6 +351,21 @@
       "GOVERNMENT_SOURCE": "Government Source",
       "THIRD_PARTY_PAGE": "Third-Party Page",
       "UNKNOWN": "External Source"
+    },
+    "investigate_button": "Investigate Candidate",
+    "investigating": "Investigating...",
+    "investigation_title": "Targeted Candidate Investigation",
+    "investigation_objective_label": "Objective",
+    "investigation_query_label": "Investigation Query",
+    "investigation_results_received": "Results Evaluated",
+    "investigation_sources_added": "{count} new sources attached",
+    "investigation_status_changed": "Status updated to {status}",
+    "investigation_status_unchanged": "Status remains {status}",
+    "investigation_badge": "Investigated",
+    "objectives": {
+      "OFFICIAL_WEBSITE": "Verify Official Website",
+      "LOCAL_PRESENCE": "Verify Local Presence",
+      "CURRENT_ACTIVITY": "Verify Operational Freshness"
     }
   },
   "campaigns": {

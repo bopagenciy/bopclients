@@ -154,15 +154,11 @@ class DiscoveryExecutionResponse(BaseModel):
     errors: List[str] = Field(default_factory=list)
 
 
-class CandidateSourceEvidence(BaseModel):
-    """Provenance record for an individual source discovery attached to an entity bundle."""
-
-    source_url: str
-    source_host: str
-    source_type: str = "UNKNOWN"
-    platform: Optional[str] = None
-    title: Optional[str] = None
-    snippet: Optional[str] = None
+from bopclients.application.search_dto import (
+    CandidateSourceEvidence,
+    CandidateInvestigationRequest,
+    CandidateInvestigationResponse,
+)
 
 
 class DiscoveryCandidateSummary(BaseModel):

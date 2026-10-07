@@ -30,7 +30,7 @@ SPECIALTY_LOGIA_ROOTS: List[str] = [
 ]
 
 _LOGIA_SPECIALTY_PATTERN = (
-    r"(?:" + "|".join(SPECIALTY_LOGIA_ROOTS) + r")[oó]log(?:[íi]a[s]?|[ao]s?|[oó]gic[ao]s?)"
+    r"(?:" + "|".join(SPECIALTY_LOGIA_ROOTS) + r")(?:[oó]log(?:[íi]a[s]?|[ao]s?)|ol[oó]gic[ao]s?)"
 )
 
 # Medical specialties and clinical health disciplines with non-logía morphology

@@ -294,6 +294,30 @@ class WebSearchDiscoveryProvider(IDiscoveryProvider):
             clean_name = re.sub(r"\s+[|]\s+.*$", "", raw_title).strip()
             clean_name = re.sub(r"\s+[-–—]\s+(?:inicio|home|portal|sitio oficial|official website|official site)\b.*$", "", clean_name, flags=re.IGNORECASE).strip()
 
+            # For targeted candidate investigation tasks, return raw attributable evidence without discovery candidate classification filtering
+            if task.metadata and task.metadata.get("investigation"):
+                url_hash = hashlib.sha256(url.strip().lower().encode("utf-8")).hexdigest()[:16]
+                ext_id = f"web-{url_hash}"
+                biz = DiscoveredBusiness(
+                    overture_id=ext_id,
+                    name=clean_name,
+                    website_url=url,
+                    category=task.category or "",
+                    latitude=None,
+                    longitude=None,
+                    city=task.city,
+                    state=task.region,
+                    raw_data={
+                        "title": raw_title,
+                        "snippet": snippet,
+                        "country": task.country or "CO",
+                        "url": url,
+                        "provider": self.PROVIDER_NAME,
+                    },
+                )
+                discovered.append(biz)
+                continue
+
             # Classify using OrganizationCandidateClassifier
             canonical_target = task.category or "medical_association"
             # Web search results do not have authoritative taxonomy hints; must prove association from lexical evidence

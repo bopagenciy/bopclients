@@ -18,6 +18,8 @@ from bopclients.api.schemas.discovery import (
     DiscoveryPreviewDiagnostics,
     DiscoveryCandidateSummary,
     CandidateSourceEvidence,
+    CandidateInvestigationRequest,
+    CandidateInvestigationResponse,
 )
 from bopclients.api.dependencies import require_permission, get_container, get_tenant_context
 from bopclients.domain.enums import MemberRole
@@ -715,3 +717,24 @@ async def preview_discovery(
         executed_query=getattr(result, "executed_query", None),
         executed_queries=getattr(result, "executed_queries", None),
     )
+
+
+@router.post(
+    "/candidates/investigate",
+    response_model=CandidateInvestigationResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Investigate a single ephemeral candidate to resolve missing evidence and requalify",
+)
+async def investigate_candidate(
+    payload: CandidateInvestigationRequest,
+    tenant: TenantContext = Depends(require_permission(Permission.CAMPAIGN_READ)),
+    container: RuntimeContainer = Depends(get_container),
+) -> CandidateInvestigationResponse:
+    org_id = tenant.organization_id
+    service = container.candidate_investigation_service
+    if not service:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Candidate investigation service is not configured in container.",
+        )
+    return service.investigate_candidate(org_id=org_id, request=payload)
